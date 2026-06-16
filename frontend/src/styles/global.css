@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 10% 1%; /* #010102 */
+    --foreground: 0 0% 97%;  /* #f7f8f8 */
+    
+    --card: 240 10% 3%;       /* #08080a */
+    --card-foreground: 0 0% 97%;
+    
+    --popover: 240 10% 4%;    /* #0b0b0e */
+    --popover-foreground: 0 0% 97%;
+    
+    --primary: 234 59% 60%;   /* #5e6ad2 */
+    --primary-foreground: 0 0% 100%;
+    
+    --secondary: 240 5% 10%;
+    --secondary-foreground: 0 0% 97%;
+    
+    --muted: 240 5% 12%;
+    --muted-foreground: 240 5% 65%;
+    
+    --accent: 234 59% 60%;
+    --accent-foreground: 0 0% 97%;
+    
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 97%;
+    
+    --border: 223 9% 15%;     /* #23252a */
+    --input: 223 9% 15%;
+    --ring: 234 59% 60%;
+    
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-canvas text-text font-sans antialiased;
+    background-color: #010102;
+    color: #f7f8f8;
+  }
+}
+
+/* Custom Scrollbar for premium dev feel */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #010102;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #23252a;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #5e6ad2;
+}
+
+/* Base Utility Classes */
+.glass-panel {
+  background: rgba(8, 8, 10, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid #23252a;
+}

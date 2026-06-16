@@ -1,4 +1,4 @@
-"""Streamlit UI Application dashboard for Repo Understanding Agent.
+"""Streamlit UI Application dashboard for Repo Intelligence Agent.
 
 Sets up a premium, responsive multi-tab interface for analyzing repositories,
 explaining architectures, mapping issues, and performing evaluations.
@@ -177,7 +177,7 @@ def render_evaluator_tab() -> None:
 def main() -> None:
     """Main application runner orchestrating Streamlit settings and page elements."""
     st.set_page_config(
-        page_title="Repo Understanding Agent",
+        page_title="Repo Intelligence Agent",
         page_icon="🤖",
         layout="wide",
         initial_sidebar_state="expanded",
@@ -187,7 +187,7 @@ def main() -> None:
     set_premium_styles()
     
     # Title Header
-    st.markdown("<div class='gradient-title'>Repo Understanding Agent</div>", unsafe_allow_html=True)
+    st.markdown("<div class='gradient-title'>Repo Intelligence Agent</div>", unsafe_allow_html=True)
     st.markdown(
         "##### *Kaggle Capstone Project: Multi-agent AI code comprehension assistant*"
     )

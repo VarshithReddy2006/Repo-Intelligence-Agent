@@ -1,4 +1,4 @@
-"""Agents package for the Repo Understanding Agent.
+"""Agents package for the Repo Intelligence Agent.
 
 Contains specialized agents for repo analysis, architectural explanations,
 GitHub issue mapping, and output evaluations.

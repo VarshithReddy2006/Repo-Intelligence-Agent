@@ -1,0 +1,25 @@
+---
+import Layout from '../layouts/Layout.astro';
+import ChatInterface from '../components/interactive/ChatInterface';
+import { MessageSquare } from 'lucide-react';
+---
+
+<Layout title="Repository Chat - Repo Intelligence Agent">
+  <div class="space-y-6 w-full py-4 flex flex-col flex-grow items-center">
+    {/* Page Header */}
+    <div class="border-b border-border pb-4 w-full max-w-3xl">
+      <h1 class="text-xl font-semibold text-text flex items-center gap-2 font-mono">
+        <MessageSquare class="h-5 w-5 text-primary" />
+        <span>Repository Conversational Workspace</span>
+      </h1>
+      <p class="text-xs text-text-muted mt-1 font-sans">
+        Interact with the multi-agent system to understand design choices, logic paths, or draft modifications.
+      </p>
+    </div>
+
+    {/* Chat Interface react island */}
+    <div class="w-full flex justify-center flex-grow pt-2">
+      <ChatInterface repoName="current/workspace" client:load />
+    </div>
+  </div>
+</Layout>

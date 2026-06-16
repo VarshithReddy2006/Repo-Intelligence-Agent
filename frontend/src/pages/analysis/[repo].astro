@@ -1,0 +1,26 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import AnalysisDashboard from '../../components/interactive/AnalysisDashboard';
+
+export function getStaticPaths() {
+  return [
+    { params: { repo: 'google-guava' } },
+    { params: { repo: 'fastapi-fastapi' } },
+    { params: { repo: 'vercel-next.js' } }
+  ];
+}
+
+const { repo } = Astro.params;
+---
+
+<Layout title={`Analysis - ${repo ? repo.replace('-', '/') : 'Repository'}`}>
+  <div class="flex-grow flex flex-col">
+    {repo ? (
+      <AnalysisDashboard repoParam={repo} client:only="react" />
+    ) : (
+      <div class="flex-grow flex items-center justify-center font-mono text-xs text-text-muted">
+        <span>No repository identifier specified.</span>
+      </div>
+    )}
+  </div>
+</Layout>

@@ -1,4 +1,4 @@
-"""Shared schemas using Pydantic for the Repo Understanding Agent.
+"""Shared schemas using Pydantic for the Repo Intelligence Agent.
 
 These schemas act as standard data exchange formats between agents,
 memory layers, and the user interface.

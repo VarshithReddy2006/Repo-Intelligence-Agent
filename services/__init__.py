@@ -1,4 +1,4 @@
-"""Services package for the Repo Understanding Agent.
+"""Services package for the Repo Intelligence Agent.
 
 Contains client wrappers for external systems, including the GitHub API,
 Gemini embedding models, and Model Context Protocol (MCP) server integration.

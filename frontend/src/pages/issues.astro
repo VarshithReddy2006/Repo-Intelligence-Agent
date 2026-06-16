@@ -1,0 +1,23 @@
+---
+import Layout from '../layouts/Layout.astro';
+import IssueMapper from '../components/interactive/IssueMapper';
+import { Target } from 'lucide-react';
+---
+
+<Layout title="Issue Mapping - Repo Intelligence Agent">
+  <div class="space-y-6 w-full py-4">
+    {/* Page Header */}
+    <div class="border-b border-border pb-4">
+      <h1 class="text-xl font-semibold text-text flex items-center gap-2 font-mono">
+        <Target class="h-5 w-5 text-primary" />
+        <span>Issue Mapping & Plan Generation</span>
+      </h1>
+      <p class="text-xs text-text-muted mt-1 font-sans">
+        Trace issues to source code modules and generate step-by-step implementation plans automatically.
+      </p>
+    </div>
+
+    {/* React Interface Component */}
+    <IssueMapper client:load />
+  </div>
+</Layout>

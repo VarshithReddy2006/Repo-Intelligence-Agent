@@ -18,8 +18,14 @@ class EmbeddingService:
             client: Optional pre-configured Google GenAI client.
             model_name: Name of the Gemini embedding model to use.
         """
-        # TODO: Initialize the Client if not provided
-        self.client = client or genai.Client()
+        # Auto-initialize the SDK client safely if it's not provided and credentials exist.
+        if client is None:
+            try:
+                self.client = genai.Client()
+            except Exception:
+                self.client = None
+        else:
+            self.client = client
         self.model_name = model_name
 
     def generate_embedding(self, text: str) -> List[float]:

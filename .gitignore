@@ -214,5 +214,12 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-# Streamlit
+# Node / Astro Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.astro/
+frontend/.vercel/
+*.tsbuildinfo
+
+# Streamlit (removed)
 .streamlit/secrets.toml

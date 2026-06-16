@@ -1,4 +1,4 @@
-"""Memory package for the Repo Understanding Agent.
+"""Memory package for the Repo Intelligence Agent.
 
 Contains storage classes for embeddings search (ChromaDB), relational metadata (SQLite),
 and simple file-based JSON caching.

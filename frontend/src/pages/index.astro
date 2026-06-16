@@ -1,0 +1,10 @@
+---
+import Layout from '../layouts/Layout.astro';
+import RepoInput from '../components/interactive/RepoInput';
+---
+
+<Layout title="Home - Repo Intelligence Agent">
+  <div class="flex-grow flex items-center justify-center py-6">
+    <RepoInput client:load />
+  </div>
+</Layout>
