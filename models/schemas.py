@@ -4,7 +4,7 @@ These schemas act as standard data exchange formats between agents,
 memory layers, and the user interface.
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field
 
 
@@ -111,3 +111,24 @@ class EvaluationResult(BaseModel):
         ..., ge=0.0, le=1.0, description="Confidence score from 0.0 to 1.0."
     )
     feedback: str = Field(..., description="Detailed feedback of the evaluation.")
+    retrieved_chunks: int = Field(0, description="Total chunks retrieved during search.")
+    used_chunks: int = Field(0, description="Number of chunks utilized in generating the answer.")
+    coverage_percentage: float = Field(0.0, description="Percentage of retrieved chunks used in the answer.")
+    unsupported_claims: List[str] = Field(default_factory=list, description="Unsupported claims or details detected.")
+    unknown_files: List[str] = Field(default_factory=list, description="Files referenced in the answer but not present in retrieved context.")
+    chunk_citations: List[Dict[str, Any]] = Field(default_factory=list, description="Specific cited file paths and segments.")
+
+
+class IssueMapResponse(BaseModel):
+    """Schema representing the full Issue Intelligence mapping output."""
+
+    issue_summary: str = Field(..., description="Summary of the user issue.")
+    issue_type: str = Field(..., description="Type of issue: feature, bug, or refactor.")
+    relevant_files: List[str] = Field(..., description="Files involved or requiring modifications.")
+    affected_components: List[str] = Field(..., description="List of affected components.")
+    implementation_plan: List[Dict[str, Any]] = Field(..., description="Step-by-step implementation guide.")
+    complexity: str = Field(..., description="Complexity level (low, medium, high).")
+    confidence: int = Field(..., description="Confidence score from 0 to 100.")
+    verified: bool = Field(..., description="True if no hallucinations detected.")
+    sources: List[str] = Field(..., description="List of cited source files.")
+

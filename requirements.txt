@@ -1,8 +1,33 @@
-google-genai>=0.1.0
+# LLM provider (DeepSeek via NVIDIA NIM — OpenAI-compatible REST)
+httpx>=0.27.0
+
+# Local BGE embeddings — no API calls, no quotas
+sentence-transformers>=3.0.0
+
+# Vector store
 chromadb>=0.4.0
+
+# Data validation and serialization
 pydantic>=2.0.0
+
+# Environment variable loading
 python-dotenv>=1.0.0
+
+# HTTP utilities
 requests>=2.31.0
+
+# Testing
 pytest>=7.4.0
+
+# FastAPI web framework + ASGI server
 fastapi>=0.110.0
 uvicorn[standard]>=0.27.0
+
+# Graph analysis (architecture / reading-order / impact analysis)
+networkx>=3.0
+
+# Tree-sitter parsing (chunking pipeline)
+tree-sitter>=0.20.0,<0.22.0
+tree-sitter-python>=0.20.0
+tree-sitter-javascript>=0.20.0
+tree-sitter-typescript>=0.20.0

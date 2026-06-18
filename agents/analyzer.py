@@ -4,22 +4,21 @@ Responsible for scanning directory structure, identifying technology stack,
 and detecting dependencies of a repository.
 """
 
-from typing import List, Optional
-from google import genai
+from typing import List, Optional, Any
 from models import RepositoryAnalysis
 
 
 class RepositoryAnalyzer:
     """Agent that handles scanning and structural analysis of a code repository."""
 
-    def __init__(self, client: Optional[genai.Client] = None) -> None:
-        """Initializes the RepositoryAnalyzer with a Gemini Client.
+    def __init__(self, client: Optional[Any] = None) -> None:
+        """Initializes the RepositoryAnalyzer.
 
         Args:
-            client: An optional instance of Google GenAI client.
+            client: Deprecated — accepted for backwards-compatibility but ignored.
         """
-        # TODO: Initialize client and configurations
-        self.client = client
+        # client parameter retained for call-site compatibility; not used.
+        pass
 
     def analyze_repository(self, local_path: str) -> RepositoryAnalysis:
         """Runs full analysis on the repository structure, tech stack, and dependencies.

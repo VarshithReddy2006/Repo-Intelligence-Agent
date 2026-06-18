@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Target, FileSpreadsheet, ListTodo, Wrench, AlertTriangle, Loader2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { apiUrl } from '../../lib/api';
+import { Target, FileSpreadsheet, ListTodo, Wrench, AlertTriangle, Loader2, ShieldCheck, ShieldAlert, Cpu, BarChart } from 'lucide-react';
 
 interface Step {
   step_number: number;
@@ -9,30 +10,58 @@ interface Step {
 
 interface Plan {
   issue_summary: string;
+  issue_type: string;
   relevant_files: string[];
-  steps: Step[];
+  affected_components: string[];
+  implementation_plan: Step[];
+  complexity: string;
+  confidence: number;
+  verified: boolean;
+  sources: string[];
 }
 
-export const IssueMapper: React.FC = () => {
+interface IssueMapperProps {
+  repoName?: string;
+}
+
+export const IssueMapper: React.FC<IssueMapperProps> = ({ repoName }) => {
+  const [selectedRepo, setSelectedRepo] = useState(repoName || '');
+  const [recentRepos, setRecentRepos] = useState<{ name: string }[]>([]);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [completedSteps, setCompletedSteps] = useState<Record<number, boolean>>({});
 
+  // Fetch recent repositories if no repoName is locked
+  useEffect(() => {
+    if (!repoName) {
+      fetch(apiUrl('/api/repos/recent'))
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data)) {
+            setRecentRepos(data);
+            if (data.length > 0 && !selectedRepo) {
+              setSelectedRepo(data[0].name);
+            }
+          }
+        })
+        .catch(err => console.error("Failed to fetch recent repos", err));
+    }
+  }, [repoName]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!title.trim() || !selectedRepo.trim()) return;
 
     setIsLoading(true);
     try {
-      const response = await fetch('/api/issues/map', {
+      const response = await fetch(apiUrl('/api/issues/map'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          repo: "current/workspace",
-          title,
-          description
+          repo: selectedRepo,
+          issue: `${title}\n${description}`.trim()
         })
       });
 
@@ -55,6 +84,28 @@ export const IssueMapper: React.FC = () => {
     }));
   };
 
+  const getTypeBadgeColor = (type: string) => {
+    switch (type.toLowerCase()) {
+      case 'bug':
+        return 'bg-red-500/10 border-red-500/20 text-red-400';
+      case 'refactor':
+        return 'bg-amber-500/10 border-amber-500/20 text-amber-400';
+      default:
+        return 'bg-primary/10 border-primary/20 text-primary';
+    }
+  };
+
+  const getComplexityColor = (comp: string) => {
+    switch (comp.toLowerCase()) {
+      case 'high':
+        return 'bg-red-500/10 border-red-500/20 text-red-400';
+      case 'medium':
+        return 'bg-amber-500/10 border-amber-500/20 text-amber-400';
+      default:
+        return 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400';
+    }
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 w-full items-start">
       {/* Input Panel */}
@@ -65,6 +116,34 @@ export const IssueMapper: React.FC = () => {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {!repoName && (
+            <div>
+              <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-1.5 font-mono">
+                Select Indexed Repository
+              </label>
+              {recentRepos.length > 0 ? (
+                <select
+                  value={selectedRepo}
+                  onChange={(e) => setSelectedRepo(e.target.value)}
+                  className="w-full bg-canvas border border-border rounded px-3 py-2 text-sm focus:outline-none focus:border-primary text-text font-mono"
+                >
+                  {recentRepos.map(r => (
+                    <option key={r.name} value={r.name}>{r.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  required
+                  value={selectedRepo}
+                  onChange={(e) => setSelectedRepo(e.target.value)}
+                  placeholder="owner/repo"
+                  className="w-full bg-canvas border border-border rounded px-3 py-2 text-sm focus:outline-none focus:border-primary text-text font-mono"
+                />
+              )}
+            </div>
+          )}
+
           <div>
             <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-1.5 font-mono">
               Issue Title / URL
@@ -94,8 +173,8 @@ export const IssueMapper: React.FC = () => {
 
           <button
             type="submit"
-            disabled={isLoading || !title.trim()}
-            className="w-full bg-primary hover:bg-primary-hover text-text font-semibold py-2 rounded text-sm transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+            disabled={isLoading || !title.trim() || !selectedRepo.trim()}
+            className="w-full bg-primary hover:bg-primary-hover text-text font-semibold py-2.5 rounded text-sm transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
           >
             {isLoading ? (
               <>
@@ -110,20 +189,79 @@ export const IssueMapper: React.FC = () => {
       </div>
 
       {/* Output Panel */}
-      <div className="lg:col-span-7 border border-border bg-card/10 rounded-lg p-5 min-h-[400px] flex flex-col">
+      <div className="lg:col-span-7 border border-border bg-card/10 rounded-lg p-5 min-h-[450px] flex flex-col">
         {plan ? (
-          <div className="space-y-5">
-            <div className="flex items-center justify-between border-b border-border pb-3">
-              <div className="flex items-center gap-2">
-                <ListTodo className="h-5 w-5 text-primary" />
-                <h2 className="text-sm font-semibold tracking-wide uppercase font-mono">Analysis Results</h2>
+          <div className="space-y-6">
+            {/* Header / Summary */}
+            <div className="border-b border-border pb-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <ListTodo className="h-5 w-5 text-primary" />
+                  <h2 className="text-sm font-semibold tracking-wide uppercase font-mono">Analysis Results</h2>
+                </div>
+                <div className="flex items-center gap-2">
+                  {plan.verified ? (
+                    <span className="flex items-center gap-1 text-[10px] font-mono bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 px-2 py-0.5 rounded">
+                      <ShieldCheck className="h-3 w-3" /> VERIFIED
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-[10px] font-mono bg-amber-500/10 border border-amber-500/20 text-amber-500 px-2 py-0.5 rounded">
+                      <ShieldAlert className="h-3 w-3" /> UNVERIFIED
+                    </span>
+                  )}
+                  <span className={`text-[10px] font-mono border px-2 py-0.5 rounded ${getTypeBadgeColor(plan.issue_type)}`}>
+                    {plan.issue_type.toUpperCase()}
+                  </span>
+                </div>
               </div>
-              <span className="text-[10px] font-mono bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 px-2.5 py-0.5 rounded">
-                COMPLETED
-              </span>
+              <p className="text-sm text-text font-semibold leading-relaxed">
+                {plan.issue_summary}
+              </p>
             </div>
 
-            {/* Impact Files list */}
+            {/* Metrics: Complexity & Confidence */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="border border-border bg-canvas/30 rounded p-3 flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <span className="text-[10px] font-mono text-text-muted uppercase tracking-wider block">Complexity</span>
+                  <span className="text-xs font-semibold capitalize">{plan.complexity}</span>
+                </div>
+                <span className={`text-[10px] font-mono border px-2.5 py-0.5 rounded ${getComplexityColor(plan.complexity)}`}>
+                  {plan.complexity.toUpperCase()}
+                </span>
+              </div>
+
+              <div className="border border-border bg-canvas/30 rounded p-3 flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <span className="text-[10px] font-mono text-text-muted uppercase tracking-wider block">Confidence</span>
+                  <span className="text-xs font-semibold">{plan.confidence}%</span>
+                </div>
+                <div className="w-12 bg-border h-2 rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full ${plan.confidence >= 90 ? 'bg-emerald-500' : plan.confidence >= 70 ? 'bg-primary' : 'bg-red-500'}`} 
+                    style={{ width: `${plan.confidence}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Affected Components */}
+            {plan.affected_components && plan.affected_components.length > 0 && (
+              <div>
+                <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2 font-mono flex items-center gap-1.5">
+                  <Cpu className="h-4 w-4 text-primary" /> Affected Components
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  {plan.affected_components.map(comp => (
+                    <span key={comp} className="text-[10px] font-mono bg-canvas border border-border px-2 py-1 rounded-md text-text">
+                      {comp}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Target Files (Impact Analysis) */}
             <div>
               <h3 className="text-xs font-semibold text-text uppercase tracking-wider mb-2 font-mono flex items-center gap-1.5">
                 <FileSpreadsheet className="h-4 w-4 text-primary" /> Target Files (Impact Analysis)
@@ -138,13 +276,13 @@ export const IssueMapper: React.FC = () => {
               </div>
             </div>
 
-            {/* Steps Timeline */}
+            {/* Implementation Plan Steps */}
             <div>
               <h3 className="text-xs font-semibold text-text uppercase tracking-wider mb-3 font-mono flex items-center gap-1.5">
                 <Wrench className="h-4 w-4 text-primary" /> Implementation Plan Steps
               </h3>
               <div className="space-y-3">
-                {plan.steps.map((step) => {
+                {plan.implementation_plan.map((step) => {
                   const isDone = completedSteps[step.step_number];
 
                   return (
@@ -184,6 +322,22 @@ export const IssueMapper: React.FC = () => {
                 })}
               </div>
             </div>
+
+            {/* Sources cited */}
+            {plan.sources && plan.sources.length > 0 && (
+              <div className="border-t border-border pt-4">
+                <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2 font-mono flex items-center gap-1.5">
+                  <BarChart className="h-4 w-4 text-primary" /> Citations & Evidence Base
+                </h3>
+                <div className="flex flex-wrap gap-1.5">
+                  {plan.sources.map((src) => (
+                    <span key={src} className="text-[10px] font-mono bg-canvas border border-border/50 px-2 py-0.5 rounded text-text-muted">
+                      {src}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="flex-grow flex flex-col items-center justify-center text-center p-8 opacity-65">

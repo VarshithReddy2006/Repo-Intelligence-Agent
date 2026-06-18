@@ -4,22 +4,20 @@ Responsible for summarizing repository architecture, mapping component relations
 and recommending file reading orders.
 """
 
-from typing import List, Optional
-from google import genai
+from typing import List, Optional, Any
 from models import ArchitectureSummary, ComponentRelationship, RepositoryAnalysis
 
 
 class ArchitectureExplainer:
     """Agent that explains repository architecture and structural components to developers."""
 
-    def __init__(self, client: Optional[genai.Client] = None) -> None:
+    def __init__(self, client: Optional[Any] = None) -> None:
         """Initializes the ArchitectureExplainer.
 
         Args:
-            client: An optional instance of Google GenAI client.
+            client: Deprecated — accepted for backwards-compatibility but ignored.
         """
-        # TODO: Initialize client and configurations
-        self.client = client
+        pass
 
     def explain_architecture(self, analysis: RepositoryAnalysis) -> ArchitectureSummary:
         """Generates a high-level explanation of the system's architecture.

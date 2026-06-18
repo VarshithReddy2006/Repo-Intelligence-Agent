@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { apiUrl } from '../../lib/api';
 import { Send, MessageSquareCode, Sparkles, Bot, User, RefreshCw } from 'lucide-react';
 
 interface Message {
@@ -44,7 +45,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ repoName }) => {
     ]);
 
     try {
-      const response = await fetch('/api/chat', {
+      const response = await fetch(apiUrl('/api/chat'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

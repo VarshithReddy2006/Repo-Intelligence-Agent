@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Timeline } from './Timeline';
 import type { TimelineStep } from './Timeline';
-import { Sparkles, Terminal, ArrowRight, BookOpen } from 'lucide-react';
+import { Sparkles, Terminal, ArrowRight, BookOpen, AlertCircle } from 'lucide-react';
+import { apiUrl } from '../../lib/api';
 
 interface ExampleRepo {
   name: string;
@@ -13,6 +14,7 @@ interface ExampleRepo {
 export const RepoInput: React.FC = () => {
   const [url, setUrl] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [examples, setExamples] = useState<ExampleRepo[]>([]);
   const [timelineSteps, setTimelineSteps] = useState<TimelineStep[]>([
     { id: 'cloning', label: 'Clone repository from GitHub', status: 'pending' },
@@ -23,7 +25,7 @@ export const RepoInput: React.FC = () => {
 
   useEffect(() => {
     // Fetch example repos on mount
-    fetch('/api/repos/examples')
+    fetch(apiUrl('/api/repos/examples'))
       .then(res => res.json())
       .then(data => setExamples(data))
       .catch(err => console.error(err));
@@ -33,6 +35,7 @@ export const RepoInput: React.FC = () => {
     if (!repoUrl.trim() || isAnalyzing) return;
 
     setIsAnalyzing(true);
+    setErrorMessage(null);
     setTimelineSteps([
       { id: 'cloning', label: 'Clone repository from GitHub', status: 'active' },
       { id: 'detecting', label: 'Detect languages and frameworks', status: 'pending' },
@@ -41,7 +44,7 @@ export const RepoInput: React.FC = () => {
     ]);
 
     try {
-      const response = await fetch('/api/analyze', {
+      const response = await fetch(apiUrl('/api/analyze'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -68,7 +71,17 @@ export const RepoInput: React.FC = () => {
             if (line.startsWith('data: ')) {
               try {
                 const data = JSON.parse(line.slice(6));
+                console.log('SSE Event:', data);
                 
+                if (data.status === 'error') {
+                  // Strip legacy "✗ " prefix if present
+                  const rawMsg: string = data.message || 'An error occurred during analysis.';
+                  const cleanMsg = rawMsg.replace(/^[✗×x]\s*/i, '').trim();
+                  console.error('Analysis error from backend:', cleanMsg);
+                  setErrorMessage(cleanMsg);
+                  setIsAnalyzing(false);
+                }
+
                 // Update timeline status
                 if (data.status === 'cloned') {
                   setTimelineSteps(prev => prev.map(s => s.id === 'cloning' ? { ...s, status: 'completed' as const } : s.id === 'detecting' ? { ...s, status: 'active' as const } : s));
@@ -79,8 +92,21 @@ export const RepoInput: React.FC = () => {
                 } else if (data.status === 'complete') {
                   setTimelineSteps(prev => prev.map(s => s.id === 'mapping' ? { ...s, status: 'completed' as const } : s));
                 } else if (data.status === 'done') {
-                  // Redirect to analysis details page
-                  window.location.href = `/analysis/${data.repo}`;
+                  const repoPath = data.repo || data.repository || (data.owner && data.repo_name ? `${data.owner}/${data.repo_name}` : null);
+                  
+                  if (repoPath) {
+                    const parts = repoPath.split('/')
+                    if (parts.length === 2) {
+                      const [owner, repo] = parts
+                      window.location.href = `/analysis?owner=${owner}&repo=${repo}`
+                    } else {
+                      setErrorMessage('Invalid repo format received');
+                      setIsAnalyzing(false);
+                    }
+                  } else {
+                    setErrorMessage('Missing repo in analysis result');
+                    setIsAnalyzing(false);
+                  }
                 }
               } catch (e) {
                 // Ignore parsing issues
@@ -143,6 +169,22 @@ export const RepoInput: React.FC = () => {
         {isAnalyzing && (
           <div className="pt-4 border-t border-border flex justify-center">
             <Timeline steps={timelineSteps} />
+          </div>
+        )}
+
+        {errorMessage && (
+          <div className="flex items-start gap-3 bg-red-500/5 border border-red-500/20 text-red-400 rounded-lg p-4 font-mono text-xs mt-2">
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <span className="font-bold uppercase tracking-wider text-[10px] block">Analysis Failed</span>
+              <p className="leading-relaxed">{errorMessage}</p>
+              {errorMessage.includes('quota') || errorMessage.includes('429') || errorMessage.includes('RESOURCE_EXHAUSTED') ? (
+                <p className="text-red-300/70 text-[10px] mt-1">
+                  Gemini API rate limit reached. Please wait a minute before retrying, or check your API quota at{' '}
+                  <a href="https://ai.dev/rate-limit" target="_blank" rel="noopener noreferrer" className="underline">ai.dev/rate-limit</a>.
+                </p>
+              ) : null}
+            </div>
           </div>
         )}
       </div>

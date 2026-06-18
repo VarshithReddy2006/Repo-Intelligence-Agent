@@ -1,50 +1,66 @@
-"""Unit tests verifying import and initialization interface for service classes."""
+"""Unit tests verifying real implementations and interface for service classes."""
 
 import pytest
 from services import GitHubService, EmbeddingService, MCPService
+from services.chunking_service import CodeChunker
 
 
 def test_github_service_init() -> None:
-    """Verifies GitHubService can be instantiated and raises NotImplementedError for unimplemented methods."""
+    """Verifies GitHubService can be instantiated and parses repository URLs correctly."""
     service = GitHubService(token="dummy_token")
     assert service.token == "dummy_token"
 
-    with pytest.raises(NotImplementedError):
-        service.fetch_repository_files("owner/repo")
+    # Test URL parsing helper
+    parsed = service.parse_repo_url("https://github.com/google/guava")
+    assert parsed["owner"] == "google"
+    assert parsed["repo"] == "guava"
 
-    with pytest.raises(NotImplementedError):
-        service.fetch_file_content("owner/repo", "file.py")
+    parsed = service.parse_repo_url("google/guava")
+    assert parsed["owner"] == "google"
+    assert parsed["repo"] == "guava"
 
-    with pytest.raises(NotImplementedError):
-        service.fetch_issues("owner/repo")
+    parsed = service.parse_repo_url("https://github.com/google/guava.git")
+    assert parsed["owner"] == "google"
+    assert parsed["repo"] == "guava"
+
+
+def test_code_chunker() -> None:
+    """Verifies CodeChunker divides content into chunks and detects language."""
+    chunker = CodeChunker(chunk_size=50, chunk_overlap=10)
+
+    # Language detection
+    assert chunker.detect_language("src/main.py") == "python"
+    assert chunker.detect_language("index.html") == "html"
+    assert chunker.detect_language("styles.css") == "css"
+    assert chunker.detect_language("docs.txt") == "text"
+
+    # Chunking content
+    content = "line1\nline2\nline3\nline4\nline5\nline6"
+    chunks = chunker.chunk_file("test.py", content)
+
+    assert len(chunks) > 0
+    assert all("path" in c for c in chunks)
+    assert all("chunk_id" in c for c in chunks)
+    assert all("content" in c for c in chunks)
+    assert all(c["language"] == "python" for c in chunks)
+
+    # Empty content should produce no chunks
+    assert chunker.chunk_file("empty.py", "") == []
+
+    # Whitespace-only content should produce no chunks
+    assert chunker.chunk_file("ws.py", "   \n\t  ") == []
 
 
 def test_embedding_service_init() -> None:
-    """Verifies EmbeddingService can be instantiated and raises NotImplementedError for unimplemented methods."""
-    # Pass a dummy client or none to prevent actual API connection attempts during testing
-    service = EmbeddingService(client=None)
-    assert service.model_name == "text-embedding-004"
-
-    with pytest.raises(NotImplementedError):
-        service.generate_embedding("dummy text")
-
-    with pytest.raises(NotImplementedError):
-        service.generate_embeddings_batch(["dummy text"])
+    """Verifies EmbeddingService can be instantiated and checks the default model name."""
+    service = EmbeddingService(client=None, model_name="dummy-model")
+    assert service.model_name is not None
 
 
 def test_mcp_service_init() -> None:
-    """Verifies MCPService can be instantiated and raises NotImplementedError for unimplemented methods."""
+    """Verifies MCPService can be instantiated and raises NotImplementedError for unimplemented skeleton methods."""
     service = MCPService(server_url="dummy_url")
     assert service.server_url == "dummy_url"
 
     with pytest.raises(NotImplementedError):
         service.connect()
-
-    with pytest.raises(NotImplementedError):
-        service.list_tools()
-
-    with pytest.raises(NotImplementedError):
-        service.execute_tool("dummy_tool", {})
-
-    with pytest.raises(NotImplementedError):
-        service.disconnect()

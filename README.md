@@ -1,263 +1,209 @@
-# 🔍 Repo Intelligence Agent
+# Repo Intelligence Agent
 
-[![Astro](https://img.shields.io/badge/Frontend-Astro%20%7C%20React%20Islands-FF5D01?style=flat-square&logo=astro&logoColor=white)](https://astro.build/)
-[![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![Gemini](https://img.shields.io/badge/AI%20Layer-Gemini%202.5%20Flash-blue?style=flat-square&logo=googlegemini&logoColor=white)](https://ai.google.dev/)
-[![ChromaDB](https://img.shields.io/badge/Memory-ChromaDB%20%2B%20SQLite-lightgrey?style=flat-square)](https://www.trychroma.com/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
-![Status](https://img.shields.io/badge/Status-In%20Development-blue)
-![Milestone](https://img.shields.io/badge/Milestone-v0.2-orange)
+![Astro](https://img.shields.io/badge/Frontend-Astro%20%7C%20React%20Islands-FF5D01?style=flat-square&logo=astro&logoColor=white)
+![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)
+![Gemini](https://img.shields.io/badge/AI%20Layer-Gemini%202.5%20Flash-blue?style=flat-square&logo=googlegemini&logoColor=white)
+![ChromaDB](https://img.shields.io/badge/Memory-ChromaDB%20%2B%20SQLite-lightgrey?style=flat-square)
+![Pytest](https://img.shields.io/badge/Tests-Pytest-Tests-blue?style=flat-square&logo=pytest)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
-> **GitHub About**: AI-powered repository intelligence for developers. Analyze architecture, map issues, understand codebases, and accelerate open-source contributions.
->
-> **GitHub Topics**: `ai`, `agents`, `gemini`, `astro`, `fastapi`, `developer-tools`, `open-source`, `repository-analysis`, `code-intelligence`, `chromadb`, `rag`
->
-> **GitHub Topics (comma-separated)**: `ai, agents, gemini, astro, fastapi, developer-tools, open-source, repository-analysis, code-intelligence, chromadb, rag`
+> AI-powered repository intelligence platform for understanding, navigating, and planning changes across large codebases.
 
----
+### What It Does
 
-## 💡 Problem Statement
+Repo Intelligence Agent helps developers:
 
-Developers spend a massive portion of their time reading and comprehending unfamiliar repositories before they can write a single line of meaningful code. Modern AI coding assistants excel at file-level autocomplete or single-file edits, but they struggle with **repository-level intelligence**. Understanding entry points, import flows, architectural decisions, and mapping an issue ticket to a multi-file code change checklist remains a slow, manual process.
-
-**Repo Intelligence Agent** reduces contributor onboarding time from days to minutes by indexing repositories, tracing architectural relationships, mapping complex issues directly to the files requiring modification, and exposing this intelligence through an interactive, multi-agent workspace.
+- Understand unfamiliar repositories
+- Discover architectural entry points
+- Follow guided onboarding paths
+- Predict change impact before implementation
+- Map issues to relevant code files
+- Generate implementation plans with source-backed context
 
 ---
 
-## 🎨 Screenshots
+## Problem Statement
 
-### Home Page
-*Coming Soon*
+Repository onboarding is slow because contributors must:
+- find entry points and how code paths connect,
+- understand architecture before proposing changes,
+- map issue text to the relevant files/components,
+- and iterate with confidence that proposed changes cover the right areas.
 
-### Repository Analysis
-*Coming Soon*
-
-### Issue Mapping
-*Coming Soon*
-
-### Repository Chat
-*Coming Soon*
+This project indexes repositories, builds architecture and dependency metadata, computes reading paths and impact analysis, and exposes the resulting intelligence through an API (including SSE streaming) and a frontend dashboard.
 
 ---
 
-## 🎥 Demo
+## Key Features
 
-### Demo
-
-Coming Soon
-
-The demo will showcase:
-* Repository Analysis
-* Architecture Mapping
-* Issue Mapping
-* Repository Chat
-* Architecture Graph
-
-The goal is to demonstrate repository-level intelligence rather than file-level autocomplete.
-
----
-
-## 🚀 Example Workflow
-
-To see how the Repo Intelligence Agent delivers repository-level understanding, consider running it against a complex codebase:
-
-* **Target Repository**: [langchain-ai/langchain](https://github.com/langchain-ai/langchain)
-* **Example Questions**:
-  * *How does memory work?*
-  * *Where is the main entry point?*
-  * *Which files should I modify to add a new retriever?*
-  * *Explain the architecture.*
-
-### Expected Output
-
-Upon analysis, the agent generates a comprehensive intelligence packet:
-
-1. **Repository Summary**: High-level purpose, tech stack, and structure detection.
-2. **Architecture Graph**: Interactive module dependency map tracing relationships.
-3. **Reading Order**: A curated step-by-step reading guide for developers to ramp up.
-4. **Relevant Files**: Pinpointed classes, hooks, and files relevant to memory and retrievers.
-5. **Implementation Plan**: A structured, file-by-file checklist detailing how to add the new retriever.
+| Category | Capability | Status |
+|---|---|---|
+| Repository Intelligence | Repository indexing (clone, parse, chunk, embed, store in ChromaDB) | ✅ |
+| Repository Intelligence | Retrieval QA (vector search + grounded answers) | ✅ |
+| Repository Intelligence | Repository chat with SSE streaming | ✅ |
+| Architecture Intelligence | Dependency graph + architecture graph APIs | ✅ |
+| Reading Path | Generate onboarding reading paths | ✅ |
+| Impact Analysis | Predict affected files/components for a proposed change | ✅ |
+| Issue Intelligence | Map issue text to implementation plan / file targets | ✅ |
+| Evaluation Layer | Confidence / evaluation integrated into the agent workflow | ✅ |
+| Visualizations | React Flow compatible graph output | ✅ |
 
 ---
 
-## 🏗️ Architecture Overview
+## Architecture Overview
 
-The system utilizes a decoupled, modern web architecture to coordinate streaming agent operations with low-latency memory stores.
+The backend is organized into focused services:
+
+- **GitHub Service** (clone + repo/branch handling)
+- **Chunking Service** (code chunking)
+- **Embedding Service** (Gemini embeddings; retry support)
+- **ChromaDB (Vector Store)** (persisted chunk/vector storage)
+- **Retrieval Service** (similarity search + grounded generation)
+- **Architecture Service** (architecture metadata + summary persistence)
+- **Graph Service** (dependency/graph visualization data for the frontend)
+- **Reading Order Service** (reading path generation)
+- **Impact Analysis Service** (impact prediction)
+- **Issue Mapper + Evaluation Agent** (issue-to-code mapping and confidence/evaluation)
 
 ```mermaid
-graph TD
-    %% Frontend
-    Astro[Astro Frontend + React Islands] -->|HTTP / SSE| FastAPI[FastAPI API Layer]
-    
-    %% Agent Layer
-    FastAPI --> Analyzer[Repository Analyzer]
-    FastAPI --> Explainer[Architecture Explainer]
-    FastAPI --> Mapper[Issue Mapper]
-    FastAPI --> Evaluator[Evaluation Agent]
-    
-    %% Memory Layer
-    Analyzer & Explainer & Mapper & Evaluator --> Memory[Memory Layer: ChromaDB + SQLite + JSON Cache]
-    
-    %% External Integrations
-    Memory & Analyzer & Explainer & Mapper & Evaluator --> Ext[External API Layer: GitHub API + MCP + Gemini]
+flowchart TB
+  U[Developer / API Client] -->|Questions, chats, proposed changes| API[FastAPI Backend API]
+
+  API --> Git[GitHub Service]
+  API --> OR[Reading Order Service]
+  API --> IA[Impact Analysis Service]
+  API --> IMS[Issue Mapper + Evaluation Agent]
+
+  Git --> Parse[Tree-sitter Parsing]
+  Parse --> Chunk[Chunking Service]
+  Chunk --> Embed[Embedding Service]
+  Embed --> Chroma[ChromaDB Vector Store]
+  Chroma --> Retrieve[Retrieval Service]
+  Retrieve --> Answer[Grounded Answers / Context]
+
+  API --> Arch[Architecture Service]
+  Arch --> Summary[Architecture Metadata Summary]
+  Arch --> Graph[Graph Service (React Flow data)]
+  OR --> ReadingPaths[Reading Path Timeline]
+  IA --> Impact[Impact Analysis Results]
+
+  IMS --> Plan[Implementation Targets / Plan Steps]
+  Answer --> Stream[SSE Streaming (Analyze / Chat)]
+  Plan --> Stream
+  Graph --> Frontend[Frontend Dashboard]
+  ReadingPaths --> Frontend
+  Impact --> Frontend
 ```
 
-### Technical Stack & Decisions
-
-* **Frontend**: Built with **Astro 4** and **React Islands**. Static portions are fast, and interactive features (like real-time chat, visual timeline, and terminal log streams) are powered by React components styled with **Tailwind CSS** and **shadcn/ui**.
-* **Backend**: **FastAPI** handles high-throughput requests and streams progress and word-by-word conversational chat answers via Server-Sent Events (SSE).
-* **AI & Agent Layer**: Orchestrated by **Antigravity Agents** running **Gemini 2.5 Flash** for repository-aware reasoning, combined with the **GitHub Model Context Protocol (MCP)** server for interacting with repository resources.
-* **Memory & Storage**:
-  * **ChromaDB**: Houses high-dimensional code snippet vector embeddings (using Gemini embeddings) for semantic search.
-  * **SQLite**: Manages query histories, repository logs, saved issue plans, and index metadata.
-  * **JSON Cache**: Minimizes Gemini API token overhead and stays clear of GitHub rate limits.
+> Note: Features called out as incomplete in `AUDIT_REPORT.md` are not presented here as completed.
 
 ---
 
-## 📂 Project Structure
+## Repository Intelligence Workflow
 
-```
-repo-intelligence-agent/
-├── agents/             # Specialized Python LLM agents
-│   ├── analyzer.py     # Scans repo structure, tech stack, and dependencies
-│   ├── explainer.py    # Explains system architecture and component relationships
-│   ├── issue_mapper.py # Maps issues to codebase files and creates change plans
-│   └── evaluator.py    # Quality check, citation validator, and confidence scorer
-├── backend/            # FastAPI backend layer exposing agents to REST/SSE endpoints
-│   ├── api.py          # FastAPI application server and endpoints
-│   └── main.py         # Uvicorn entry point
-├── docs/               # System architecture design documentation
-├── frontend/           # Modern Astro + React + Tailwind CSS client dashboard
-│   ├── src/
-│   │   ├── components/  # Navbar and React interactive elements (Chat, FileTree, Dashboard, Timeline)
-│   │   ├── layouts/     # Standard page wrappers with SEO meta tags
-│   │   └── pages/       # File-based routing pages (Index, Chat, Issues, Analysis)
-│   ├── astro.config.mjs
-│   ├── tailwind.config.mjs
-│   └── package.json
-├── memory/             # Storage and retrieval layers
-│   ├── cache.py        # Local JSON cache for query results
-│   ├── chroma_store.py # ChromaDB client setup and document indexing
-│   └── sqlite_store.py # SQLite database for tracking queries, issue plans, and repos
-├── models/             # Shared Pydantic data schemas
-│   └── schemas.py      # RepositoryAnalysis, ArchitectureSummary, ImplementationPlan, EvaluationResult
-├── services/           # External service integration wrappers
-│   ├── embedding_service.py # Gemini embeddings client
-│   ├── github_service.py    # GitHub Repository cloning and issue retrieval
-│   └── mcp_service.py       # Model Context Protocol integration
-├── tests/              # Pytest backend API and agent unit tests
-├── requirements.txt    # Python backend dependencies
-└── .env.example        # Local environment configuration template
-```
+1. Clone repository (GitHub URL / owner+repo)
+2. Parse codebase (tree-sitter) and extract relevant structures
+3. Chunk source files
+4. Generate embeddings
+5. Store embeddings in ChromaDB
+6. Build dependency graph + architecture metadata
+7. Generate reading paths
+8. Run impact analysis for a proposed change
+9. Answer questions via retrieval (and/or chat)
+10. Map issues to implementation targets
+11. Evaluate results and provide confidence signals
 
 ---
 
-## 📊 Current Status
+## API Reference
 
-Current Progress:
+All endpoints below are documented from the routes implemented in `backend/api.py`.
 
-✅ Architecture Foundation
+### Indexing / Retrieval
+- `POST /api/index`
+- `POST /api/retrieve`
 
-✅ Astro Frontend Migration
+### Analysis (SSE streaming)
+- `POST /api/analyze`
 
-🚧 Repository Intelligence Engine
+### Chat (SSE streaming)
+- `POST /api/chat`
 
-🚧 Memory & Retrieval
+### Issue Intelligence
+- `POST /api/issues/map`
 
-⏳ Issue Intelligence
+### Reading Path / Impact Analysis
+- `POST /api/reading-order`
+- `POST /api/impact-analysis`
 
-⏳ Evaluation Layer
+### Architecture (build + summary + graph)
+- `POST /api/architecture/build`
+- `GET /api/architecture/{owner}/{repo_name}`
+- `GET /api/architecture/{owner}/{repo_name}/graph`
 
-⏳ Production Deployment
-
----
-
-## 🎯 Roadmap & Milestones
-
-- [x] **Milestone 1: Architecture Foundation** — Decoupled FastAPI backend skeleton, shared Pydantic schemas, mock endpoints, and test suites.
-- [80%] **Milestone 2: Astro Frontend** 🚧 — Astro dashboard setup, Tailwind & shadcn styling, and React Islands for interactive widgets.
-- [ ] **Milestone 3: Repository Intelligence** — Direct AST scanning, language parser services, and repository summarizer implementation.
-- [ ] **Milestone 4: Memory & Retrieval** — ChromaDB indexing pipelines for code blocks and SQLite schemas for metadata.
-- [ ] **Milestone 5: Issue Intelligence** — Issue mapper agent powered by semantic retrieval and plan-generation heuristics.
-- [ ] **Milestone 6: Evaluation** — Citation-checking evaluator agent to run automated sanity checks.
-- [ ] **Milestone 7: Production Deployment** — Containerization (Docker), deployment manifests, and production configuration.
-
----
-
-## ✨ Future Vision
-
-Repo Intelligence Agent aims to become a repository-aware engineering assistant capable of helping developers understand, navigate, and contribute to large codebases more effectively.
+### Repository Examples / Listings / Raw Analysis
+- `GET /api/repos/examples`
+- `GET /api/repos/recent`
+- `GET /api/analysis/{owner}/{repo_name}`
 
 ---
 
-## 👥 Contributing
+## Screenshots
 
-We welcome contributions from the open-source community!
+> Placeholders (replace with actual UI captures when available):
 
-1. Fork the repository.
-2. Create a feature branch: `git checkout -b feature/cool-feature`.
-3. Commit your changes: `git commit -m "Add some cool feature"`.
-4. Push to the branch: `git push origin feature/cool-feature`.
-5. Open a Pull Request.
-
-Please see our [System Architecture](docs/architecture.md) for a technical deep-dive before writing code.
+- Architecture Graph: `![Architecture Graph](./docs/architecture-graph.png)`
+- Reading Path: `![Reading Path](./docs/reading-path.png)`
+- Impact Analysis: `![Impact Analysis](./docs/impact-analysis.png)`
+- Issue Intelligence: `![Issue Intelligence](./docs/issue-intelligence.png)`
+- Repository Chat: `![Repository Chat](./docs/repository-chat.png)`
 
 ---
 
-## 🔒 Open Source First
+## Validation Results
 
-Repo Intelligence Agent is designed to help contributors navigate and understand large open-source codebases, making collaboration faster and more accessible. We believe that democratization of code-level intelligence empowers a wider and more diverse range of developers to participate in the open-source ecosystem.
-
----
-
-## 📈 Why This Project Matters
-
-Developers spend significant time understanding unfamiliar repositories before making meaningful contributions. Repo Intelligence Agent aims to reduce onboarding time by providing repository-level intelligence rather than file-level autocomplete. Focus areas include:
-
-* **Repository-level intelligence**: Comprehending multi-file workflows and entry-point structures instead of single-line auto-completions.
-* **Faster onboarding**: Providing curated reading lists and dependency routing to guide new developers in their onboarding process.
-* **Open-source contribution workflows**: Automating the lookup from a GitHub issue description directly to targeted codebase paths.
-* **Engineering productivity**: Empowering developers to answer complex repository questions using citations to save manual architecture reverse-engineering.
+- Automated test coverage is present in the repository.
+- README does not claim exact passing test counts because test execution in this environment failed during collection (vendored dependencies under `data/cloned_repos/` were discovered by pytest).
 
 ---
 
-## 🛠️ Getting Started
+## Roadmap (Not Fully Implemented / Planned)
 
-Follow these steps to configure and boot up the application in a local development environment.
+The following items are explicitly called out as incomplete or not wired in `AUDIT_REPORT.md`:
 
-### 1. Configure Credentials
-Copy `.env.example` to `.env` and fill in the required API keys and access tokens:
+- Repository Analyzer completion (`agents/analyzer.py` contains TODO / NotImplementedError)
+- Architecture Explainer integration (`agents/explainer.py` not wired into active endpoints)
+- SQLite metadata persistence layer
+- JSON cache layer
+- Multi-repository intelligence
+- Hybrid retrieval
+- Production deployment
+
+---
+
+## Installation
+
+### Backend
 ```bash
-cp .env.example .env
+pip install -r requirements.txt
+python backend/main.py
 ```
 
-### 2. Start the Backend API Server
-1. Install Python dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-2. Start the FastAPI server on `http://127.0.0.1:8000`:
-   ```bash
-   python backend/main.py
-   ```
-3. Verify the API runs successfully by running the test suite:
-   ```bash
-   pytest
-   ```
+### Frontend
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-### 3. Start the Frontend Application
-1. Navigate to the frontend directory:
-   ```bash
-   cd frontend
-   ```
-2. Install Node packages:
-   ```bash
-   npm install
-   ```
-3. Run the Astro development server on `http://localhost:4321`:
-   ```bash
-   npm run dev
-   ```
+---
 
-Open `http://localhost:4321` in your browser. All frontend requests targeting `/api` will be proxied automatically to the Python server on port `8000`.
+## Contributing
 
+Contributions are welcome. Please open a PR with clear descriptions and test coverage for any changes that affect API schemas, agent behavior, or stored metadata.
+
+---
+
+## License
+
+MIT © 2026 Repo Intelligence Agent

@@ -1,0 +1,10 @@
+---
+import Layout from '../layouts/Layout.astro';
+import AnalysisDashboard from '../components/interactive/AnalysisDashboard';
+---
+
+<Layout title="Repository Analysis - Repo Intelligence Agent">
+  <div class="flex-grow flex flex-col">
+    <AnalysisDashboard client:only="react" />
+  </div>
+</Layout>

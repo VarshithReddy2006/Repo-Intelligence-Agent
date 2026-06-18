@@ -101,7 +101,8 @@ def render_sidebar() -> None:
     
     # API key configuration status indicators
     st.sidebar.markdown("### API Credentials Status")
-    st.sidebar.info("🔑 GEMINI_API_KEY: Configured (Env)")
+    st.sidebar.info("🤖 DEEPSEEK: ACTIVE")
+    st.sidebar.info("🧩 BGE: ACTIVE")
     st.sidebar.success("🎫 GITHUB_TOKEN: Active")
 
 

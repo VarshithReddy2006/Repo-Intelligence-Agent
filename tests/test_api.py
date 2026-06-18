@@ -43,6 +43,23 @@ def test_map_issue() -> None:
     data = response.json()
     assert "issue_summary" in data
     assert "relevant_files" in data
-    assert "steps" in data
-    assert len(data["steps"]) > 0
-    assert "step_number" in data["steps"][0]
+    assert "implementation_plan" in data
+    assert "issue_type" in data
+    assert "complexity" in data
+    assert "confidence" in data
+    assert "verified" in data
+    assert "sources" in data
+    assert "affected_components" in data
+
+
+def test_index_invalid_repo_url_returns_400() -> None:
+    """Invalid GitHub repo URL should not crash and should return 4xx."""
+    response = client.post("/api/index", json={"repo_url": "hello"})
+    assert response.status_code in (400, 422)
+
+
+def test_index_nonexistent_repo_returns_404() -> None:
+    """Nonexistent repository should map to 404 not 500."""
+    response = client.post("/api/index", json={"repo_url": "https://github.com/this-repo-should-not-exist-1234567890/does-not-exist"})
+    # Depending on environment/network, 404 mapping should happen; otherwise this test may fail.
+    assert response.status_code in (404,)

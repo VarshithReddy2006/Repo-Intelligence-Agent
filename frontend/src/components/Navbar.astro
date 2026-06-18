@@ -3,7 +3,7 @@ const pathname = new URL(Astro.request.url).pathname;
 
 const navLinks = [
   { href: '/', label: 'Home' },
-  { href: '/issues', label: 'Issues Mapping' },
+  { href: '/issues', label: 'Issue Intelligence' },
   { href: '/chat', label: 'Repository Chat' }
 ];
 
@@ -48,6 +48,12 @@ const isAnalysisActive = pathname.startsWith('/analysis');
     <!-- Right Side API Status & Actions -->
     <div class="flex items-center gap-4 text-xs font-mono">
       <div class="hidden sm:flex items-center gap-3 border border-border bg-card px-3 py-1.5 rounded-md">
+        <div class="flex items-center gap-1.5" id="backend-status-container">
+          <span class="h-2 w-2 rounded-full bg-zinc-500 animate-pulse"></span>
+          <span class="text-text-muted">BACKEND:</span>
+          <span class="text-text">CHECKING</span>
+        </div>
+        <div class="h-3 w-[1px] bg-border"></div>
         <div class="flex items-center gap-1.5">
           <span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
           <span class="text-text-muted">GEMINI:</span>
@@ -72,3 +78,30 @@ const isAnalysisActive = pathname.startsWith('/analysis');
     </div>
   </div>
 </header>
+
+<script>
+  import { checkBackendHealth } from '../lib/api';
+
+  async function updateStatus() {
+    const container = document.getElementById('backend-status-container');
+    if (!container) return;
+
+    const isOnline = await checkBackendHealth();
+    if (isOnline) {
+      container.innerHTML = `
+        <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
+        <span class="text-emerald-500 font-semibold">🟢 Backend Online</span>
+      `;
+    } else {
+      container.innerHTML = `
+        <span class="h-2 w-2 rounded-full bg-rose-500 animate-pulse"></span>
+        <span class="text-rose-500 font-semibold">🔴 Backend Offline</span>
+      `;
+    }
+  }
+
+  // Check health immediately
+  updateStatus();
+  // Poll health status
+  setInterval(updateStatus, 8000);
+</script>
