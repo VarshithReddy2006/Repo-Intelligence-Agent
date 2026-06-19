@@ -4,11 +4,16 @@ Provides endpoints for repository analysis, indexing, semantic retrieval, and
 repository chat, interacting with agents and memory layers.
 
 AI provider: DeepSeek V4 Flash via NVIDIA NIM (ProviderFactory).
-Embeddings:  Local BAAI/bge-large-en-v1.5 via sentence-transformers.
+Embeddings:  Local BAAI/bge-small-en-v1.5 via sentence-transformers.
 """
 
 import sys
 import os
+
+# Load .env before any service reads os.environ
+from dotenv import load_dotenv
+load_dotenv()
+
 import asyncio
 import json
 import logging
@@ -70,8 +75,8 @@ def health():
     return {
         "backend": "online",
         "llm_provider": "deepseek",
-        "llm_model": os.environ.get("DEEPSEEK_MODEL", "deepseek-ai/deepseek-r1"),
-        "embedding_provider": "bge-large-en-v1.5",
+        "llm_model": os.environ.get("DEEPSEEK_MODEL", "deepseek-ai/deepseek-v4-flash"),
+        "embedding_provider": "bge-small-en-v1.5",
         "vector_db": "chromadb",
         "status": "healthy",
     }
@@ -110,7 +115,7 @@ arch_context_service = ArchContextService(architecture_service=architecture_serv
 class AnalyzeRequest(BaseModel):
     url: str = Field(..., description="GitHub repository URL")
     branch: str = Field("main", description="Git branch or ref")
-    model: str = Field("deepseek-ai/deepseek-r1", description="LLM model variant to use")
+    model: str = Field("deepseek-ai/deepseek-v4-flash", description="LLM model variant to use")
 
 
 class IndexRequest(BaseModel):
@@ -433,9 +438,6 @@ async def analyze_repository(request: AnalyzeRequest):
             stage_start = time.perf_counter()
             yield f"data: {json.dumps({'status': 'embedding', 'message': 'START: embeddings'})}\n\n"
 
-            total_chars = sum(len(c.get("content", "")) if isinstance(c, dict) else len(str(c)) for c in all_chunks)
-            print(f"[PIPELINE] Total chunks = {len(all_chunks)}")
-            print(f"[PIPELINE] Total characters = {total_chars}")
             embeddings = []
             if all_chunks:
                 logger.info(
@@ -455,6 +457,7 @@ async def analyze_repository(request: AnalyzeRequest):
             else:
                 logger.info("[PIPELINE:%s] EMBEDDING skipped (no chunks)", repo_name)
             yield f"data: {json.dumps({'status': 'embedding', 'message': 'END: embeddings'})}\n\n"
+
 
             stage_start = time.perf_counter()
             yield f"data: {json.dumps({'status': 'chroma', 'message': 'START: chroma indexing'})}\n\n"
@@ -553,45 +556,26 @@ async def get_analysis_details(owner: str, repo_name: str):
 @app.post("/api/issues/map", response_model=IssueMapResponse)
 async def map_issue(request: IssueMapRequest):
     """Analyse a GitHub issue and return the implementation plan and relevant files."""
-    try:
-        title = request.issue if request.issue else (request.title or "")
-        description = "" if request.issue else (request.description or "")
+    title = request.issue if request.issue else (request.title or "")
+    description = "" if request.issue else (request.description or "")
 
+    if not title.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Issue title or issue text must be provided.",
+        )
+
+    try:
         mapper = IssueMapper(
             embedding_service=embedding_service, chroma_store=chroma_store
         )
         plan = mapper.map_issue(request.repo, title, description)
         return plan
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("Failed to map issue: %s", e, exc_info=True)
-        return IssueMapResponse(
-            issue_summary=f"Resolve issue: {request.title or 'Unknown Issue'}",
-            issue_type="feature",
-            relevant_files=[
-                "backend/api.py",
-                "frontend/src/components/interactive/Timeline.tsx",
-                "models/schemas.py",
-            ],
-            affected_components=["API Layer", "Frontend"],
-            implementation_plan=[
-                {
-                    "step_number": 1,
-                    "description": "Expose the Event Stream status updates correctly from backend/api.py.",
-                    "files_to_modify": ["backend/api.py"],
-                },
-                {
-                    "step_number": 2,
-                    "description": "Listen to SSE in the frontend React Timeline component.",
-                    "files_to_modify": [
-                        "frontend/src/components/interactive/Timeline.tsx"
-                    ],
-                },
-            ],
-            complexity="medium",
-            confidence=80,
-            verified=True,
-            sources=["backend/api.py", "frontend/src/components/interactive/Timeline.tsx"],
-        )
+        raise HTTPException(status_code=500, detail=f"Issue mapping failed: {str(e)}")
 
 
 @app.post("/api/chat")

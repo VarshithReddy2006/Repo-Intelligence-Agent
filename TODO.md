@@ -1,5 +1,0 @@
-- [ ] Add temporary timing/diagnostic logs around analyze pipeline stages in backend/api.py
-- [ ] Add temporary logs in services/embedding_service.py around model load and batch encoding
-- [ ] Add temporary logs in memory/chroma_store.py around delete/add batch timings
-- [ ] Run analyze again for failing repo and capture logs to identify the blocking function
-- [ ] Produce root-cause report (Root Cause / Evidence / Severity / Recommended minimal fix / Expected Result) without further logic changes

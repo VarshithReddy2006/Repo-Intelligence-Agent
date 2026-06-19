@@ -15,8 +15,8 @@ from .base_provider import BaseLLMProvider
 logger = logging.getLogger(__name__)
 
 _RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
-_DEFAULT_MAX_RETRIES = 4
-_DEFAULT_INITIAL_DELAY = 1.0
+_DEFAULT_MAX_RETRIES = 2       # reduced for MVP — fail fast on sustained 429
+_DEFAULT_INITIAL_DELAY = 5.0
 _DEFAULT_BACKOFF_FACTOR = 2.0
 _DEFAULT_TIMEOUT = 120.0
 
@@ -38,7 +38,7 @@ class DeepSeekProvider(BaseLLMProvider):
             or os.environ.get("DEEPSEEK_BASE_URL", "https://integrate.api.nvidia.com/v1")
         ).rstrip("/")
         self.model = model or os.environ.get(
-            "DEEPSEEK_MODEL", "deepseek-ai/deepseek-r1"
+            "DEEPSEEK_MODEL", "deepseek-ai/deepseek-v4-flash"
         )
         self.max_retries = max_retries
         self.timeout = timeout

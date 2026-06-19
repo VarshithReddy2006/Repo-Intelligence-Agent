@@ -3,9 +3,10 @@
 Responsible for taking GitHub issues, identifying files relevant to those issues,
 and generating step-by-step implementation plans to solve/resolve them.
 
-Phase 2 addition: Architecture context (entry points, core modules, high-coupling
-files) is injected into every prompt so the model understands the repository's
-structural boundaries before generating an implementation plan.
+MVP mode: maximum 2 LLM calls per request.
+  Call 1 — parse_and_rank:  parse issue + rerank retrieved files in one prompt.
+  Call 2 — generate_plan:   produce implementation plan grounded in chunk content.
+  Evaluator disabled — confidence derived from retrieval distance scores.
 
 AI provider: DeepSeek V4 Flash via NVIDIA NIM (ProviderFactory).
 """
@@ -17,13 +18,11 @@ import logging
 import os
 from typing import List, Dict, Any, Optional
 
-from models.schemas import ImplementationPlan
 from services.embedding_service import EmbeddingService
 from services.arch_context_service import ArchContextService
 from services.issue_retrieval_service import IssueRetrievalService
 from services.llm import ProviderFactory, BaseLLMProvider
 from memory.chroma_store import ChromaStore
-from agents.evaluator import EvaluationAgent
 
 logger = logging.getLogger(__name__)
 
@@ -52,312 +51,20 @@ def save_cache(cache: dict) -> None:
 ISSUE_CACHE = load_cache()
 
 
-class IssueMapper:
-    """Agent that maps GitHub issues to relevant codebase files and creates implementation plans."""
+def _distance_confidence(chunks: List[dict]) -> int:
+    """Derive a 0-100 confidence score from retrieval distance scores.
 
-    def __init__(
-        self,
-        embedding_service: Optional[EmbeddingService] = None,
-        chroma_store: Optional[ChromaStore] = None,
-        client: Any = None,                              # ignored — legacy Gemini arg
-        arch_context_service: Optional[ArchContextService] = None,
-        issue_retrieval_service: Optional[IssueRetrievalService] = None,
-        provider: Optional[BaseLLMProvider] = None,
-    ) -> None:
-        self._provider = provider or ProviderFactory.get_provider()
+    Lower Chroma L2 distance → higher similarity → higher confidence.
+    Returns an integer in [40, 95].
+    """
+    if not chunks:
+        return 40
+    distances = [c.get("distance", 1.0) for c in chunks]
+    avg_dist = sum(distances) / len(distances)
+    # Convert distance to similarity: sim = 1 / (1 + dist), scale to 40-95
+    similarity = 1.0 / (1.0 + avg_dist)
+    return int(40 + similarity * 55)
 
-        if embedding_service is None:
-            self.embedding_service = EmbeddingService()
-        else:
-            self.embedding_service = embedding_service
-
-        if chroma_store is None:
-            CHROMA_DB_PATH = os.environ.get("CHROMA_DB_PATH", "data/chroma_db")
-            self.chroma_store = ChromaStore(persist_directory=CHROMA_DB_PATH)
-        else:
-            self.chroma_store = chroma_store
-
-        self.arch_context_service = arch_context_service or ArchContextService()
-        self.issue_retrieval_service = issue_retrieval_service or IssueRetrievalService(
-            embedding_service=self.embedding_service,
-            chroma_store=self.chroma_store,
-        )
-
-    # ------------------------------------------------------------------
-    # Internal async helpers
-    # ------------------------------------------------------------------
-
-    async def _parse_issue_async(self, repo_name: str, issue_text: str) -> dict:
-        system_instr = (
-            "You are an expert software engineer assistant. "
-            "Analyse the given issue text and extract structured information. "
-            "Return a JSON object conforming exactly to this schema:\n"
-            "{\n"
-            "  \"summary\": \"A concise one-line summary of the core problem or request\",\n"
-            "  \"issue_type\": \"feature\" | \"bug\" | \"refactor\",\n"
-            "  \"keywords\": [\"list\", \"of\", \"search\", \"keywords\"],\n"
-            "  \"affected_domains\": [\"list\", \"of\", \"likely\", \"affected\", \"functional\", \"areas\"]\n"
-            "}"
-        )
-        prompt = f"Issue Text:\n{issue_text}"
-        raw = await self._provider.generate(
-            prompt=prompt,
-            system_instruction=system_instr,
-            response_mime_type="application/json",
-        )
-        data = json.loads(raw)
-        data.setdefault("summary", "")
-        data.setdefault("issue_type", "feature")
-        data.setdefault("keywords", [])
-        data.setdefault("affected_domains", [])
-        return data
-
-    async def _identify_relevant_files_async(
-        self,
-        repo_name: str,
-        issue_text: str,
-        keywords: List[str],
-        chunks: List[dict],
-    ) -> List[dict]:
-        if not chunks:
-            return []
-
-        formatted_candidates = []
-        for idx, c in enumerate(chunks):
-            meta = c.get("metadata", {})
-            file_path = meta.get("file_path", "unknown")
-            content = c.get("content", "")
-            formatted_candidates.append(
-                f"Candidate [{idx}] - File: {file_path}\n{content[:300]}..."
-            )
-        candidates_str = "\n\n".join(formatted_candidates)
-
-        system_instr = (
-            "You are an expert developer assistant. "
-            "Evaluate the relevance of candidate files to the GitHub issue. "
-            "Identify up to 10 unique files that are most relevant to solving the issue. "
-            "Assign a relevance score (between 0.0 and 1.0) to each file. "
-            "Return a JSON object conforming exactly to this schema:\n"
-            "{\n"
-            "  \"files\": [\n"
-            "    {\"path\": \"file_path\", \"score\": 0.95}\n"
-            "  ]\n"
-            "}"
-        )
-        prompt = (
-            f"GitHub Issue:\n{issue_text}\n\n"
-            f"Candidate codebase snippets:\n{candidates_str}\n"
-        )
-        try:
-            raw = await self._provider.generate(
-                prompt=prompt,
-                system_instruction=system_instr,
-                response_mime_type="application/json",
-            )
-            top_files = json.loads(raw).get("files", [])
-            return [
-                {"path": f.get("path", ""), "score": float(f.get("score", 0.0))}
-                for f in top_files
-                if f.get("path")
-            ]
-        except Exception as exc:
-            logger.error("File reranking failed: %s — falling back to distance scores.", exc)
-            file_scores: Dict[str, float] = {}
-            for chunk in chunks:
-                meta = chunk.get("metadata", {})
-                path = meta.get("file_path", "unknown")
-                dist = chunk.get("distance", 1.0)
-                score = 1.0 / (1.0 + dist)
-                if path != "unknown":
-                    file_scores[path] = max(file_scores.get(path, 0.0), score)
-            sorted_files = sorted(file_scores.items(), key=lambda x: x[1], reverse=True)[:10]
-            return [{"path": p, "score": round(s, 2)} for p, s in sorted_files]
-
-    async def _generate_plan_async(
-        self,
-        issue_text: str,
-        parsed: dict,
-        relevant_files: List[str],
-        arch_block: str,
-    ) -> dict:
-        system_instr = (
-            "You are a Repo Intelligence Agent. Generate a detailed, repository-specific Implementation Plan for the given issue. "
-            "You must identify the affected components from this exact list: ['Authentication', 'API Layer', 'Database', 'Frontend', 'Services', 'Models']. "
-            "Estimate complexity as 'low', 'medium', or 'high'. "
-            "Provide step-by-step implementation instructions specific to the repository structure and relevant files. "
-            "Return a JSON object matching this schema:\n"
-            "{\n"
-            "  \"affected_components\": [\"API Layer\"],\n"
-            "  \"complexity\": \"medium\",\n"
-            "  \"steps\": [\n"
-            "    {\n"
-            "      \"step_number\": 1,\n"
-            "      \"description\": \"Detailed description\",\n"
-            "      \"files_to_modify\": [\"file_path\"]\n"
-            "    }\n"
-            "  ],\n"
-            "  \"risk_areas\": [\"potential side effects\"],\n"
-            "  \"dependencies\": [\"required dependencies\"]\n"
-            "}"
-        )
-        file_paths_str = ", ".join(relevant_files)
-        arch_section = f"\n{arch_block}\n" if arch_block else ""
-        prompt = (
-            f"{arch_section}"
-            f"GitHub Issue:\n{issue_text}\n\n"
-            f"Parsed Summary: {parsed['summary']}\n"
-            f"Relevant Files Candidates: {file_paths_str}\n\n"
-            "Generate the implementation plan, affected components, and complexity."
-        )
-        raw = await self._provider.generate(
-            prompt=prompt,
-            system_instruction=system_instr,
-            response_mime_type="application/json",
-        )
-        return json.loads(raw)
-
-    # ------------------------------------------------------------------
-    # Public synchronous interface (unchanged signature)
-    # ------------------------------------------------------------------
-
-    def parse_issue(self, repo_name: str, issue_text: str) -> dict:
-        """Parse a GitHub issue using the LLM and cache the result."""
-        issue_hash = hashlib.sha256(issue_text.strip().encode("utf-8")).hexdigest()
-        cache_key = f"{repo_name}:{issue_hash}"
-
-        global ISSUE_CACHE
-        if cache_key in ISSUE_CACHE:
-            logger.info("Found issue parse results in cache.")
-            return ISSUE_CACHE[cache_key]
-
-        try:
-            data = _run_async(self._parse_issue_async(repo_name, issue_text))
-            ISSUE_CACHE[cache_key] = data
-            save_cache(ISSUE_CACHE)
-            return data
-        except Exception as exc:
-            logger.error("Failed to parse issue: %s", exc)
-            return {
-                "summary": issue_text.split("\n")[0][:100],
-                "issue_type": "feature",
-                "keywords": [w for w in issue_text.split() if len(w) > 4][:5],
-                "affected_domains": ["Services"],
-            }
-
-    def identify_relevant_files(
-        self, repo_name: str, issue_text: str, keywords: List[str]
-    ) -> List[dict]:
-        """Query the codebase index and rerank files for relevance."""
-        search_query = f"{issue_text} {' '.join(keywords)}"
-        try:
-            chunks = self.issue_retrieval_service.retrieve_issue_context(
-                repo_name=repo_name, issue_text=search_query, limit=20
-            )
-        except Exception as exc:
-            logger.error("Issue context retrieval failed: %s", exc)
-            return []
-
-        try:
-            return _run_async(
-                self._identify_relevant_files_async(repo_name, issue_text, keywords, chunks)
-            )
-        except Exception as exc:
-            logger.error("identify_relevant_files async failed: %s", exc)
-            return []
-
-    def map_issue(self, repo_name: str, issue_title: str, issue_body: str) -> dict:
-        """Process a GitHub issue to generate a complete intelligence plan."""
-        issue_text = f"{issue_title}\n{issue_body}".strip()
-
-        # 1. Parse
-        parsed = self.parse_issue(repo_name, issue_text)
-
-        # 2. Retrieve context chunks once (reused for file identification + evaluation)
-        try:
-            chunks = self.issue_retrieval_service.retrieve_issue_context(
-                repo_name=repo_name, issue_text=issue_text, limit=20
-            )
-        except Exception as exc:
-            logger.error("Issue context retrieval failed: %s", exc)
-            chunks = []
-
-        # 3. Identify relevant files
-        scored_files = self.identify_relevant_files(
-            repo_name, issue_text, parsed.get("keywords", [])
-        )
-        relevant_files = [f["path"] for f in scored_files]
-
-        # 4. Architecture context
-        arch_ctx = self.arch_context_service.get_context(repo_name)
-        arch_block = arch_ctx.to_prompt_block()
-
-        # 5. Generate implementation plan
-        try:
-            plan_data = _run_async(
-                self._generate_plan_async(issue_text, parsed, relevant_files, arch_block)
-            )
-        except Exception as exc:
-            logger.error("Implementation plan generation failed: %s", exc)
-            plan_data = {
-                "affected_components": ["Services"],
-                "complexity": "low",
-                "steps": [
-                    {
-                        "step_number": 1,
-                        "description": f"Investigate codebase files: {', '.join(relevant_files)}",
-                        "files_to_modify": relevant_files[:1] if relevant_files else [],
-                    }
-                ],
-                "risk_areas": ["Manual review required"],
-                "dependencies": [],
-            }
-
-        # 6. Evaluate
-        try:
-            evaluator = EvaluationAgent(provider=self._provider)
-            response_str = "Plan Steps:\n" + "\n".join(
-                f"Step {s['step_number']}: {s['description']} (files: {', '.join(s['files_to_modify'])})"
-                for s in plan_data.get("steps", [])
-            )
-            eval_result = evaluator.evaluate_response(
-                prompt=issue_text, response=response_str, source_contexts=chunks
-            )
-            confidence = int(eval_result.confidence_score * 100)
-            verified = eval_result.citations_valid and not eval_result.hallucination_detected
-            sources = list(
-                {c.get("file_path", "") for c in eval_result.chunk_citations if c.get("file_path")}
-            )
-        except Exception as exc:
-            logger.error("Evaluation failed: %s", exc)
-            confidence = 80
-            verified = True
-            sources = []
-
-        if not sources:
-            sources = list(
-                {
-                    c.get("metadata", {}).get("file_path", "")
-                    for c in chunks
-                    if c.get("metadata", {}).get("file_path")
-                }
-            )
-
-        return {
-            "issue_summary": parsed.get("summary", ""),
-            "issue_type": parsed.get("issue_type", "feature"),
-            "relevant_files": relevant_files,
-            "affected_components": plan_data.get("affected_components", ["Services"]),
-            "implementation_plan": plan_data.get("steps", []),
-            "complexity": plan_data.get("complexity", "medium"),
-            "confidence": confidence,
-            "verified": verified,
-            "sources": sorted(sources),
-        }
-
-
-# ---------------------------------------------------------------------------
-# Async helper
-# ---------------------------------------------------------------------------
 
 def _run_async(coro):
     """Run a coroutine from synchronous code, handling both running and idle loops."""
@@ -371,3 +78,442 @@ def _run_async(coro):
             return loop.run_until_complete(coro)
     except RuntimeError:
         return asyncio.run(coro)
+
+
+class IssueMapper:
+    """Agent that maps GitHub issues to relevant codebase files and creates implementation plans.
+
+    MVP mode uses exactly 2 LLM calls:
+      1. parse_and_rank  — issue parsing + file relevance ranking (merged)
+      2. generate_plan   — grounded implementation plan
+    """
+
+    def __init__(
+        self,
+        embedding_service: Optional[EmbeddingService] = None,
+        chroma_store: Optional[ChromaStore] = None,
+        client: Any = None,                    # ignored — legacy Gemini arg
+        arch_context_service: Optional[ArchContextService] = None,
+        issue_retrieval_service: Optional[IssueRetrievalService] = None,
+        provider: Optional[BaseLLMProvider] = None,
+    ) -> None:
+        self._provider = provider or ProviderFactory.get_provider()
+
+        self.embedding_service = embedding_service or EmbeddingService()
+        self.chroma_store = chroma_store or ChromaStore(
+            persist_directory=os.environ.get("CHROMA_DB_PATH", "data/chroma_db")
+        )
+        self.arch_context_service = arch_context_service or ArchContextService()
+        self.issue_retrieval_service = issue_retrieval_service or IssueRetrievalService(
+            embedding_service=self.embedding_service,
+            chroma_store=self.chroma_store,
+        )
+
+    # ------------------------------------------------------------------
+    # LLM Call 1: parse issue + rank files in a single prompt
+    # ------------------------------------------------------------------
+
+    async def _parse_and_rank_async(
+        self,
+        issue_text: str,
+        chunks: List[dict],
+    ) -> dict:
+        """Single LLM call: extract issue metadata AND rank retrieved files.
+
+        Returns:
+            {
+                "summary": str,
+                "issue_type": "bug"|"feature"|"refactor",
+                "keywords": [...],
+                "affected_domains": [...],
+                "files": [{"path": str, "score": float}, ...]
+            }
+        """
+        # Build candidate block — 800 chars per chunk for meaningful context
+        candidate_lines = []
+        for idx, c in enumerate(chunks):
+            meta = c.get("metadata", {})
+            path = meta.get("file_path", "unknown")
+            content = c.get("content", "")
+            candidate_lines.append(
+                f"[{idx}] {path}\n{content[:800]}"
+            )
+        candidates_str = "\n\n---\n\n".join(candidate_lines) if candidate_lines else "No candidates."
+
+        system_instr = (
+            "You are an expert software engineer. You will receive a GitHub issue and a set of "
+            "retrieved codebase snippets. Perform two tasks in one response:\n"
+            "TASK 1 — Parse the issue: extract a summary, type, keywords, and affected domains.\n"
+            "TASK 2 — Rank the retrieved snippets: identify up to 10 unique file paths most "
+            "relevant to solving the issue. Assign each a relevance score 0.0-1.0.\n"
+            "Base file ranking ONLY on the provided snippets — do not invent file paths.\n"
+            "Return a single JSON object matching this schema exactly:\n"
+            "{\n"
+            "  \"summary\": \"concise one-line description of the issue\",\n"
+            "  \"issue_type\": \"bug\",\n"
+            "  \"keywords\": [\"keyword1\", \"keyword2\"],\n"
+            "  \"affected_domains\": [\"auth\", \"frontend\"],\n"
+            "  \"files\": [\n"
+            "    {\"path\": \"exact/path/from/snippets\", \"score\": 0.95}\n"
+            "  ]\n"
+            "}"
+        )
+        prompt = (
+            f"GitHub Issue:\n{issue_text}\n\n"
+            f"Retrieved codebase snippets:\n"
+            f"================================\n"
+            f"{candidates_str}\n"
+            f"================================\n\n"
+            "Return the JSON response now."
+        )
+
+        raw = await self._provider.generate(
+            prompt=prompt,
+            system_instruction=system_instr,
+            response_mime_type="application/json",
+        )
+        data = json.loads(raw)
+        data.setdefault("summary", issue_text.split("\n")[0][:120])
+        data.setdefault("issue_type", "bug")
+        data.setdefault("keywords", [])
+        data.setdefault("affected_domains", [])
+        data.setdefault("files", [])
+        return data
+
+    # ------------------------------------------------------------------
+    # LLM Call 2: generate grounded implementation plan
+    # ------------------------------------------------------------------
+
+    async def _generate_plan_async(
+        self,
+        issue_text: str,
+        summary: str,
+        relevant_files: List[str],
+        arch_block: str,
+        chunks: List[dict],
+    ) -> dict:
+        """Single LLM call: generate a step-by-step implementation plan.
+
+        Grounded by injecting retrieved chunk content into the prompt.
+        """
+        arch_section = f"\n{arch_block}\n" if arch_block else ""
+
+        # Build deduped context block — 600 chars per unique file
+        seen_paths: set = set()
+        context_lines = []
+        for c in chunks:
+            meta = c.get("metadata", {})
+            path = meta.get("file_path", "")
+            content = c.get("content", "")
+            if path and path not in seen_paths:
+                seen_paths.add(path)
+                context_lines.append(f"--- {path} ---\n{content[:600]}")
+
+        context_block = (
+            "\nRetrieved codebase context:\n"
+            "=======================================================\n"
+            + "\n\n".join(context_lines)
+            + "\n=======================================================\n"
+        ) if context_lines else ""
+
+        file_paths_str = ", ".join(relevant_files) if relevant_files else "none identified"
+
+        system_instr = (
+            "You are a Repo Intelligence Agent. Generate a detailed, repository-specific "
+            "implementation plan for the given GitHub issue.\n"
+            "Rules:\n"
+            "- Use ONLY files and logic present in the retrieved codebase context.\n"
+            "- Do NOT invent files, functions, or modules not present in the context.\n"
+            "- Identify affected components from: "
+            "['Authentication', 'API Layer', 'Database', 'Frontend', 'Services', 'Models'].\n"
+            "- Estimate complexity as 'low', 'medium', or 'high'.\n"
+            "Return a JSON object matching this schema exactly:\n"
+            "{\n"
+            "  \"affected_components\": [\"Services\"],\n"
+            "  \"complexity\": \"medium\",\n"
+            "  \"steps\": [\n"
+            "    {\n"
+            "      \"step_number\": 1,\n"
+            "      \"description\": \"Detailed, specific description referencing actual code\",\n"
+            "      \"files_to_modify\": [\"exact/file/path\"]\n"
+            "    }\n"
+            "  ],\n"
+            "  \"risk_areas\": [\"describe risks\"],\n"
+            "  \"dependencies\": []\n"
+            "}"
+        )
+
+        prompt = (
+            f"{arch_section}"
+            f"GitHub Issue:\n{issue_text}\n\n"
+            f"Issue Summary: {summary}\n"
+            f"Most Relevant Files: {file_paths_str}\n"
+            f"{context_block}\n"
+            "Generate the implementation plan strictly based on the retrieved context above."
+        )
+
+        raw = await self._provider.generate(
+            prompt=prompt,
+            system_instruction=system_instr,
+            response_mime_type="application/json",
+        )
+        return json.loads(raw)
+
+    # ------------------------------------------------------------------
+    # Distance-score fallback for file ranking (no LLM call)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _rank_by_distance(chunks: List[dict], top_n: int = 10) -> List[dict]:
+        """Rank files by retrieval distance when LLM ranking is unavailable."""
+        file_scores: Dict[str, float] = {}
+        for chunk in chunks:
+            meta = chunk.get("metadata", {})
+            path = meta.get("file_path", "")
+            dist = chunk.get("distance", 1.0)
+            score = 1.0 / (1.0 + dist)
+            if path:
+                file_scores[path] = max(file_scores.get(path, 0.0), score)
+        sorted_files = sorted(file_scores.items(), key=lambda x: x[1], reverse=True)[:top_n]
+        return [{"path": p, "score": round(s, 3)} for p, s in sorted_files]
+
+    @staticmethod
+    def _infer_components_from_paths(file_paths: List[str]) -> List[str]:
+        """Infer affected_components from file paths using keyword heuristics.
+
+        Maps path segments to the standard component vocabulary without an LLM call.
+        """
+        _RULES: List[tuple] = [
+            ({"auth", "login", "signup", "oauth", "token", "password", "session", "jwt"}, "Authentication"),
+            ({"controller", "router", "route", "endpoint", "api", "handler", "middleware"}, "API Layer"),
+            ({"model", "schema", "entity", "migration", "prisma", "sequelize", "mongoose"}, "Models"),
+            ({"service", "repository", "dao", "store", "manager", "util", "helper", "lib"}, "Services"),
+            ({"database", "db", "sqlite", "postgres", "mysql", "mongo", "redis", "chroma"}, "Database"),
+            ({"frontend", "component", "page", "view", "ui", "react", "jsx", "tsx", "css",
+              "style", "layout", "hook", "store", "context"}, "Frontend"),
+        ]
+        found: set = set()
+        for path in file_paths:
+            lower = path.lower().replace("\\", "/")
+            segments = set(lower.replace(".", "/").split("/"))
+            for keywords, component in _RULES:
+                if segments & keywords:
+                    found.add(component)
+        return sorted(found) or ["Services"]
+
+    @staticmethod
+    def _build_fallback_steps(
+        relevant_files: List[str],
+        chunks: List[dict],
+        issue_summary: str,
+    ) -> List[Dict[str, Any]]:
+        """Build retrieval-grounded fallback steps without an LLM call.
+
+        For each of the top-5 relevant files, pull the most relevant chunk
+        content snippet and write a targeted step description from it.
+        """
+        # Index chunks by file path for fast lookup
+        chunk_by_path: Dict[str, str] = {}
+        for c in chunks:
+            path = c.get("metadata", {}).get("file_path", "")
+            content = c.get("content", "").strip()
+            if path and path not in chunk_by_path and content:
+                # Take first 300 chars — enough to name functions/classes
+                chunk_by_path[path] = content[:300]
+
+        steps = []
+        for i, file_path in enumerate(relevant_files[:5]):
+            snippet = chunk_by_path.get(file_path, "")
+            # Extract first meaningful line (function/class/export declaration)
+            hint = ""
+            for line in snippet.splitlines():
+                stripped = line.strip()
+                if stripped and any(kw in stripped for kw in (
+                    "function", "const ", "class ", "def ", "export",
+                    "async ", "router.", "app.", "module.", "describe(",
+                )):
+                    hint = stripped[:120]
+                    break
+
+            if hint:
+                description = (
+                    f"In `{file_path}`, locate `{hint}` and apply the fix for: {issue_summary}. "
+                    f"Ensure the change handles edge cases such as special characters and "
+                    f"validates input before processing."
+                )
+            else:
+                description = (
+                    f"Review `{file_path}` for logic related to: {issue_summary}. "
+                    f"Apply targeted fix and add input validation for edge cases."
+                )
+
+            steps.append({
+                "step_number": i + 1,
+                "description": description,
+                "files_to_modify": [file_path],
+            })
+
+        if not steps:
+            steps = [{
+                "step_number": 1,
+                "description": f"Investigate and resolve: {issue_summary}",
+                "files_to_modify": [],
+            }]
+        return steps
+
+    # ------------------------------------------------------------------
+    # Public interface
+    # ------------------------------------------------------------------
+
+    def map_issue(self, repo_name: str, issue_title: str, issue_body: str) -> dict:
+        """Process a GitHub issue — exactly 2 LLM calls.
+
+        Pipeline:
+          [embedding retrieval — no LLM]
+          LLM Call 1: parse issue + rank files
+          LLM Call 2: generate grounded implementation plan
+          [confidence from distance scores — no LLM]
+        """
+        issue_text = f"{issue_title}\n{issue_body}".strip()
+
+        # ── Retrieval (no LLM) ────────────────────────────────────────
+        try:
+            chunks = self.issue_retrieval_service.retrieve_issue_context(
+                repo_name=repo_name, issue_text=issue_text, limit=20
+            )
+        except Exception as exc:
+            logger.error("Retrieval failed: %s", exc)
+            chunks = []
+
+        logger.info("[IssueMapper] Retrieved %d chunks for '%s'", len(chunks), issue_title)
+
+        # ── LLM Call 1: parse + rank ──────────────────────────────────
+        issue_hash = hashlib.sha256(issue_text.strip().encode()).hexdigest()
+        cache_key = f"{repo_name}:v2:{issue_hash}"
+
+        global ISSUE_CACHE
+        parsed_and_ranked = ISSUE_CACHE.get(cache_key)
+
+        if parsed_and_ranked:
+            logger.info("[IssueMapper] Cache hit for parse+rank.")
+        else:
+            try:
+                parsed_and_ranked = _run_async(
+                    self._parse_and_rank_async(issue_text, chunks)
+                )
+                ISSUE_CACHE[cache_key] = parsed_and_ranked
+                save_cache(ISSUE_CACHE)
+                logger.info("[IssueMapper] LLM Call 1 complete (parse+rank).")
+            except Exception as exc:
+                logger.error("LLM Call 1 (parse+rank) failed: %s", exc)
+                # Fallback: derive everything from retrieval without LLM
+                parsed_and_ranked = {
+                    "summary": issue_text.split("\n")[0][:120],
+                    "issue_type": "bug",
+                    "keywords": [],
+                    "affected_domains": self._infer_components_from_paths(
+                        [c.get("metadata", {}).get("file_path", "") for c in chunks]
+                    ),
+                    "files": self._rank_by_distance(chunks),
+                }
+
+        scored_files = [
+            f for f in parsed_and_ranked.get("files", []) if f.get("path")
+        ]
+        # If LLM returned no files, fall back to distance ranking
+        if not scored_files:
+            scored_files = self._rank_by_distance(chunks)
+
+        relevant_files = [f["path"] for f in scored_files]
+
+        # ── Architecture context (no LLM) ─────────────────────────────
+        arch_ctx = self.arch_context_service.get_context(repo_name)
+        arch_block = arch_ctx.to_prompt_block()
+
+        # ── LLM Call 2: generate plan ─────────────────────────────────
+        # Brief pause so Call 2 doesn't land in the same NIM rate-limit window as Call 1
+        import time; time.sleep(2)
+        try:
+            plan_data = _run_async(
+                self._generate_plan_async(
+                    issue_text,
+                    parsed_and_ranked.get("summary", ""),
+                    relevant_files,
+                    arch_block,
+                    chunks,
+                )
+            )
+            logger.info("[IssueMapper] LLM Call 2 complete (plan).")
+        except Exception as exc:
+            logger.error("LLM Call 2 (plan generation) failed: %s", exc)
+            summary = parsed_and_ranked.get("summary", issue_title)
+            inferred_components = self._infer_components_from_paths(relevant_files)
+            plan_data = {
+                "affected_components": inferred_components,
+                "complexity": "medium",
+                "steps": self._build_fallback_steps(relevant_files, chunks, summary),
+                "risk_areas": ["Plan generated from retrieval context — verify before applying"],
+                "dependencies": [],
+            }
+
+        # ── Confidence from retrieval distance (no LLM) ───────────────
+        confidence = _distance_confidence(chunks)
+        verified = len(chunks) > 0 and bool(relevant_files)
+
+        sources = sorted({
+            c.get("metadata", {}).get("file_path", "")
+            for c in chunks
+            if c.get("metadata", {}).get("file_path")
+        })
+
+        return {
+            "issue_summary": parsed_and_ranked.get("summary", ""),
+            "issue_type": parsed_and_ranked.get("issue_type", "bug"),
+            "relevant_files": relevant_files,
+            "affected_components": plan_data.get("affected_components", ["Services"]),
+            "implementation_plan": plan_data.get("steps", []),
+            "complexity": plan_data.get("complexity", "medium"),
+            "confidence": confidence,
+            "verified": verified,
+            "sources": sources,
+        }
+
+    # ------------------------------------------------------------------
+    # Legacy public methods — kept for any external callers
+    # ------------------------------------------------------------------
+
+    def parse_issue(self, repo_name: str, issue_text: str) -> dict:
+        """Legacy single-issue parse (no file ranking). Wraps _parse_and_rank_async."""
+        try:
+            chunks = self.issue_retrieval_service.retrieve_issue_context(
+                repo_name=repo_name, issue_text=issue_text, limit=5
+            )
+            result = _run_async(self._parse_and_rank_async(issue_text, chunks))
+            return result
+        except Exception as exc:
+            logger.error("parse_issue failed: %s", exc)
+            return {
+                "summary": issue_text.split("\n")[0][:100],
+                "issue_type": "feature",
+                "keywords": [],
+                "affected_domains": [],
+                "files": [],
+            }
+
+    def identify_relevant_files(
+        self,
+        repo_name: str,
+        issue_text: str,
+        keywords: List[str],
+        chunks: Optional[List[dict]] = None,
+    ) -> List[dict]:
+        """Legacy file ranking. Returns distance-ranked files from provided or fresh chunks."""
+        if chunks is None:
+            try:
+                chunks = self.issue_retrieval_service.retrieve_issue_context(
+                    repo_name=repo_name, issue_text=issue_text, limit=20
+                )
+            except Exception as exc:
+                logger.error("Retrieval failed: %s", exc)
+                return []
+        return self._rank_by_distance(chunks)

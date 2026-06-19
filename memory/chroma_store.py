@@ -115,13 +115,7 @@ class ChromaStore:
         self.collection = self.client.get_or_create_collection(name="repository_chunks")
 
     def index_repository(self, repo_name: str, chunks: List[Dict[str, Any]], embeddings: List[List[float]]) -> None:
-        """Indexes a full list of repository chunks with their embeddings in ChromaDB.
-
-        Args:
-            repo_name: The repository identifier (owner/repo).
-            chunks: A list of chunk dictionary structures.
-            embeddings: Parallel list of float-vector embeddings.
-        """
+        """Indexes a full list of repository chunks with their embeddings in ChromaDB."""
         if not chunks:
             return
 

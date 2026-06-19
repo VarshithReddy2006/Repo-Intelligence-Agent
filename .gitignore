@@ -223,3 +223,8 @@ frontend/.vercel/
 
 # Streamlit (removed)
 .streamlit/secrets.toml
+
+# Local data directory containing DBs, cloned repos, graphs, etc.
+data/
+test_analyze.py
+

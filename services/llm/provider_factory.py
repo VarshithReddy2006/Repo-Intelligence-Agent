@@ -37,7 +37,7 @@ class ProviderFactory:
             _cached_provider = DeepSeekProvider()
             logger.info(
                 "LLM provider initialised: DeepSeek (%s) via NVIDIA NIM",
-                os.environ.get("DEEPSEEK_MODEL", "deepseek-ai/deepseek-r1"),
+                os.environ.get("DEEPSEEK_MODEL", "deepseek-ai/deepseek-v4-flash"),
             )
         else:
             raise ValueError(

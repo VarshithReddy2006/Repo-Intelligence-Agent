@@ -1,6 +1,6 @@
 """Embedding Service — local BGE embeddings via sentence-transformers.
 
-Replaces Gemini text-embedding-004 with BAAI/bge-large-en-v1.5 running
+Replaces Gemini text-embedding-004 with BAAI/bge-small-en-v1.5 running
 entirely locally. No API calls, no quotas, no API key required.
 
 Public interface is identical to the previous Gemini-backed version so all
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 _model_lock = threading.Lock()
 _model = None
-_MODEL_NAME = "BAAI/bge-large-en-v1.5"
+_MODEL_NAME = "BAAI/bge-small-en-v1.5"
 
 
 def _get_model():
@@ -90,7 +90,7 @@ class EmbeddingService:
         Args:
             client:     Ignored.  Accepted for backwards-compatibility only.
             model_name: Name of the sentence-transformers model to load.
-                        Defaults to BAAI/bge-large-en-v1.5.
+                        Defaults to BAAI/bge-small-en-v1.5.
         """
         if client is not None:
             logger.debug(
@@ -141,17 +141,13 @@ class EmbeddingService:
         prefixed = [f"Represent this sentence: {t}" for t in texts]
         batch_size = 64
         t0 = time.perf_counter()
-        print(f"[EMBED] About to encode {len(texts)} chunks")
-        print(f"[EMBED] Batch size = {batch_size}")
-        print(f"[EMBED] First chunk length = {len(texts[0]) if texts else 0}")
-        print("[EMBED] ENTER model.encode()")
+        logger.debug("Encoding %d chunks with batch size %d", len(prefixed), batch_size)
         encoded = model.encode(
             prefixed,
             batch_size=batch_size,
             normalize_embeddings=True,
             show_progress_bar=False,
         )
-        print("[EMBED] EXIT model.encode()")
         elapsed = time.perf_counter() - t0
         logger.info(
             "BGE encode completed n_texts=%d batch_size=%d elapsed=%.2fs",
