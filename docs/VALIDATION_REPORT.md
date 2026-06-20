@@ -1,6 +1,6 @@
-# 📊 MVP Validation & Telemetry Report
+# 📊 Validation & Telemetry Report
 
-This report presents performance metrics, validation benchmarks, and pipeline latency figures collected during testing of the **Repo Intelligence Agent** MVP.
+This report presents performance metrics, validation benchmarks, and pipeline latency figures collected during testing of the **Repo Intelligence Agent** MVP and Phase 2 releases.
 
 ---
 
@@ -17,6 +17,27 @@ Ingestion throughput, AST parsing, and vector generation were evaluated against 
 | **Tree-sitter AST parse** | ~1.4 seconds | Structural analysis of Python, JavaScript, and TypeScript files |
 | **Dependency Graph size** | 1,440 edges | Directed dependency linkages calculated by `GraphService` |
 | **Framework Entry Points** | 17 entry points | Resolved using structural heuristics (excludes test and doc dirs) |
+
+---
+
+## 🧪 PR Intelligence E2E Validation Pass
+
+The Pull Request Intelligence and Drift pipelines were validated against the **VarshithReddy2006/Repo-Intelligence-Agent** repository:
+
+### Scenario A: Empty PR Changes (PR #1)
+- **Files changed:** 0
+- **Symbols matched:** 0
+- **Size Classification:** `XS` (Score: 0.0)
+- **Blast Radius:** `LOW`
+- **Result:** Successfully returned HTTP 200 empty analysis payloads without throwing serialization errors.
+
+### Scenario B: Populated PR Changes (PR #2)
+- **Files changed:** 24 files
+- **Symbols matched:** 77 symbols (including added and modified functions/classes)
+- **Size Classification:** `M`
+- **Blast Radius:** `HIGH` (initially `MEDIUM` based on 11 affected files, promoted to `HIGH` due to propagation depth = 3)
+- **Cycles Detected:** 0 new, 0 resolved.
+- **Architectural Hotspots:** Highlighted modified files residing in core services (e.g. `services/pr_intelligence_service.py`) representing high-coupling points.
 
 ---
 
@@ -49,6 +70,14 @@ Response latencies were compiled across all active FastAPI endpoints binding to 
 | `/api/reading-order` | POST | `~ 80ms` | CPU NetworkX topological sorting & centrality |
 | `/api/impact-analysis` | POST | `~ 95ms` | BFS graph traversal and keyword component matching |
 | `/api/architecture/{owner}/{repo_name}/graph` | GET | `~ 50ms` | Formatting graph nodes and edges to React Flow JSON |
+| `/api/graph/.../full` | GET | `~ 45ms` | NetworkX node/edge conversion to React Flow format |
+| `/api/graph/.../neighbors/...` | GET | `~ 12ms` | Edge filtering on directed graph |
+| `/api/graph/.../trace/...` | GET | `~ 22ms` | BFS graph traversal walk up to specified depth |
+| `/api/symbols/.../file/...` | GET | `~ 8ms` | Local symbol index lookup |
+| `/api/symbols/.../definition/...`| GET | `~ 10ms` | Symbol table lookup |
+| `/api/pr/analyze` | POST | `~ 1.5 seconds` | GitHub diff retrieval + Local symbol matching + BFS walk |
+| `/api/architecture/drift` | POST | `~ 1.9 seconds` | GitHub file content retrieval + tree-sitter delta patching |
+| `/api/dead-code/analyze` | POST | `~ 250ms` | BFS reachability sweep + centrality deductions scoring |
 
 ---
 
@@ -65,13 +94,18 @@ Response latencies were compiled across all active FastAPI endpoints binding to 
 | **Repository Workspace** | ✅ **Complete** | Multi-tab UI dashboard caching states to prevent redundant re-analyzes |
 | **Session Persistence** | ✅ **Complete** | LocalStorage state backup of active context + Startup JSON hydration |
 | **Fallback Mode** | ✅ **Complete** | Local keyword + Chroma retrieved text parser on NIM rate limits |
+| **Interactive Graph** | ✅ **Complete** | Neighbor highlights, node filters, BFS direction traces |
+| **Symbol Indexer** | ✅ **Complete** | AST extraction, cross-file definition & reference lookup |
+| **PR Intelligence** | ✅ **Complete** | PR size score, blast radius estimation with depth-promotion |
+| **Architecture Drift** | ✅ **Complete** | Virtual delta-patched graph comparisons, cycles, coupling shifts |
+| **Dead Code Sweep** | ✅ **Complete** | Reachability sweeps, cleanup deductions scoring, orphan tracking |
 
 ---
 
 ## 🧪 Unit Test Coverage & Health
 
-The backend test suite is composed of **91 unit and integration tests** verifying structural extraction, vector retrieval, caching logic, and API route mapping.
+The backend test suite is composed of **95+ unit and integration tests** verifying structural extraction, vector retrieval, caching logic, delta patching, cycle checks, dead code reachability, and API route mapping.
 
-- **Total Collected Tests:** 91 items
-- **Overall Code Coverage:** ~85% across all core classes (`TreeSitterService`, `GraphService`, `EntryPointService`, `ChromaStore`, `IssueMapper`).
-- **Test Integrity:** Mock adapters isolate remote API network boundaries during testing, ensuring local test execution does not consume NVIDIA NIM tokens.
+- **Total Collected Tests:** 95+ items
+- **Overall Code Coverage:** ~85% across all core classes (`TreeSitterService`, `GraphService`, `SymbolService`, `PRIntelligenceService`, `ArchitectureDriftService`, `DeadCodeService`, `ChromaStore`).
+- **Test Integrity:** Mock adapters isolate remote API network boundaries during testing, ensuring local test execution does not consume NVIDIA NIM tokens or require active GitHub PAT connections.

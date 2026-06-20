@@ -26,6 +26,9 @@ from .reading_order_service import ReadingOrderService
 from .impact_analysis_service import ImpactAnalysisService
 from .arch_context_service import ArchContextService
 from .issue_retrieval_service import IssueRetrievalService
+from .pr_intelligence_service import PRIntelligenceService
+from .architecture_drift_service import ArchitectureDriftService
+from .dead_code_service import DeadCodeService
 
 __all__ = [
     "GitHubService",
@@ -39,4 +42,7 @@ __all__ = [
     "ImpactAnalysisService",
     "ArchContextService",
     "IssueRetrievalService",
+    "PRIntelligenceService",
+    "ArchitectureDriftService",
+    "DeadCodeService",
 ]

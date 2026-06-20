@@ -22,6 +22,28 @@ from .phase2 import (
     ImpactAnalysis,
     ArchContext,
 )
+from .pr_intelligence import (
+    PRAnalyzeRequest,
+    ChangedFile,
+    SymbolChange,
+    PropagationPath,
+    RiskBreakdown,
+    ReviewFocusArea,
+    PRAnalysisResult,
+)
+from .architecture_drift import (
+    PRDriftRequest,
+    DependencyEdge,
+    CouplingChange,
+    PRDriftResult,
+)
+from .dead_code import (
+    DeadFile,
+    OrphanModule,
+    DeadDependencyChain,
+    DeadCodeRequest,
+    DeadCodeResult,
+)
 
 __all__ = [
     # Existing schemas
@@ -43,4 +65,24 @@ __all__ = [
     "DependencyPath",
     "ImpactAnalysis",
     "ArchContext",
+    # PR Intelligence
+    "PRAnalyzeRequest",
+    "ChangedFile",
+    "SymbolChange",
+    "PropagationPath",
+    "RiskBreakdown",
+    "ReviewFocusArea",
+    "PRAnalysisResult",
+    # Architecture Drift
+    "PRDriftRequest",
+    "DependencyEdge",
+    "CouplingChange",
+    "PRDriftResult",
+    # Dead Code Intelligence
+    "DeadFile",
+    "OrphanModule",
+    "DeadDependencyChain",
+    "DeadCodeRequest",
+    "DeadCodeResult",
 ]
+

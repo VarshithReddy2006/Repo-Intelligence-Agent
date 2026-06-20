@@ -10,6 +10,10 @@ All endpoints are hosted at: `http://127.0.0.1:8001`
 - [Repository Processing](#repository-processing)
 - [Semantic Querying](#semantic-querying)
 - [Architecture Intelligence](#architecture-intelligence)
+- [Interactive Graph Intelligence (Phase 2)](#interactive-graph-intelligence-phase-2)
+- [Symbol Intelligence (Phase 2)](#symbol-intelligence-phase-2)
+- [PR & Architecture Drift Intelligence (Phase 2)](#pr--architecture-drift-intelligence-phase-2)
+- [Dead Code Intelligence (Phase 2)](#dead-code-intelligence-phase-2)
 
 ---
 
@@ -491,5 +495,453 @@ Predict downstream affected modules and components resulting from a proposed cha
     }
   ],
   "confidence": 85
+}
+```
+
+---
+---
+
+## Interactive Graph Intelligence (Phase 2)
+
+### GET /api/graph/{owner}/{repo}/full
+Retrieve the full dependency graph for visualization in the interactive layout.
+
+#### Query Parameters
+- `q` (string, optional): Query substring to filter node files.
+
+#### Request Example
+```bash
+curl http://127.0.0.1:8001/api/graph/VarshithReddy2006/Repo-Intelligence-Agent/full?q=service
+```
+
+#### Response (200 OK)
+```json
+{
+  "nodes": [
+    {
+      "id": "services/symbol_service.py",
+      "label": "symbol_service.py",
+      "category": "file",
+      "language": "python"
+    }
+  ],
+  "edges": [
+    {
+      "source": "services/symbol_service.py",
+      "target": "models/symbol.py",
+      "relationship": "imports"
+    }
+  ]
+}
+```
+
+---
+
+### GET /api/graph/{owner}/{repo}/neighbors/{node_path:path}
+Retrieve the immediate neighborhood of a single file node.
+
+#### Request Example
+```bash
+curl http://127.0.0.1:8001/api/graph/VarshithReddy2006/Repo-Intelligence-Agent/neighbors/services/symbol_service.py
+```
+
+#### Response (200 OK)
+```json
+{
+  "nodes": [
+    { "id": "services/symbol_service.py", "label": "symbol_service.py", "category": "focus", "language": "python" },
+    { "id": "backend/api.py", "label": "api.py", "category": "predecessor", "language": "python" },
+    { "id": "models/symbol.py", "label": "symbol.py", "category": "successor", "language": "python" }
+  ],
+  "edges": [
+    { "source": "backend/api.py", "target": "services/symbol_service.py", "relationship": "imports" },
+    { "source": "services/symbol_service.py", "target": "models/symbol.py", "relationship": "imports" }
+  ]
+}
+```
+
+---
+
+### GET /api/graph/{owner}/{repo}/trace/{node_path:path}
+Trace all reachable nodes in the dependency graph starting from a node.
+
+#### Query Parameters
+- `direction` (string, optional): Direction of walk. Options: `forward`, `backward`, `both`. Defaults to `both`.
+- `depth` (int, optional): BFS walk limit. Minimum 1, Maximum 12. Defaults to 6.
+
+#### Request Example
+```bash
+curl "http://127.0.0.1:8001/api/graph/VarshithReddy2006/Repo-Intelligence-Agent/trace/services/symbol_service.py?direction=backward&depth=3"
+```
+
+#### Response (200 OK)
+```json
+{
+  "nodes": [
+    { "id": "services/symbol_service.py", "label": "symbol_service.py", "category": "focus", "language": "python" },
+    { "id": "backend/api.py", "label": "api.py", "category": "dependent", "language": "python" }
+  ],
+  "edges": [
+    { "source": "backend/api.py", "target": "services/symbol_service.py", "relationship": "imports" }
+  ]
+}
+```
+
+---
+
+### GET /api/graph/{owner}/{repo}/search
+Search for nodes by label or file path, returning matches highlighted with their immediate context.
+
+#### Query Parameters
+- `q` (string, required): Query term.
+
+#### Request Example
+```bash
+curl http://127.0.0.1:8001/api/graph/VarshithReddy2006/Repo-Intelligence-Agent/search?q=dead_code
+```
+
+#### Response (200 OK)
+```json
+{
+  "nodes": [
+    { "id": "services/dead_code_service.py", "label": "dead_code_service.py", "category": "file", "language": "python", "highlighted": true },
+    { "id": "backend/api.py", "label": "api.py", "category": "file", "language": "python", "highlighted": false }
+  ],
+  "edges": [
+    { "source": "backend/api.py", "target": "services/dead_code_service.py", "relationship": "imports" }
+  ]
+}
+```
+
+---
+
+## Symbol Intelligence (Phase 2)
+
+### GET /api/symbols/{owner}/{repo}/file/{file_path:path}
+Retrieve all AST symbols (classes, functions, methods) defined in a file.
+
+#### Request Example
+```bash
+curl http://127.0.0.1:8001/api/symbols/VarshithReddy2006/Repo-Intelligence-Agent/file/services/symbol_service.py
+```
+
+#### Response (200 OK)
+```json
+{
+  "file": "services/symbol_service.py",
+  "repo": "VarshithReddy2006/Repo-Intelligence-Agent",
+  "symbol_count": 2,
+  "symbols": [
+    {
+      "name": "SymbolService",
+      "type": "class",
+      "file_path": "services/symbol_service.py",
+      "line_number": 26,
+      "language": "python",
+      "parent_class": null
+    },
+    {
+      "name": "get_file_symbols",
+      "type": "function",
+      "file_path": "services/symbol_service.py",
+      "line_number": 95,
+      "language": "python",
+      "parent_class": "SymbolService"
+    }
+  ]
+}
+```
+
+---
+
+### GET /api/symbols/{owner}/{repo}/definition/{symbol_name}
+Find the definition site of a symbol.
+
+#### Request Example
+```bash
+curl http://127.0.0.1:8001/api/symbols/VarshithReddy2006/Repo-Intelligence-Agent/definition/SymbolService
+```
+
+#### Response (200 OK)
+```json
+{
+  "symbol": "SymbolService",
+  "repo": "VarshithReddy2006/Repo-Intelligence-Agent",
+  "definition": {
+    "name": "SymbolService",
+    "type": "class",
+    "file_path": "services/symbol_service.py",
+    "line_number": 26,
+    "language": "python",
+    "parent_class": null
+  }
+}
+```
+
+---
+
+### GET /api/symbols/{owner}/{repo}/references/{symbol_name}
+Search for references to a symbol across the repository symbol index.
+
+#### Request Example
+```bash
+curl http://127.0.0.1:8001/api/symbols/VarshithReddy2006/Repo-Intelligence-Agent/references/SymbolService
+```
+
+#### Response (200 OK)
+```json
+{
+  "symbol": "SymbolService",
+  "repo": "VarshithReddy2006/Repo-Intelligence-Agent",
+  "references": [
+    {
+      "name": "SymbolService",
+      "type": "class",
+      "file_path": "services/symbol_service.py",
+      "line_number": 26,
+      "language": "python",
+      "parent_class": null
+    }
+  ],
+  "reference_count": 1,
+  "note": "MVP: name-based matching only. Full cross-file call graph planned for PH2-003."
+}
+```
+
+---
+
+## PR & Architecture Drift Intelligence (Phase 2)
+
+### POST /api/pr/analyze
+Perform risk assessment, changed files extraction, symbol diffs, and blast radius propagation for a Pull Request.
+
+#### Request Schema (PRAnalyzeRequest)
+- `owner` (string, required): GitHub repository owner.
+- `repo` (string, required): GitHub repository name.
+- `pr_number` (int, required): GitHub pull request ID.
+
+```json
+{
+  "owner": "VarshithReddy2006",
+  "repo": "Repo-Intelligence-Agent",
+  "pr_number": 2
+}
+```
+
+#### Response (200 OK)
+```json
+{
+  "repo": "VarshithReddy2006/Repo-Intelligence-Agent",
+  "pr_number": 2,
+  "risk_score": 24.5,
+  "pr_size": "M",
+  "blast_radius": "MEDIUM",
+  "changed_files": [
+    {
+      "filename": "services/pr_intelligence_service.py",
+      "status": "modified",
+      "additions": 45,
+      "deletions": 10,
+      "changes": 55
+    }
+  ],
+  "added_symbols": [],
+  "modified_symbols": [
+    {
+      "name": "analyze_pull_request",
+      "type": "function",
+      "file_path": "services/pr_intelligence_service.py",
+      "line_number": 85,
+      "language": "python",
+      "change_type": "modified",
+      "parent_class": "PRIntelligenceService"
+    }
+  ],
+  "removed_symbols": [],
+  "affected_files": [
+    "backend/api.py"
+  ],
+  "propagation_paths": [
+    {
+      "source": "services/pr_intelligence_service.py",
+      "target": "backend/api.py",
+      "path": ["backend/api.py", "services/pr_intelligence_service.py"],
+      "depth": 1
+    }
+  ],
+  "risk_breakdown": {
+    "size_risk": "MEDIUM",
+    "blast_radius_risk": "LOW",
+    "drift_risk": "LOW",
+    "hotspot_risk": "HIGH"
+  },
+  "review_focus_areas": [
+    {
+      "area": "hotspots",
+      "description": "Changes to services/pr_intelligence_service.py modify highly coupled module logic.",
+      "severity": "HIGH"
+    }
+  ],
+  "analyzed_at": "2026-06-20T14:14:00Z"
+}
+```
+
+---
+
+### GET /api/pr/health
+Health diagnostics check for PR Intelligence configurations.
+
+#### Query Parameters
+- `owner` (string, optional): GitHub owner.
+- `repo` (string, optional): GitHub repo.
+
+#### Request Example
+```bash
+curl "http://127.0.0.1:8001/api/pr/health?owner=VarshithReddy2006&repo=Repo-Intelligence-Agent"
+```
+
+#### Response (200 OK)
+```json
+{
+  "github_token": true,
+  "github_token_loaded": true,
+  "github_token_prefix": "github_pat_1...",
+  "github_rate_limit_authenticated": true,
+  "rate_limit_remaining": 4982,
+  "analysis_exists": true,
+  "graph_available": true,
+  "symbol_index_available": true,
+  "status": "healthy"
+}
+```
+
+---
+
+### POST /api/repos/repair
+Repair a repository by forcefully regenerating its missing graph and symbol indices.
+
+#### Request Schema
+- `owner` (string, required): GitHub owner.
+- `repo` (string, required): GitHub repo.
+
+```json
+{
+  "owner": "VarshithReddy2006",
+  "repo": "Repo-Intelligence-Agent"
+}
+```
+
+#### Response (200 OK)
+```json
+{
+  "status": "success",
+  "message": "Repository indexes rebuilt successfully for 'VarshithReddy2006/Repo-Intelligence-Agent'",
+  "details": {
+    "architecture": { "status": "built", "repo": "VarshithReddy2006/Repo-Intelligence-Agent", "files_parsed": 34, "dependencies_found": 80 },
+    "symbols": { "repo": "VarshithReddy2006/Repo-Intelligence-Agent", "symbols_parsed": 122 }
+  }
+}
+```
+
+---
+
+### POST /api/architecture/drift
+Detect architectural drift, cycle additions, and coupling shifts introduced by a Pull Request.
+
+#### Request Schema (PRDriftRequest)
+- `owner` (string, required): GitHub owner.
+- `repo` (string, required): GitHub repo.
+- `pr_number` (int, required): GitHub PR ID.
+
+```json
+{
+  "owner": "VarshithReddy2006",
+  "repo": "Repo-Intelligence-Agent",
+  "pr_number": 2
+}
+```
+
+#### Response (200 OK)
+```json
+{
+  "repo": "VarshithReddy2006/Repo-Intelligence-Agent",
+  "pr_number": 2,
+  "added_dependencies": [],
+  "removed_dependencies": [],
+  "new_cycles": [],
+  "resolved_cycles": [],
+  "coupling_increase": [
+    { "file": "services/pr_intelligence_service.py", "before": 4, "after": 5 }
+  ],
+  "coupling_decrease": [],
+  "new_entry_points": [],
+  "removed_entry_points": [],
+  "architectural_hotspots": [
+    "services/pr_intelligence_service.py"
+  ],
+  "risk_score": 10.0,
+  "improvement_score": 0.0,
+  "analyzed_at": "2026-06-20T14:14:00Z"
+}
+```
+
+---
+
+## Dead Code Intelligence (Phase 2)
+
+### POST /api/dead-code/analyze
+Traces reachability from application entry points to sweep unreachable files, orphaned modules, and dead dependency chains.
+
+#### Request Schema (DeadCodeRequest)
+- `owner` (string, required): GitHub owner.
+- `repo` (string, required): GitHub repo.
+
+```json
+{
+  "owner": "VarshithReddy2006",
+  "repo": "Repo-Intelligence-Agent"
+}
+```
+
+#### Response (200 OK)
+```json
+{
+  "repo": "VarshithReddy2006/Repo-Intelligence-Agent",
+  "cleanup_score": 92,
+  "previous_cleanup_score": null,
+  "estimated_cleanup_effort": "LOW",
+  "unused_files": [
+    {
+      "file_path": "scripts/unused_script.py",
+      "confidence": 0.95,
+      "risk_level": "SAFE",
+      "recommendation": "Consider removing unused file scripts/unused_script.py"
+    }
+  ],
+  "orphan_modules": [
+    {
+      "file_path": "services/legacy_helper.py",
+      "confidence": 0.90,
+      "risk_level": "REVIEW",
+      "recommendation": "Review orphaned module services/legacy_helper.py; no active execution path reaches it.",
+      "last_reachable_parent": "services/architecture_service.py"
+    }
+  ],
+  "dead_dependency_chains": [
+    {
+      "chain": ["services/dead_chain_a.py", "services/dead_chain_b.py"],
+      "confidence": 0.95,
+      "risk_level": "SAFE",
+      "recommendation": "Dependency chain [dead_chain_a.py -> dead_chain_b.py] appears unreachable and may be removable as a unit.",
+      "length": 1,
+      "total_nodes": 2,
+      "max_centrality": 0.012
+    }
+  ],
+  "cleanup_recommendations": [
+    "Remove unused file scripts/unused_script.py (no active imports).",
+    "Review orphaned module services/legacy_helper.py (previously connected via services/architecture_service.py)."
+  ],
+  "analyzed_at": "2026-06-20T14:14:00Z"
 }
 ```

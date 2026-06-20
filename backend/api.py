@@ -39,7 +39,7 @@ from models.schemas import (
 from agents.issue_mapper import IssueMapper
 from agents.evaluator import EvaluationAgent
 
-from services.github_service import GitHubService
+from services.github_service import GitHubService, GitHubConfig
 from services.chunking_service import CodeChunker
 from services.embedding_service import EmbeddingService
 from services.retrieval_service import RetrievalService
@@ -49,11 +49,22 @@ from services.reading_order_service import ReadingOrderService
 from services.impact_analysis_service import ImpactAnalysisService
 from services.arch_context_service import ArchContextService
 from services.chat_fallback import build_fallback_answer, is_provider_error
+from services.graph_serializer import GraphSerializer
+from services.symbol_service import SymbolService
 from services.llm import ProviderFactory
+from services.pr_intelligence_service import PRIntelligenceService
+from services.architecture_drift_service import ArchitectureDriftService
+from services.dead_code_service import DeadCodeService
 from memory.chroma_store import ChromaStore
+from models import PRAnalyzeRequest, PRDriftRequest, DeadCodeRequest
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
+
+# Startup diagnostics for GITHUB_TOKEN
+token = GitHubConfig.load_token()
+logger.info("GitHub token loaded: %s", bool(token))
+logger.info("GitHub token prefix: %s", token[:12] if token else "missing")
 
 app = FastAPI(
     title="Repo Intelligence Agent API",
@@ -194,10 +205,9 @@ _load_analysis_store()
 # ---------------------------------------------------------------------------
 # Core service singletons
 # ---------------------------------------------------------------------------
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
 CHROMA_DB_PATH = os.environ.get("CHROMA_DB_PATH", "data/chroma_db")
 
-github_service = GitHubService(token=GITHUB_TOKEN)
+github_service = GitHubService()
 embedding_service = EmbeddingService()
 chroma_store = ChromaStore(persist_directory=CHROMA_DB_PATH)
 chunker = CodeChunker()
@@ -207,9 +217,29 @@ retrieval_service = RetrievalService(
 )
 architecture_service = ArchitectureService()
 graph_service = GraphService()
+graph_serializer = GraphSerializer(graph_service=graph_service, architecture_service=architecture_service)
 reading_order_service = ReadingOrderService(architecture_service=architecture_service)
 impact_analysis_service = ImpactAnalysisService(architecture_service=architecture_service)
 arch_context_service = ArchContextService(architecture_service=architecture_service)
+symbol_service = SymbolService()
+pr_intelligence_service = PRIntelligenceService(
+    github_service=github_service,
+    symbol_service=symbol_service,
+    graph_service=graph_service,
+    architecture_service=architecture_service,
+)
+architecture_drift_service = ArchitectureDriftService(
+    github_service=github_service,
+    symbol_service=symbol_service,
+    graph_service=graph_service,
+    architecture_service=architecture_service,
+    pr_intelligence_service=pr_intelligence_service,
+)
+dead_code_service = DeadCodeService(
+    github_service=github_service,
+    graph_service=graph_service,
+    architecture_service=architecture_service,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -255,6 +285,11 @@ class ChatRequest(BaseModel):
                 "Please open a repository from the analysis page first."
             )
         return stripped
+
+
+class RepoRepairRequest(BaseModel):
+    owner: str = Field(..., description="Repository owner")
+    repo: str = Field(..., description="Repository name")
 
 
 class ArchitectureBuildRequest(BaseModel):
@@ -613,6 +648,19 @@ async def analyze_repository(request: AnalyzeRequest):
             )
             yield f"data: {json.dumps({'status': 'graph_built', 'message': f'✓ Dependency graph: {_graph_files} files parsed, {_graph_edges} edges', 'files_parsed': _graph_files, 'dependencies_found': _graph_edges, 'entry_points': _graph_entries})}\n\n"
 
+            yield f"data: {json.dumps({'status': 'building_symbols', 'message': 'Building symbol intelligence index...'})}\n\n"
+            try:
+                await asyncio.to_thread(
+                    symbol_service.build, repo_name, local_path, files
+                )
+                logger.info("[PIPELINE:%s] SYMBOLS index built successfully", repo_name)
+            except Exception as sym_exc:
+                logger.warning(
+                    "[PIPELINE:%s] Symbol index build failed (non-fatal): %s",
+                    repo_name,
+                    sym_exc,
+                )
+
             # Architecture summary via DeepSeek
             architecture_summary = await generate_architecture_summary_with_llm(
                 repo_name, tech_stack, [f["path"] for f in files]
@@ -900,6 +948,17 @@ async def build_architecture(request: ArchitectureBuildRequest):
         result = await asyncio.to_thread(
             architecture_service.build, repo_name, local_path, None, False
         )
+        # Build symbol index from the same cloned repo — kept in sync with the
+        # architecture build so symbol queries are always up to date.
+        try:
+            await asyncio.to_thread(
+                symbol_service.build, repo_name, local_path, None
+            )
+        except Exception as sym_exc:
+            # Symbol index failure is non-fatal — architecture result still returned.
+            logger.warning(
+                "Symbol index build failed for %s (non-fatal): %s", repo_name, sym_exc
+            )
         return {
             "status": result["status"],
             "repo": result["repo"],
@@ -1002,6 +1061,418 @@ async def get_architecture_graph(owner: str, repo_name: str, q: Optional[str] = 
     except Exception as exc:
         logger.error("Failed to retrieve graph for %s: %s", full_name, exc, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to retrieve architecture graph: {str(exc)}")
+
+
+# ---------------------------------------------------------------------------
+# PH2-001 — Interactive Dependency Graph Endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/graph/{owner}/{repo}/full")
+async def graph_full(owner: str, repo: str, q: Optional[str] = Query(None)):
+    """Return the full dependency graph (or search-filtered subgraph).
+
+    Identical to the legacy architecture graph endpoint but routed under the
+    new /api/graph/ namespace and consumed by InteractiveDependencyGraph.tsx.
+    """
+    repo_name = f"{owner}/{repo}"
+    if not graph_service.graph_exists(repo_name):
+        raise HTTPException(
+            status_code=404,
+            detail=f"No dependency graph found for '{repo_name}'. Analyse the repository first.",
+        )
+    try:
+        data = await asyncio.to_thread(graph_serializer.get_full_graph, repo_name, q)
+        if not data.get("nodes"):
+            raise HTTPException(
+                status_code=404,
+                detail=f"Dependency graph for '{repo_name}' contains no nodes. Re-analyse the repository.",
+            )
+        return data
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("graph_full failed for %s: %s", repo_name, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/graph/{owner}/{repo}/neighbors/{node_path:path}")
+async def graph_neighbors(owner: str, repo: str, node_path: str):
+    """Return the immediate neighbourhood of a single node.
+
+    Returns the focal node + all direct predecessors (files that import it)
+    and successors (files it imports), plus edges between them.
+
+    The focal node carries category='focus' so the frontend can style it
+    distinctly.
+    """
+    repo_name = f"{owner}/{repo}"
+    if not graph_service.graph_exists(repo_name):
+        raise HTTPException(status_code=404, detail=f"No graph found for '{repo_name}'.")
+    try:
+        data = await asyncio.to_thread(graph_serializer.get_neighbors, repo_name, node_path)
+        if data.get("error"):
+            raise HTTPException(status_code=404, detail=data["error"])
+        return data
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("graph_neighbors failed for %s / %s: %s", repo_name, node_path, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/graph/{owner}/{repo}/trace/{node_path:path}")
+async def graph_trace(
+    owner: str,
+    repo: str,
+    node_path: str,
+    direction: str = Query("both", description="forward | backward | both"),
+    depth: int = Query(6, ge=1, le=12, description="BFS depth limit"),
+):
+    """Trace all reachable dependencies from a node via BFS.
+
+    direction=forward  → files this node depends on (what it imports)
+    direction=backward → files that depend on this node (its consumers)
+    direction=both     → both directions (default)
+    """
+    repo_name = f"{owner}/{repo}"
+    if not graph_service.graph_exists(repo_name):
+        raise HTTPException(status_code=404, detail=f"No graph found for '{repo_name}'.")
+    if direction not in ("forward", "backward", "both"):
+        raise HTTPException(status_code=400, detail="direction must be forward, backward, or both.")
+    try:
+        data = await asyncio.to_thread(
+            graph_serializer.get_trace, repo_name, node_path, direction, depth
+        )
+        if data.get("error"):
+            raise HTTPException(status_code=404, detail=data["error"])
+        return data
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("graph_trace failed for %s / %s: %s", repo_name, node_path, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/graph/{owner}/{repo}/search")
+async def graph_search(owner: str, repo: str, q: str = Query(..., min_length=1)):
+    """Search for nodes whose file path or label matches the query.
+
+    Returns matching nodes highlighted, with their immediate neighbours for
+    context.  Matched nodes carry highlighted=true in the response.
+    """
+    repo_name = f"{owner}/{repo}"
+    if not graph_service.graph_exists(repo_name):
+        raise HTTPException(status_code=404, detail=f"No graph found for '{repo_name}'.")
+    try:
+        data = await asyncio.to_thread(graph_serializer.get_search, repo_name, q)
+        if data.get("error"):
+            raise HTTPException(status_code=404, detail=data["error"])
+        return data
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("graph_search failed for %s: %s", repo_name, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+
+# ---------------------------------------------------------------------------
+# Symbol Intelligence Endpoints — PH2-002
+# ---------------------------------------------------------------------------
+
+@app.get("/api/symbols/{owner}/{repo}/file/{file_path:path}")
+async def get_symbols_for_file(owner: str, repo: str, file_path: str):
+    """Return all symbols (functions, classes, methods, etc.) defined in a file.
+
+    The symbol index is built automatically during POST /api/architecture/build.
+    Re-run that endpoint to refresh the index after code changes.
+    """
+    repo_name = f"{owner}/{repo}"
+    try:
+        symbols = await asyncio.to_thread(
+            symbol_service.get_file_symbols, repo_name, file_path
+        )
+        if symbols is None:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"No symbol index found for '{repo_name}'. "
+                    "Run POST /api/architecture/build first."
+                ),
+            )
+        return {
+            "file": file_path,
+            "repo": repo_name,
+            "symbol_count": len(symbols),
+            "symbols": [s.model_dump() for s in symbols],
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("get_symbols_for_file failed for %s/%s: %s", repo_name, file_path, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/symbols/{owner}/{repo}/definition/{symbol_name}")
+async def get_symbol_definition(owner: str, repo: str, symbol_name: str):
+    """Look up the definition of a named symbol (function, class, method, etc.).
+
+    Returns the first match when multiple symbols share a name, preferring
+    classes over functions, functions over methods.
+    """
+    repo_name = f"{owner}/{repo}"
+    try:
+        definition = await asyncio.to_thread(
+            symbol_service.get_definition, repo_name, symbol_name
+        )
+        if definition is None:
+            # Distinguish between missing index and missing symbol
+            if not symbol_service.index_exists(repo_name):
+                raise HTTPException(
+                    status_code=404,
+                    detail=(
+                        f"No symbol index found for '{repo_name}'. "
+                        "Run POST /api/architecture/build first."
+                    ),
+                )
+            raise HTTPException(
+                status_code=404,
+                detail=f"Symbol '{symbol_name}' not found in repo '{repo_name}'.",
+            )
+        return {
+            "symbol": symbol_name,
+            "repo": repo_name,
+            "definition": definition.model_dump(),
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("get_symbol_definition failed for %s/%s: %s", repo_name, symbol_name, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/symbols/{owner}/{repo}/references/{symbol_name}")
+async def get_symbol_references(owner: str, repo: str, symbol_name: str):
+    """Return all symbols in the repository that share the given name.
+
+    MVP implementation uses name-based matching across the entire symbol index.
+    Full cross-file call-graph analysis (tracking callers) is planned for
+    PH2-003 PR Intelligence.
+    """
+    repo_name = f"{owner}/{repo}"
+    try:
+        references = await asyncio.to_thread(
+            symbol_service.get_references, repo_name, symbol_name
+        )
+        if references is None:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"No symbol index found for '{repo_name}'. "
+                    "Run POST /api/architecture/build first."
+                ),
+            )
+        return {
+            "symbol": symbol_name,
+            "repo": repo_name,
+            "references": [r.model_dump() for r in references],
+            "reference_count": len(references),
+            "note": (
+                "MVP: name-based matching only. "
+                "Full cross-file call graph planned for PH2-003."
+            ),
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("get_symbol_references failed for %s/%s: %s", repo_name, symbol_name, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/pr/analyze")
+async def analyze_pull_request(request: PRAnalyzeRequest):
+    """Analyze a GitHub Pull Request for risk, size, blast radius, symbol diffs, etc."""
+    owner = request.owner
+    repo = request.repo
+    pr_number = request.pr_number
+
+    if not owner or not repo or not pr_number:
+        raise HTTPException(
+            status_code=422,
+            detail="Must provide either a valid pr_url or all of owner, repo, and pr_number."
+        )
+
+    repo_name = f"{owner}/{repo}"
+    try:
+        result = await asyncio.to_thread(
+            pr_intelligence_service.analyze_pull_request, owner, repo, pr_number
+        )
+        return result
+    except ValueError as val_err:
+        logger.warning("PR analysis lookup failed for %s: %s", repo_name, val_err)
+        raise HTTPException(
+            status_code=404,
+            detail=str(val_err)
+        )
+    except Exception as exc:
+        logger.error("PR analysis failed for %s (PR #%s): %s", repo_name, pr_number, exc, exc_info=True)
+        raise HTTPException(
+            status_code=502,
+            detail=f"GitHub API or analysis pipeline failed: {str(exc)}"
+        )
+
+
+@app.get("/api/pr/health")
+async def get_pr_health(owner: Optional[str] = None, repo: Optional[str] = None):
+    """Fast diagnostics endpoint for PR Intelligence."""
+    token = GitHubConfig.load_token()
+    github_token_exists = bool(token)
+    
+    rate_info = {"limit": 0, "remaining": 0, "reset": 0}
+    github_rate_limit_authenticated = False
+    if github_token_exists:
+        try:
+            rate_info = await asyncio.to_thread(github_service.get_rate_limit_info)
+            github_rate_limit_authenticated = rate_info.get("limit", 0) >= 5000
+        except Exception:
+            pass
+
+    analysis_exists = False
+    graph_avail = False
+    symbol_avail = False
+    if owner and repo:
+        repo_name = f"{owner}/{repo}"
+        logger.info("[DIAGNOSTICS] Requested repo_name: %s", repo_name)
+        logger.info("[DIAGNOSTICS] ANALYSIS_STORE keys: %s", list(ANALYSIS_STORE.keys()))
+        g_dir = os.path.join("data", "graphs")
+        s_dir = os.path.join("data", "symbols")
+        if os.path.exists(g_dir):
+            logger.info("[DIAGNOSTICS] Graphs files: %s", os.listdir(g_dir))
+        if os.path.exists(s_dir):
+            logger.info("[DIAGNOSTICS] Symbols files: %s", os.listdir(s_dir))
+
+        analysis_exists = any(k.lower() == repo_name.lower() for k in ANALYSIS_STORE.keys())
+        try:
+            graph_avail = await asyncio.to_thread(graph_service.graph_exists, repo_name)
+            symbol_avail = await asyncio.to_thread(symbol_service.index_exists, repo_name)
+        except Exception:
+            pass
+
+    return {
+        "github_token": github_token_exists,
+        "github_token_loaded": github_token_exists,
+        "github_token_prefix": token[:12] if token else "missing",
+        "github_rate_limit_authenticated": github_rate_limit_authenticated,
+        "rate_limit_remaining": rate_info.get("remaining", 0),
+        "analysis_exists": analysis_exists,
+        "graph_available": graph_avail,
+        "symbol_index_available": symbol_avail,
+        "status": "healthy"
+    }
+
+
+@app.post("/api/repos/repair")
+async def repair_repository(request: RepoRepairRequest):
+    """Repair a repository by generating its missing symbol index."""
+    owner = request.owner.strip()
+    repo = request.repo.strip()
+    repo_name = f"{owner}/{repo}"
+    
+    try:
+        matched_repo_name = None
+        for key in ANALYSIS_STORE.keys():
+            if key.lower() == repo_name.lower():
+                matched_repo_name = key
+                break
+        
+        actual_name = matched_repo_name or repo_name
+        local_path = github_service.get_local_repo_path(actual_name)
+        if not os.path.exists(local_path):
+            raise HTTPException(
+                status_code=404,
+                detail=f"Repository '{repo_name}' is not cloned on disk. Please analyze the repository first."
+            )
+        
+        result = await asyncio.to_thread(
+            architecture_service.build, actual_name, local_path, None, True
+        )
+        sym_result = await asyncio.to_thread(
+            symbol_service.build, actual_name, local_path, None
+        )
+        return {
+            "status": "success",
+            "message": f"Repository indexes rebuilt successfully for '{actual_name}'",
+            "details": {
+                "architecture": result,
+                "symbols": sym_result
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Repository repair failed for %s: %s", repo_name, exc, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to rebuild symbol index: {str(exc)}"
+        )
+
+
+@app.post("/api/architecture/drift")
+async def analyze_architecture_drift(request: PRDriftRequest):
+    """Analyze a GitHub Pull Request for architectural drift, cycle changes, coupling changes, and risk."""
+    owner = request.owner
+    repo = request.repo
+    pr_number = request.pr_number
+
+    if not owner or not repo or not pr_number:
+        raise HTTPException(
+            status_code=422,
+            detail="Must provide either a valid pr_url or all of owner, repo, and pr_number."
+        )
+
+    repo_name = f"{owner}/{repo}"
+    try:
+        result = await asyncio.to_thread(
+            architecture_drift_service.analyze_drift, owner, repo, pr_number
+        )
+        return result
+    except ValueError as val_err:
+        logger.warning("Drift analysis lookup failed for %s: %s", repo_name, val_err)
+        raise HTTPException(
+            status_code=404,
+            detail=str(val_err)
+        )
+    except Exception as exc:
+        logger.error("Drift analysis failed for %s (PR #%s): %s", repo_name, pr_number, exc, exc_info=True)
+        raise HTTPException(
+            status_code=502,
+            detail=f"GitHub API or drift analysis pipeline failed: {str(exc)}"
+        )
+
+
+@app.post("/api/dead-code/analyze")
+async def analyze_dead_code(request: DeadCodeRequest):
+    """Analyze a repository for dead code, orphan modules, and dead dependency chains."""
+    owner = request.owner
+    repo = request.repo
+    repo_name = f"{owner}/{repo}"
+    try:
+        result = await asyncio.to_thread(
+            dead_code_service.analyze_dead_code, owner, repo
+        )
+        return result
+    except ValueError as val_err:
+        logger.warning("Dead code analysis lookup failed for %s: %s", repo_name, val_err)
+        raise HTTPException(
+            status_code=404,
+            detail=str(val_err)
+        )
+    except Exception as exc:
+        logger.error("Dead code analysis failed for %s: %s", repo_name, exc, exc_info=True)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Dead code analysis pipeline failed: {str(exc)}"
+        )
 
 
 if __name__ == "__main__":
