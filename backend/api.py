@@ -22,7 +22,7 @@ from typing import Dict, List, Any, Optional
 from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # Ensure parent directory is in sys.path to import project modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -48,6 +48,7 @@ from services.graph_service import GraphService
 from services.reading_order_service import ReadingOrderService
 from services.impact_analysis_service import ImpactAnalysisService
 from services.arch_context_service import ArchContextService
+from services.chat_fallback import build_fallback_answer, is_provider_error
 from services.llm import ProviderFactory
 from memory.chroma_store import ChromaStore
 
@@ -83,9 +84,112 @@ def health():
 
 
 # ---------------------------------------------------------------------------
-# In-memory session store for analyzed repositories
+# Analysis store — persisted to disk so data survives server restarts
 # ---------------------------------------------------------------------------
 ANALYSIS_STORE: Dict[str, Dict[str, Any]] = {}
+_ANALYSIS_STORE_PATH = os.path.join("data", "analysis_store.json")
+_persist_lock = asyncio.Lock()
+
+
+def _load_analysis_store() -> None:
+    """Load persisted analysis data from disk into ANALYSIS_STORE on startup.
+
+    Reconstructs Pydantic models from the stored JSON dicts.  Any entry that
+    fails to deserialise is skipped (logged at WARNING) so a single corrupt
+    record never blocks the entire store from loading.
+    """
+    global ANALYSIS_STORE
+    if not os.path.exists(_ANALYSIS_STORE_PATH):
+        return
+    try:
+        with open(_ANALYSIS_STORE_PATH, "r", encoding="utf-8") as fh:
+            raw: Dict[str, Any] = json.load(fh)
+    except Exception as exc:
+        logger.warning("Could not read analysis store from disk: %s", exc)
+        return
+
+    loaded = 0
+    for repo_name, entry in raw.items():
+        try:
+            analysis_data = RepositoryAnalysis.model_validate(entry["analysis"])
+            arch_raw = entry["architecture"]
+            # Reconstruct nested ComponentRelationship objects
+            relationships = [
+                ComponentRelationship(**r) for r in arch_raw.get("relationships", [])
+            ]
+            architecture_data = ArchitectureSummary(
+                summary=arch_raw.get("summary", ""),
+                reading_order=arch_raw.get("reading_order", []),
+                relationships=relationships,
+            )
+            ANALYSIS_STORE[repo_name] = {
+                "analysis": analysis_data,
+                "architecture": architecture_data,
+            }
+            loaded += 1
+        except Exception as exc:
+            logger.warning(
+                "Skipping malformed analysis store entry for '%s': %s", repo_name, exc
+            )
+
+    if loaded:
+        logger.info(
+            "Loaded %d repository entries from analysis store (%s).",
+            loaded,
+            _ANALYSIS_STORE_PATH,
+        )
+
+
+def _serialise_store() -> Dict[str, Any]:
+    """Serialise ANALYSIS_STORE to a plain JSON-safe dict."""
+    out: Dict[str, Any] = {}
+    for repo_name, entry in ANALYSIS_STORE.items():
+        try:
+            analysis_obj = entry["analysis"]
+            arch_obj = entry["architecture"]
+            out[repo_name] = {
+                "analysis": (
+                    analysis_obj.model_dump()
+                    if hasattr(analysis_obj, "model_dump")
+                    else analysis_obj
+                ),
+                "architecture": (
+                    arch_obj.model_dump()
+                    if hasattr(arch_obj, "model_dump")
+                    else arch_obj
+                ),
+            }
+        except Exception as exc:
+            logger.warning("Could not serialise store entry for '%s': %s", repo_name, exc)
+    return out
+
+
+async def _persist_analysis_store() -> None:
+    """Write ANALYSIS_STORE to disk atomically (tmp file → rename).
+
+    Uses an asyncio Lock to prevent concurrent writes from corrupting the file.
+    Runs the blocking I/O in a thread so the event loop is not blocked.
+    """
+    async with _persist_lock:
+        try:
+            payload = _serialise_store()
+            await asyncio.to_thread(_write_store_atomic, payload)
+            logger.debug("Analysis store persisted (%d entries).", len(payload))
+        except Exception as exc:
+            logger.error("Failed to persist analysis store: %s", exc, exc_info=True)
+
+
+def _write_store_atomic(payload: Dict[str, Any]) -> None:
+    """Write payload to _ANALYSIS_STORE_PATH via a tmp file + rename (atomic)."""
+    os.makedirs(os.path.dirname(_ANALYSIS_STORE_PATH), exist_ok=True)
+    tmp_path = _ANALYSIS_STORE_PATH + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, indent=2)
+    os.replace(tmp_path, _ANALYSIS_STORE_PATH)
+
+
+# Populate ANALYSIS_STORE from disk before the first request is served
+_load_analysis_store()
 
 # ---------------------------------------------------------------------------
 # Core service singletons
@@ -140,6 +244,17 @@ class ChatRequest(BaseModel):
     history: List[Dict[str, Any]] = Field(
         default_factory=list, description="Conversation history"
     )
+
+    @field_validator("repo")
+    @classmethod
+    def repo_must_not_be_empty(cls, v: str) -> str:
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError(
+                "repo must not be empty. "
+                "Please open a repository from the analysis page first."
+            )
+        return stripped
 
 
 class ArchitectureBuildRequest(BaseModel):
@@ -320,15 +435,23 @@ async def get_examples():
 @app.get("/api/repos/recent")
 async def get_recent():
     """Fetch list of recently analysed repositories from the in-memory store."""
-    return [
-        {
+    results = []
+    for name, data in ANALYSIS_STORE.items():
+        analysis_obj = data.get("analysis")
+        # Support both Pydantic model and plain dict (defensive)
+        if hasattr(analysis_obj, "tech_stack"):
+            tech_stack = analysis_obj.tech_stack
+        elif isinstance(analysis_obj, dict):
+            tech_stack = analysis_obj.get("tech_stack", [])
+        else:
+            tech_stack = []
+        results.append({
             "name": name,
             "url": f"https://github.com/{name}",
-            "tech_stack": data["analysis"].tech_stack,
+            "tech_stack": tech_stack,
             "analyzed_at": "Just now",
-        }
-        for name, data in ANALYSIS_STORE.items()
-    ]
+        })
+    return results
 
 
 @app.post("/api/index")
@@ -478,9 +601,17 @@ async def analyze_repository(request: AnalyzeRequest):
             yield f"data: {json.dumps({'status': 'chroma', 'message': 'END: chroma indexing'})}\n\n"
 
             yield f"data: {json.dumps({'status': 'building_graph', 'message': 'Building file dependency graph...'})}\n\n"
-            await asyncio.to_thread(
-                architecture_service.build, repo_name, local_path, None, False
+            arch_build_result = await asyncio.to_thread(
+                architecture_service.build, repo_name, local_path, files, False
             )
+            _graph_files = arch_build_result.get("files_parsed", 0)
+            _graph_edges = arch_build_result.get("dependencies_found", 0)
+            _graph_entries = arch_build_result.get("entry_points", [])
+            logger.info(
+                "[PIPELINE:%s] GRAPH built files_parsed=%d edges=%d entry_points=%s",
+                repo_name, _graph_files, _graph_edges, _graph_entries,
+            )
+            yield f"data: {json.dumps({'status': 'graph_built', 'message': f'✓ Dependency graph: {_graph_files} files parsed, {_graph_edges} edges', 'files_parsed': _graph_files, 'dependencies_found': _graph_edges, 'entry_points': _graph_entries})}\n\n"
 
             # Architecture summary via DeepSeek
             architecture_summary = await generate_architecture_summary_with_llm(
@@ -511,6 +642,9 @@ async def analyze_repository(request: AnalyzeRequest):
                 "analysis": analysis_data,
                 "architecture": architecture_summary,
             }
+
+            # Persist to disk so data survives server restarts
+            asyncio.ensure_future(_persist_analysis_store())
 
             yield f"data: {json.dumps({'status': 'complete', 'message': '✓ Repository analysis complete!'})}\n\n"
             yield f"data: {json.dumps({'status': 'done', 'repo': repo_name})}\n\n"
@@ -580,78 +714,123 @@ async def map_issue(request: IssueMapRequest):
 
 @app.post("/api/chat")
 async def repository_chat(request: ChatRequest):
-    """Chat with repository context, streaming back token results via SSE."""
-    repo_name = request.repo.strip()
+    """Chat with repository context, streaming back token results via SSE.
+
+    Pipeline:
+      1. Validate repo name (Pydantic + SSE guard)
+      2. Embed question locally (BGE — no API call)
+      3. Retrieve relevant chunks from ChromaDB
+      4. Inject architecture context
+      5. Stream LLM answer token-by-token
+         → On LLM failure: emit retrieval-only fallback (no raw errors to user)
+      6. Emit sources + confidence in terminal done event
+         (EvaluationAgent skipped in fallback mode to avoid a second LLM call
+          during a rate-limit window)
+    """
+    # repo field is pre-validated and stripped by ChatRequest.repo_must_not_be_empty
+    repo_name = request.repo
     question = request.message.strip()
     history = request.history
 
     async def chat_streamer():
-        try:
-            # 1. Embed query (local BGE — no API call)
-            query_embedding = embedding_service.generate_embedding(question)
+        # ── SSE-level guard (defence-in-depth for any call path that bypasses Pydantic) ──
+        if not repo_name:
+            yield f"data: {json.dumps({'error': 'no_repo_selected', 'message': 'No repository selected. Please open a repository from the analysis page first.', 'status': 'done'})}\n\n"
+            return
 
-            # 2. Retrieve relevant chunks from ChromaDB
+        # ── 1. Embed query (local BGE — never fails due to API quota) ──────────
+        try:
+            query_embedding = embedding_service.generate_embedding(question)
+        except Exception as embed_exc:
+            logger.error("Embedding failed: %s", embed_exc, exc_info=True)
+            yield f"data: {json.dumps({'error': 'embedding_failed', 'message': 'Failed to process your question. Please try again.', 'status': 'done'})}\n\n"
+            return
+
+        # ── 2. Retrieve relevant chunks from ChromaDB ────────────────────────
+        try:
             chunks = chroma_store.search_repository(
                 repo_name=repo_name,
                 query_embedding=query_embedding,
                 limit=5,
             )
+        except Exception as chroma_exc:
+            logger.error("ChromaDB search failed: %s", chroma_exc, exc_info=True)
+            yield f"data: {json.dumps({'error': 'retrieval_failed', 'message': 'Failed to search the repository index. Please try again.', 'status': 'done'})}\n\n"
+            return
 
-            context_blocks = []
-            sources: set = set()
-            for idx, chunk in enumerate(chunks):
-                meta = chunk.get("metadata", {})
-                file_path = meta.get("file_path", "unknown")
-                sources.add(file_path)
-                context_blocks.append(
-                    f"--- File: {file_path} ---\n{chunk.get('content', '')}"
-                )
+        # Build sources set and context string from retrieved chunks
+        context_blocks: List[str] = []
+        sources: set = set()
+        for chunk in chunks:
+            meta = chunk.get("metadata", {})
+            file_path = meta.get("file_path", "unknown")
+            sources.add(file_path)
+            context_blocks.append(f"--- File: {file_path} ---\n{chunk.get('content', '')}")
+
+        if context_blocks:
+            context_str = "\n\n".join(context_blocks)
+        else:
             context_str = (
-                "\n\n".join(context_blocks) if context_blocks else "No relevant context found."
+                "No indexed content was found for this repository and query. "
+                "The repository may not be indexed yet, or the question did not "
+                "match any stored code chunks."
             )
 
-            # 3. System instruction
-            system_instruction = (
-                "You are a Repository Intelligence Agent, an expert developer assistant. "
-                "You are helping a developer understand a repository's codebase. "
-                "Answer the developer's question using the provided codebase context and conversation history. "
-                "Be detailed, citing the source files where relevant. "
-                "Keep code snippets accurate."
-            )
+        # ── 3. Normalise conversation history ────────────────────────────────
+        normalised_history = []
+        for turn in history:
+            role = turn.get("role", "user")
+            if role == "model":
+                role = "assistant"
+            parts = turn.get("parts", [])
+            if parts:
+                content = parts[0] if isinstance(parts[0], str) else str(parts[0])
+            elif "content" in turn:
+                content = turn["content"]
+            else:
+                continue
+            normalised_history.append({"role": role, "content": content})
 
-            # 4. Build conversation history in OpenAI format
-            #    Normalise Gemini-style turns {"role":"model","parts":["..."]} → {"role":"assistant","content":"..."}
-            normalised_history = []
-            for turn in history:
-                role = turn.get("role", "user")
-                if role == "model":
-                    role = "assistant"
-                parts = turn.get("parts", [])
-                if parts:
-                    content = parts[0] if isinstance(parts[0], str) else str(parts[0])
-                elif "content" in turn:
-                    content = turn["content"]
-                else:
-                    continue
-                normalised_history.append({"role": role, "content": content})
+        # ── 4. Architecture context injection ────────────────────────────────
+        arch_ctx = arch_context_service.get_context(repo_name)
+        arch_block = arch_ctx.to_prompt_block()
+        arch_section = f"\n{arch_block}\n" if arch_block else ""
 
-            # 5. Architecture context injection
-            arch_ctx = arch_context_service.get_context(repo_name)
-            arch_block = arch_ctx.to_prompt_block()
-            arch_section = f"\n{arch_block}\n" if arch_block else ""
+        # ── 5. Strictly grounded system instruction ──────────────────────────
+        system_instruction = (
+            "You are a Repository Intelligence Agent — an expert developer assistant "
+            "that answers questions about a specific codebase.\n\n"
+            "STRICT RULES:\n"
+            "1. Answer ONLY using the repository context provided below. "
+            "Do NOT invent file paths, function names, class names, or module structures "
+            "that are not present in the retrieved context.\n"
+            "2. If the context does not contain enough information to answer, say so "
+            "explicitly: state what was found and what was missing, and suggest the user "
+            "check specific files if you can infer them from the context.\n"
+            "3. You MAY use general programming knowledge to explain language concepts, "
+            "framework patterns, or standard library behaviour — but only when it does "
+            "NOT require making repository-specific claims beyond the provided context.\n"
+            "4. Always cite the specific file path(s) from the context when making "
+            "repository-specific statements.\n"
+            "5. Keep code snippets accurate — do not paraphrase or reconstruct code "
+            "unless it is directly present in the context."
+        )
 
-            prompt = (
-                f"{arch_section}"
-                f"Context from repository:\n"
-                f"=======================\n"
-                f"{context_str}\n"
-                f"=======================\n\n"
-                f"Question: {question}"
-            )
+        prompt = (
+            f"{arch_section}"
+            f"Context from repository '{repo_name}':\n"
+            f"=======================\n"
+            f"{context_str}\n"
+            f"=======================\n\n"
+            f"Question: {question}"
+        )
 
-            # 6. Stream from DeepSeek
-            provider = ProviderFactory.get_provider()
-            full_text = ""
+        # ── 6. Stream from LLM — with retrieval-only fallback on failure ─────
+        provider = ProviderFactory.get_provider()
+        full_text = ""
+        fallback_mode = False
+
+        try:
             async for token in provider.stream(
                 prompt=prompt,
                 system_instruction=system_instruction,
@@ -660,7 +839,33 @@ async def repository_chat(request: ChatRequest):
                 full_text += token
                 yield f"data: {json.dumps({'text': token})}\n\n"
 
-            # 7. Evaluate the full streamed response
+        except Exception as llm_exc:
+            logger.warning(
+                "LLM provider failed during chat stream for repo '%s': %s",
+                repo_name,
+                llm_exc,
+            )
+            fallback_mode = True
+
+            # If some tokens were already yielded, emit a clear separator
+            if full_text:
+                separator = (
+                    "\n\n---\n"
+                    "⚠️ AI provider became unavailable. "
+                    "Showing retrieved context below.\n\n"
+                )
+                yield f"data: {json.dumps({'text': separator})}\n\n"
+
+            # Emit retrieval-grounded fallback answer
+            fallback_text = build_fallback_answer(chunks, question)
+            yield f"data: {json.dumps({'text': fallback_text})}\n\n"
+
+        # ── 7. Confidence scoring and terminal done event ────────────────────
+        if fallback_mode:
+            # Skip EvaluationAgent — it would make a second LLM call during a
+            # rate-limit window, which is exactly wrong.
+            confidence_pct = 0
+        else:
             try:
                 evaluator = EvaluationAgent()
                 eval_result = evaluator.evaluate_response(question, full_text, chunks)
@@ -669,12 +874,7 @@ async def repository_chat(request: ChatRequest):
                 logger.error("Chat evaluation failed: %s", eval_err)
                 confidence_pct = 85
 
-            yield f"data: {json.dumps({'sources': sorted(list(sources)), 'confidence': confidence_pct, 'status': 'done'})}\n\n"
-
-        except Exception as e:
-            logger.error("Chat streaming error: %s", e, exc_info=True)
-            yield f"data: {json.dumps({'text': f'Error in agent system: {str(e)}'})}\n\n"
-            yield f"data: {json.dumps({'status': 'done'})}\n\n"
+        yield f"data: {json.dumps({'sources': sorted(list(sources)), 'confidence': confidence_pct, 'fallback_mode': fallback_mode, 'status': 'done'})}\n\n"
 
     return StreamingResponse(chat_streamer(), media_type="text/event-stream")
 
@@ -779,12 +979,23 @@ async def get_architecture_graph(owner: str, repo_name: str, q: Optional[str] = 
                 status_code=404,
                 detail=(
                     f"No dependency graph found for '{full_name}'. "
-                    "Please run POST /api/architecture/build first."
+                    "Please analyse the repository first."
                 ),
             )
         graph_data = await asyncio.to_thread(
             graph_service.get_visualization_graph, full_name, architecture_service, q
         )
+        # Guard: graph file exists but was built with 0 nodes (empty parse).
+        # Return 404 so the frontend shows an actionable error instead of a
+        # blank canvas with no explanation.
+        if not graph_data.get("nodes"):
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"Dependency graph for '{full_name}' exists but contains no nodes. "
+                    "Re-analyse the repository to rebuild the graph with the latest code."
+                ),
+            )
         return graph_data
     except HTTPException:
         raise
@@ -795,4 +1006,10 @@ async def get_architecture_graph(owner: str, repo_name: str, q: Optional[str] = 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("api:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run(
+        "backend.api:app",
+        host=os.environ.get("API_SERVER_HOST", "127.0.0.1"),
+        port=int(os.environ.get("API_SERVER_PORT", "8000")),
+        reload=True,
+        reload_dirs=["backend", "services", "agents", "memory", "models"],
+    )

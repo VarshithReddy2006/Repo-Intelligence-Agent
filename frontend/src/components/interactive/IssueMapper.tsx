@@ -25,7 +25,20 @@ interface IssueMapperProps {
 }
 
 export const IssueMapper: React.FC<IssueMapperProps> = ({ repoName }) => {
-  const [selectedRepo, setSelectedRepo] = useState(repoName || '');
+  const [selectedRepo, setSelectedRepo] = useState(() => {
+    if (repoName) return repoName;
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const owner = urlParams.get('owner');
+      const repo = urlParams.get('repo');
+      if (owner && repo) {
+        return `${owner}/${repo}`;
+      }
+      const stored = localStorage.getItem('activeRepo');
+      if (stored) return stored;
+    }
+    return '';
+  });
   const [recentRepos, setRecentRepos] = useState<{ name: string }[]>([]);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');

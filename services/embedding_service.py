@@ -26,7 +26,6 @@ _MODEL_NAME = "BAAI/bge-small-en-v1.5"
 def _get_model():
     """Return the cached SentenceTransformer model, loading it on first call."""
     global _model
-    print("[EMBED] ENTER _get_model()")
     if _model is not None:
         return _model
 
@@ -36,11 +35,9 @@ def _get_model():
 
         try:
             from sentence_transformers import SentenceTransformer  # type: ignore
-            print("[EMBED] Loading SentenceTransformer...")
             logger.info("Loading BGE embedding model '%s' (first call)…", _MODEL_NAME)
             t0 = time.perf_counter()
             _model = SentenceTransformer(_MODEL_NAME)
-            print("[EMBED] SentenceTransformer loaded")
             logger.info(
                 "BGE model loaded successfully. elapsed=%.2fs",
                 time.perf_counter() - t0,
@@ -97,11 +94,10 @@ class EmbeddingService:
                 "EmbeddingService: 'client' parameter is ignored — using local BGE model."
             )
         self.model_name = model_name
-        # Eagerly trigger model loading so the first real request is fast.
-        try:
-            _get_model()
-        except Exception as exc:
-            logger.warning("Could not pre-load BGE model at init time: %s", exc)
+        # ponytail: lazy load — model loads on first generate_embedding(s) call.
+        # Eager load duplicated under uvicorn --reload (reloader parent + worker
+        # both instantiated EmbeddingService at import time). Singleton in
+        # _get_model() still guarantees one load per process.
 
     # ------------------------------------------------------------------
     # Core embedding methods

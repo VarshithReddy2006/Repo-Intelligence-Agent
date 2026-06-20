@@ -12,6 +12,8 @@ import logging
 from typing import Dict, List, Any, Optional
 import requests
 
+from services.storage_paths import get_cloned_repos_dir
+
 logger = logging.getLogger(__name__)
 
 
@@ -80,8 +82,10 @@ class GitHubService:
         Returns:
             The local directory path.
         """
-        # We store cloned repos in a directory under the current project's data directory
-        base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "cloned_repos")
+        # Store clones OUTSIDE the project tree so uvicorn --reload (WatchFiles)
+        # does not treat clone activity as source-code changes. Configurable via
+        # CLONED_REPOS_PATH; defaults to ~/.repo_intelligence/cloned_repos.
+        base_dir = str(get_cloned_repos_dir())
         safe_name = repo_fullName.replace("/", "_")
         return os.path.join(base_dir, safe_name)
 

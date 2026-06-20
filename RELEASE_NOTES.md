@@ -4,32 +4,25 @@ We are proud to announce the initial release of the **Repo Intelligence Agent** 
 
 ---
 
-## 🚀 Key Features Included
+## 🚀 Key Features Added
 
-- **Full-Pipeline Repository Analysis:** Clones, chunks, embeds, and indexes code codebases, concluding with a comprehensive architecture summary via DeepSeek.
-- **Conversational Repository Chat:** Real-time token streaming (SSE) with chat history, local context retrieval, and automatic hallucination scoring.
-- **Grounded Issue Mapper:** Maps raw issue texts directly to target code files, generating structured step-by-step implementation plans.
-- **Dependency Graph Mapping:** Extracts file dependency structures via AST Tree-sitter parsers and maps module coupling, entry points, and hotspots.
-- **Contributor Onboarding Paths:** Generates recommended reading orders based on module NetworkX centrality.
-- **Change Impact Analysis:** Predicts downstream file dependencies affected by prospective code changes.
-
----
-
-## 🛠️ Major Bug Fixes & Hardening
-
-- **DeepSeek & NVIDIA NIM Integration:** Swapped Gemini providers for OpenAI-compatible DeepSeek V4 Flash configurations served via NVIDIA NIM.
-- **ChromaDB Vector Integrity:** Fixed dimension mismatch issues on Chroma collection writes by enforcing static 384-dimensional vector schemas.
-- **Entry Point Over-Detection:** Patched the entry point detection engine. The parser now excludes tests, docs, and example folders, reducing entry points count on frameworks from ~500 down to the core 17 targets.
-- **Issue Mapper Cache Poisoning:** Patched cache collision vulnerability by migrating the memory layer to a `v2:repo:hash` key format, ensuring stale plans do not bleed into current issue mappings.
-- **Grounded Fallback Mode:** Added an automatic fallback mechanism for Issue Mapper calls during LLM quota exhaustion, allowing keyword-based component mapping and chunk-content-grounded step generation without crashing.
+- **Unified Repository Workspace:** Dashboard layout integrating Codebase Analysis, Architecture Graph, Reading Path, Impact Analysis, Issue Intelligence, and Chat in a single session.
+- **Session Persistence:** Synchronizes active repository context using browser `localStorage` and hydrates repository ingestion lists from `data/analysis_store.json` at startup.
+- **Chat Fallback Mode:** Implements an automated local RAG fallback layer that intercepts LLM timeouts, network failures, or HTTP 429 quota exhaustion on NVIDIA NIM, providing cited local context without throwing errors.
+- **Architecture Graph:** Uses Tree-sitter and NetworkX to parse syntax imports and export a React Flow-compatible JSON layout.
+- **Reading Order:** Generates a structured developer onboarding sequence by ranking files topologically using NetworkX normalized centrality models.
+- **Impact Analysis:** Walks forward/reverse dependency paths (depth = 4) and performs component matching to assess code modification risk levels.
+- **Issue Mapper:** Automatically maps GitHub issue text to files and compiles step-by-step plans under a budget of exactly two LLM completions.
 
 ---
 
-## 📊 Verification & Validation
+## 🛠️ Issues & Bug Fixes Resolved
 
-MVP validation was executed against the **Ankita15k/GitNest** repository:
-- **328 files** successfully parsed and mapped.
-- **1,549 code chunks** stored and embedded.
-- **1,440 dependency edges** mapped.
-- Zero code plan hallucinations or path discrepancies observed.
-- Backend test coverage exceeding **85%** across all central services.
+- **Current Workspace session bug:** Resolved page reload/navigation resets by storing active context in `localStorage` and sharing it via parent workspace state, eliminating the need to re-analyze when switching tabs.
+- **Architecture graph generation:** Patched the AST parsing engine to output empty checks cleanly, enabling the UI to render React Flow graphs or 404 warnings without locking up.
+- **Graph persistence:** Standardized atomic writes to `data/architecture/` and `data/analysis_store.json` on successful analysis.
+- **Stale issue cache:** Migrated the caching key to `f"{repo_name}:v2:{issue_hash}"`, preventing cross-repository plan bleeding.
+- **Chroma dimension mismatch:** Aligned collection indexes to a static 384-dimensional schema matching local `BAAI/bge-small-en-v1.5` embeddings.
+- **NVIDIA NIM model configuration:** Corrected parameters to map OpenAI-compatible calls to `deepseek-ai/deepseek-v4-flash` via `https://integrate.api.nvidia.com/v1`.
+- **WatchFiles reload issue:** Configured `uvicorn` in `backend/main.py` to monitor source directories specifically (`_RELOAD_DIRS = ["backend", "services", "agents", "memory", "models"]`). This stops Uvicorn from scanning `data/` or cloning directories, preventing reload loops that terminate active requests.
+- **API Port Parity:** Configured the application to default consistently to port **8001** for development environments, resolving mismatches between testing tools and gateway servers.
