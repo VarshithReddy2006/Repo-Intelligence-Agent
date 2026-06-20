@@ -111,6 +111,22 @@ class ArchitectureService:
         )
         logger.info("Parsed %d supported source files", len(parsed))
 
+        # Guard: if zero files were parsed, the graph will be empty and all
+        # downstream features (Reading Path, Impact Analysis, Architecture Graph)
+        # will fail.  Log at ERROR level so it's immediately visible in server
+        # logs.  We do NOT raise here — the empty graph is still saved so that
+        # the API endpoint can return a descriptive 404 rather than crashing.
+        if len(parsed) == 0:
+            logger.error(
+                "[PIPELINE:%s] architecture_service.build produced ZERO parsed files. "
+                "repo_path='%s' files_provided=%s. "
+                "The dependency graph will be empty. "
+                "Check CLONED_REPOS_PATH env var and that source files are reachable.",
+                repo_name,
+                repo_path or "(none)",
+                files is not None,
+            )
+
         # ----------------------------------------------------------
         # Step 2: Detect entry points
         # ----------------------------------------------------------

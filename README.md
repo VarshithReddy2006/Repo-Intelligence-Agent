@@ -2,107 +2,129 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Backend-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI"/>
-  <img src="https://img.shields.io/badge/LLM-DeepSeek%20V4%20Flash-6C5CE7?style=for-the-badge" alt="DeepSeek"/>
+  <img src="https://img.shields.io/badge/Frontend-Astro%204%20%2B%20React-FF5D01?style=for-the-badge&logo=astro&logoColor=white" alt="Astro + React"/>
+  <img src="https://img.shields.io/badge/LLM-DeepSeek%20V4%20Flash-6C5CE7?style=for-the-badge" alt="DeepSeek V4 Flash"/>
   <img src="https://img.shields.io/badge/Inference-NVIDIA%20NIM-76B900?style=for-the-badge&logo=nvidia&logoColor=white" alt="NVIDIA NIM"/>
   <img src="https://img.shields.io/badge/Vector%20DB-ChromaDB-blue?style=for-the-badge" alt="ChromaDB"/>
-  <img src="https://img.shields.io/badge/Status-MVP%20Complete-brightgreen?style=for-the-badge" alt="Status MVP"/>
-  <img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License"/>
+  <img src="https://img.shields.io/badge/AST%20Parser-Tree--sitter-black?style=for-the-badge" alt="Tree-sitter"/>
 </p>
 
 <p align="center">
-  <strong>An AI-powered repository intelligence platform for understanding, navigating, and planning changes across large codebases.</strong>
+  <strong>An advanced codebase intelligence platform that combines AST structure extraction, dependency graph modeling, NetworkX centrality analysis, and LLM reasoning to map codebase architectures, onboarding reading orders, issue implementation plans, and change impact boundaries.</strong>
 </p>
 
 <p align="center">
-  <a href="#-why-repo-intelligence-agent">Why Repo Intelligence Agent?</a> •
-  <a href="#-key-features">Key Features</a> •
+  <a href="#-why-this-is-different-from-typical-repo-chatbots">Why This Is Different</a> •
+  <a href="#-key-differentiators">Key Differentiators</a> •
   <a href="#-system-architecture">System Architecture</a> •
-  <a href="#-installation">Installation</a> •
-  <a href="#-performance--validation">Validation Results</a> •
-  <a href="docs/DEVELOPMENT_SETUP.md">Development Setup</a>
+  <a href="ARCHITECTURE.md">Architecture Specification</a> •
+  <a href="docs/DEVELOPMENT_SETUP.md">Development Setup</a> •
+  <a href="docs/VALIDATION_REPORT.md">Validation & Telemetry</a> •
+  <a href="RELEASE_NOTES.md">Release Notes</a>
 </p>
 
 ---
 
-## 💡 Why Repo Intelligence Agent?
+## ⚡ Why this is different from typical Repo Chatbots
 
-Navigating modern software repositories introduces significant friction for engineering teams:
-- **Massive Codebases:** Sprawling modules make finding where logic resides an uphill battle.
-- **Onboarding Difficulty:** New contributors struggle to find the right entry points and module flows.
-- **Issue Localization:** Mapping a GitHub bug description to the exact files and functions requires deep tribal knowledge.
-- **Architecture Discovery:** Static documentation goes stale; understanding active dependency graphs is slow.
-- **Change Impact Uncertainty:** Modifying a utility file risks breaking unexpected downstream dependents.
+Traditional codebase assistants use a straightforward, unstructured approach:
 
-**Repo Intelligence Agent** solves these problems by creating a local, semantic index of the repository. It parses abstract syntax trees (ASTs), extracts code dependencies, builds a directed graph of module relationships, and utilizes the DeepSeek LLM to answer developer queries, map bugs to code fixes, and visualize change propagation—completely grounded in your source code.
+```
+Traditional RAG Chatbot:
+Repo ──► Text Splitting ──► Vector Embeddings ──► Similarity Search ──► LLM Prompt
+```
+
+This model is blind to code structure, import inheritance, code coupling, and execution entry points. It often hallucinates dependencies, misses downstream side-effects, and generates unstructured code recommendations.
+
+**Repo Intelligence Agent** addresses these gaps by implementing a structural, graph-augmented retrieval and reasoning architecture:
+
+```
+Repo Intelligence Agent Ingestion & Retrieval Pipeline:
+Repo
+  ├──► [Tree-sitter AST Parser] ──► Structural Declarations (Imports/Exports/Classes/Methods)
+  │                                           │
+  │                                           ▼
+  │                              [NetworkX DiGraph Mapping]
+  │                                           │
+  ├───────────────────────────────────────────┼──────────────────────────────────────────┐
+  ▼                                           ▼                                          ▼
+[ChromaDB Vector Store]            [Centrality Analytics]                     [BFS Graph Traversals]
+(1500 chars / 200 overlap)       (Suggested Reading Orders)                  (Change Impact Analysis)
+  │                                           │                                          │
+  ▼                                           ▼                                          ▼
+Vector Snippets ───────────────► Architectural Graph Context ────────────────► Propagation Risk Scoring
+  │                                           │                                          │
+  └───────────────────────────────────────────┴──────────────────────────────────────────┘
+                                              │
+                                              ▼
+                               [DeepSeek V4 Flash Reasoning]
+                                              │
+                                              ▼
+                                Grounded Code Intelligence
+```
+
+By enriching semantic vector retrieval with explicit import graphs, centrality indicators, and structural declarations, the system accurately maps codebase relationships, onboarding order, implementation dependencies, and change impacts without hallucinating non-existent modules.
 
 ---
 
-## ✨ Key Features
+## ✨ Key Differentiators
 
-- **Repository Analysis:** Direct cloning, language detection, overlapping chunking, and local vector indexing.
-- **Repository Chat:** Conversational Q&A over the codebase with streaming token responses (SSE) and strict source citations.
-- **Architecture Builder:** Multi-language AST parsing (using Tree-sitter) and NetworkX dependency graph mapping.
-- **Issue Mapper:** Automatically matches bug report text to target files, generating a clear step-by-step implementation plan.
-- **Reading Order:** Generates an optimized file-reading list sorted by module centrality to accelerate developer onboarding.
-- **Impact Analysis:** Traverses directed dependency graphs to predict which files will be affected by a proposed change.
-- **Confidence Layer:** Evaluates responses for hallucination, returning confidence scores and warning flags.
-- **Grounded Fallback Mode:** Falls back to keyword-based component mapping and chunk-grounded steps during LLM rate limits.
+### 1. Unified Repository Workspace
+The frontend layout organizes repository navigation into a unified tabbed dashboard workspace:
+- **Codebase Analysis:** Summary details, tech stack, and primary package declarations.
+- **Architecture Graph:** A React Flow-rendered, interactive node-link import graph of source files.
+- **Reading Path:** An ordered timeline sequence for codebase onboarding.
+- **Impact Analysis:** Interactive scenario inputs predicting file risk spreads.
+- **Issue Intelligence:** Step-by-step implementation guide generation.
+- **Chat:** Conversational context-grounded Q&A interface.
 
----
+The parent workspace component maintains a **shared repository session** in React state. Tab navigation is instantaneous, drawing from cached metadata with **no re-analysis** required when switching between views.
 
-## 🎬 Demo
+### 2. Session Store & Context Sync
+Active repository sessions are synchronized across components and browser tabs. 
+- **Persisted (localStorage):** `owner`, `repo`, `indexing status`, `graph status`, and `last analyzed timestamp`. This lets the application recover context immediately if the user reloads or navigates away.
+- **Non-persisted (in-memory state):** Large dependency graph payloads, tree nodes, and transient UI states. This division prevents exceeding localStorage capacity limits (typically 5MB) while keeping load latency low.
 
-### Codebase Indexing & Analysis
-![Analysis Demo](docs/images/analyze-demo.gif)
+### 3. Chat Resilience Layer
+To prevent rate-limit interruptions (common on free-tier NVIDIA NIM keys), the system has an **automated grounded fallback mode**. When a rate limit exception (HTTP 429), network timeout, or provider failure occurs:
+- The system intercepts the exception.
+- It extracts local text snippets from the top similarity chunks retrieved from ChromaDB.
+- It infers affected components using file path heuristics.
+- It returns a structured, retrieval-grounded fallback response directly to the chat window with cited sources and confidence scores, ensuring no raw back-end exceptions reach the developer.
 
-### Conversational Repository Chat
-![Chat Demo](docs/images/chat-demo.gif)
-
-### Issue Mapping & Code Planning
-![Issue Mapper Demo](docs/images/issue-mapper-demo.gif)
+### 4. Analysis Persistence Lifecycle
+Computed ingestion analyses are saved directly to `data/analysis_store.json`. Upon application startup, the backend hydrates this store, allowing full repository workspace recovery and details retrieval without having to rebuild graphs or regenerate embeddings.
 
 ---
 
 ## 🏗️ System Architecture
 
+The following diagram illustrates the relationship between the client dashboard, the API gateway, local vector stores, and the DeepSeek inference layer:
+
 ```mermaid
 graph TD
-    UI[Astro 4 + React Dashboard] -- HTTP / SSE --> API[FastAPI Gateway]
+    UI[Astro 4 + React Dashboard] -- HTTP / SSE / React Flow --> API[FastAPI Gateway Port 8001]
     
-    subgraph Engine [Code Processing Engine]
+    subgraph Processing [Code Ingestion & Parsing]
         API --> GH[GitHub Clone & Extractor]
-        API --> CC[Code Chunking 1500 chars]
+        API --> TS[Tree-sitter AST Parser]
+        API --> CC[Code Chunking 1500 chars / 200 overlap]
         API --> ES[Local BGE Embedding Service]
-        API --> CS[Chroma Vector Store]
-        API --> AS[Tree-sitter AST Graph Builder]
     end
 
-    subgraph Memory [Data Layer]
-        CS --> DB[(ChromaDB data/chroma_db)]
-        AS --> JSON[(Architecture JSON data/)]
-        API --> CACHE[(In-Memory Cache)]
+    subgraph Memory [Local Data Layer]
+        ES --> Chroma[(ChromaDB Vector Store)]
+        TS --> NX[NetworkX Graph Builder]
+        NX --> DB_Graph[(Persisted Graphs data/architecture/)]
+        API --> DB_Store[(Analysis Cache data/analysis_store.json)]
     end
 
     subgraph AI [LLM Reasoning Layer]
         API --> NIM[NVIDIA NIM DeepSeek V4 Flash]
     end
-```
-
-### Data Processing Flow
-```
-GitHub Repository
-   │
-   ▼ [Clone & Extract]
-Source Code Files
-   │
-   ▼ [CodeChunker: 1500 chars / 200 overlap]
-Text Chunks
-   │
-   ▼ [EmbeddingService: BGE Small]
-384-dimensional Vectors
-   │
-   ▼ [Index Repository]
-ChromaDB Vector Database ──► Semantic Retrieval ──► DeepSeek LLM ──► Grounded Response
+    
+    Chroma --> API
+    DB_Graph --> API
 ```
 
 ---
@@ -110,71 +132,22 @@ ChromaDB Vector Database ──► Semantic Retrieval ──► DeepSeek LLM ─
 ## 🛠️ Technology Stack
 
 | Layer | Component | Notes |
-|---|---|---|
-| **Backend** | `FastAPI` + `Uvicorn` | Asynchronous routes, SSE streaming |
-| **Frontend** | `Astro 4` + `React` | Component hydration, React Flow graph rendering |
-| **Vector Store** | `ChromaDB` | Persistent, namespaces partitioned by repository |
-| **Embeddings** | `BAAI/bge-small-en-v1.5` | 384-dim local sentence-transformers (no API calls) |
-| **LLM Provider** | `DeepSeek V4 Flash` | Hosted on NVIDIA NIM (OpenAI-compatible) |
-| **AST Parser** | `Tree-sitter` | Multi-language syntax trees parsing |
-| **Graph Engine** | `NetworkX` | Node betweenness centrality calculations |
-
----
-
-## 🚀 Installation & Local Development
-
-### 1. Backend Server Setup
-Ensure Python 3.10+ is installed:
-```bash
-# Set up virtual environment
-python -m venv .venv
-source .venv/bin/activate  # Or .venv\Scripts\activate on Windows
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Create environmental configuration
-cp .env.example .env
-# Open .env and add your DEEPSEEK_API_KEY from build.nvidia.com
-
-# Start the API server
-python -m uvicorn backend.api:app --host 127.0.0.1 --port 8000 --reload
-```
-
-### 2. Frontend Setup
-Ensure Node.js 18+ is installed:
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
----
-
-## 📊 Performance & Validation
-
-Validation was conducted on the **Ankita15k/GitNest** repository (328 files, 1,549 chunks, 1,440 dependency edges):
-- **Cloning & Indexing Success:** All source files embedded and stored in ChromaDB in ~28s.
-- **Graph Builder Centrality:** Accurately extracted 17 application entry points and mapped high-coupling module hotspots.
-- **Issue Mapper Recall:** Correctly localized file targets for sample bugs without returning hallucinated paths.
-
-Refer to the complete [Validation Report](docs/VALIDATION_REPORT.md) for detailed telemetry.
+| :--- | :--- | :--- |
+| **Backend** | `FastAPI` + `Uvicorn` | Asynchronous routers, SSE streams, binds to port **8001** |
+| **Frontend** | `Astro 4` + `React` | Dynamic UI hydration, React Flow graph rendering |
+| **Vector DB** | `ChromaDB` | Persistent code chunk database, partitioned via `repo_name` |
+| **Embeddings** | `BAAI/bge-small-en-v1.5` | Local SentenceTransformers generating 384-dimensional vectors |
+| **LLM Provider** | `DeepSeek V4 Flash` | Inference provider served via OpenAI-compatible NVIDIA NIM |
+| **AST Parser** | `Tree-sitter` | Lazy-loaded language parsers (Python, JS, TS, JSX, TSX) |
+| **Graph Calculations** | `NetworkX` | Directed dependency trees, BFS sweeps, composite centrality |
 
 ---
 
 ## 🛑 Known Limitations
 
-- **In-Memory Store:** The active repository session cache resets when the FastAPI backend process restarts.
-- **CPU Bottleneck:** Embedded generation runs locally; CPU processing can take ~2–3 minutes for large repositories.
-- **API Limits:** Free NVIDIA NIM keys are capped at ~3 requests per minute (automatically triggers fallback mode when exceeded).
-
----
-
-## 🗺️ Roadmap
-
-- **Near-Term:** Persistent SQLite database for processed repository lists, JWT API authentication middleware.
-- **Medium-Term:** BM25 keyword matching + vector hybrid search, multi-repository comparing queries.
-- **Long-Term:** CI/CD actions for PR risk scoring, VS Code IDE extension.
+- **CPU Ingestion Latency:** Locally executing SentenceTransformer embeddings on CPU takes approximately 2–3 minutes per 1,500 chunks.
+- **NVIDIA NIM Rate Limits:** Free developer keys are capped at ~3 requests/minute. The system handles this with its automated fallback mode.
+- **Stubbed Infrastructure:** `SQLiteStore` (`memory/sqlite_store.py`), `MCPService` (`services/mcp_service.py`), and `RepositoryAnalyzer` (`agents/analyzer.py`) are design stubs. Inlined routes and JSON storage cache operations handle these functions in the MVP.
 
 ---
 

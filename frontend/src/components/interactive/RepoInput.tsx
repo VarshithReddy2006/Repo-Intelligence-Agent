@@ -50,7 +50,7 @@ export const RepoInput: React.FC = () => {
         body: JSON.stringify({
           url: repoUrl,
           branch: 'main',
-          model: 'Gemini 2.5 Flash'
+          model: 'deepseek-ai/deepseek-v4-flash'
         })
       });
 
@@ -97,8 +97,11 @@ export const RepoInput: React.FC = () => {
                   if (repoPath) {
                     const parts = repoPath.split('/')
                     if (parts.length === 2) {
-                      const [owner, repo] = parts
-                      window.location.href = `/analysis?owner=${owner}&repo=${repo}`
+                      const [owner, repo] = parts;
+                      if (typeof window !== 'undefined') {
+                        localStorage.setItem('activeRepo', repoPath);
+                      }
+                      window.location.href = `/analysis?owner=${owner}&repo=${repo}`;
                     } else {
                       setErrorMessage('Invalid repo format received');
                       setIsAnalyzing(false);
@@ -178,10 +181,9 @@ export const RepoInput: React.FC = () => {
             <div className="space-y-1">
               <span className="font-bold uppercase tracking-wider text-[10px] block">Analysis Failed</span>
               <p className="leading-relaxed">{errorMessage}</p>
-              {errorMessage.includes('quota') || errorMessage.includes('429') || errorMessage.includes('RESOURCE_EXHAUSTED') ? (
+              {errorMessage.includes('quota') || errorMessage.includes('429') || errorMessage.includes('RESOURCE_EXHAUSTED') || errorMessage.includes('rate limit') ? (
                 <p className="text-red-300/70 text-[10px] mt-1">
-                  Gemini API rate limit reached. Please wait a minute before retrying, or check your API quota at{' '}
-                  <a href="https://ai.dev/rate-limit" target="_blank" rel="noopener noreferrer" className="underline">ai.dev/rate-limit</a>.
+                  AI provider rate limit reached. Please wait a moment before retrying.
                 </p>
               ) : null}
             </div>

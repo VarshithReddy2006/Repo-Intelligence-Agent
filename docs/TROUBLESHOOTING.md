@@ -90,26 +90,28 @@ To resolve this permanently, upgrade to a paid NVIDIA NIM tier or configure key 
 The UI displays a connection error during analysis, and the terminal log halts at `START: chroma indexing`.
 
 ### Root Cause
-1. **Parallel Port Mismatch:** You might be running multiple backend processes. If `test_analyze.py` is targeting port `8001` while the active server is listening on port `8000`, commands will hit a mismatched session state.
+1. **Parallel Port Mismatch:** You might be running multiple backend processes. If `test_analyze.py` is targeting port `8001` while the active server is listening on port `8000`, or vice-versa, commands will hit a mismatched session state. The default server port configured in `backend/main.py` is **8001**.
 2. **Reverse Proxy Buffering:** If deploying behind Nginx or Cloudflare, the proxy might buffer the event stream, causing a timeout or socket termination.
 
 ### Solution
 - Stop all Python/Uvicorn processes:
   - On Windows:
-    ```powershell
-    Get-Process -Name python, uvicorn -ErrorAction SilentlyContinue | Stop-Process -Force
-    ```
-  - On macOS / Linux:
-    ```bash
-    killall python uvicorn
-    ```
-- Re-run Uvicorn on port 8000:
+     ```powershell
+     Get-Process -Name python, uvicorn -ErrorAction SilentlyContinue | Stop-Process -Force
+     ```
+  - On macOS/Linux:
+     ```bash
+     killall python uvicorn
+     ```
+- Re-run Uvicorn on port **8001**:
   ```bash
-  python -m uvicorn backend.api:app --host 127.0.0.1 --port 8000 --reload
+  python backend/main.py
   ```
-- If behind Nginx, add the following header directive to your server block:
+- Ensure reverse proxy settings disable buffering:
   ```nginx
   proxy_set_header Connection '';
+  proxy_http_version 1.1;
+  chunked_transfer_encoding off;
   proxy_buffering off;
-  chunked_transfer_encoding on;
+  proxy_cache off;
   ```

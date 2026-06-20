@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { apiUrl } from '../../lib/api';
 import FileTree from './FileTree';
 import IssueMapper from './IssueMapper';
+import ChatInterface from './ChatInterface';
 import { ArchitectureGraph } from './ArchitectureGraph';
 import { ReadingOrderTimeline } from './ReadingOrderTimeline';
 import { ImpactAnalysisGraph } from './ImpactAnalysisGraph';
-import { Layers, Box, Code2, BookOpen, Cpu, Info, CheckCircle2, Target, HelpCircle } from 'lucide-react';
+import { Layers, Box, Code2, BookOpen, Cpu, Info, CheckCircle2, Target, HelpCircle, MessageSquareCode } from 'lucide-react';
 
 interface ComponentRelationship {
   source: string;
@@ -36,7 +37,7 @@ export const AnalysisDashboard: React.FC<DashboardProps> = ({ repoParam }) => {
   const [data, setData] = useState<AnalysisData | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'analysis' | 'graph' | 'reading_path' | 'impact_analysis' | 'issues'>('analysis');
+  const [activeTab, setActiveTab] = useState<'analysis' | 'graph' | 'reading_path' | 'impact_analysis' | 'issues' | 'chat'>('analysis');
 
   // Impact Analysis states
   const [impactData, setImpactData] = useState<any | null>(null);
@@ -80,6 +81,9 @@ export const AnalysisDashboard: React.FC<DashboardProps> = ({ repoParam }) => {
       setTimeout(() => (window.location.href = '/'), 2000);
       setLoading(false);
       return;
+    }
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('activeRepo', repoName);
     }
     const apiUrlFull = apiUrl(`/api/analysis/${owner}/${name}`);
     console.log('Fetching analysis from', apiUrlFull);
@@ -247,6 +251,17 @@ export const AnalysisDashboard: React.FC<DashboardProps> = ({ repoParam }) => {
             >
               <Cpu className="h-4 w-4" />
               <span>ISSUE INTELLIGENCE</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('chat')}
+              className={`flex items-center gap-2 px-4 py-2 text-xs font-mono tracking-wider font-semibold border-b-2 transition-all ${
+                activeTab === 'chat'
+                  ? 'border-primary text-text bg-primary/5'
+                  : 'border-transparent text-text-muted hover:text-text hover:bg-card/20'
+              }`}
+            >
+              <MessageSquareCode className="h-4 w-4" />
+              <span>CHAT</span>
             </button>
           </div>
 
@@ -422,6 +437,12 @@ export const AnalysisDashboard: React.FC<DashboardProps> = ({ repoParam }) => {
           {activeTab === 'issues' && (
             <div className="border border-border bg-card/5 rounded-lg p-4">
               <IssueMapper repoName={repoName} />
+            </div>
+          )}
+
+          {activeTab === 'chat' && (
+            <div className="min-h-[600px] flex flex-col">
+              <ChatInterface repoName={repoName} />
             </div>
           )}
 

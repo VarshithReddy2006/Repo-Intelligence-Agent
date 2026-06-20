@@ -20,7 +20,7 @@ const isAnalysisActive = pathname.startsWith('/analysis');
       </a>
 
       <!-- Desktop Navigation -->
-      <nav class="hidden md:flex items-center gap-5 text-sm font-medium">
+      <nav class="hidden md:flex items-center gap-5 text-sm font-medium" id="desktop-nav">
         {navLinks.map(link => {
           const isActive = pathname === link.href;
           return (
@@ -34,14 +34,13 @@ const isAnalysisActive = pathname.startsWith('/analysis');
             </a>
           );
         })}
-        {isAnalysisActive && (
-          <a
-            href={pathname}
-            class="text-text font-semibold border-b-2 border-primary py-0.5"
-          >
-            Analysis Dashboard
-          </a>
-        )}
+        <a
+          id="analysis-nav-link"
+          href="#"
+          class="transition-colors hover:text-text text-text-muted hidden"
+        >
+          Analysis Dashboard
+        </a>
       </nav>
     </div>
 
@@ -100,8 +99,27 @@ const isAnalysisActive = pathname.startsWith('/analysis');
     }
   }
 
+  function setupNavbar() {
+    const activeRepo = localStorage.getItem('activeRepo');
+    const analysisLink = document.getElementById('analysis-nav-link');
+    if (analysisLink && activeRepo) {
+      const [owner, repo] = activeRepo.split('/');
+      analysisLink.setAttribute('href', `/analysis?owner=${owner}&repo=${repo}`);
+      analysisLink.classList.remove('hidden');
+      
+      const pathname = window.location.pathname;
+      if (pathname.startsWith('/analysis')) {
+        analysisLink.classList.add('text-text', 'font-semibold', 'border-b-2', 'border-primary', 'py-0.5');
+        analysisLink.classList.remove('text-text-muted');
+      }
+    }
+  }
+
   // Check health immediately
   updateStatus();
   // Poll health status
   setInterval(updateStatus, 8000);
+  
+  // Setup active analysis tab
+  setupNavbar();
 </script>
