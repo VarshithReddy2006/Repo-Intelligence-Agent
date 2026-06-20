@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <strong>An advanced codebase intelligence platform that combines AST structure extraction, dependency graph modeling, NetworkX centrality analysis, and LLM reasoning to map codebase architectures, onboarding reading orders, issue implementation plans, and change impact boundaries.</strong>
+  <strong>An advanced codebase intelligence platform combining AST structural parsing, NetworkX dependency graphs, centrality analytics, and LLM reasoning to map codebase architectures, onboarding reading orders, issue implementation plans, PR risk blast radius, architecture drift, and dead code cleanup.</strong>
 </p>
 
 <p align="center">
@@ -41,7 +41,7 @@ This model is blind to code structure, import inheritance, code coupling, and ex
 ```
 Repo Intelligence Agent Ingestion & Retrieval Pipeline:
 Repo
-  ├──► [Tree-sitter AST Parser] ──► Structural Declarations (Imports/Exports/Classes/Methods)
+  ├──► [Tree-sitter AST Parser] ──► Structural Declarations (Imports/Exports/Classes/Methods/Symbols)
   │                                           │
   │                                           ▼
   │                              [NetworkX DiGraph Mapping]
@@ -60,10 +60,10 @@ Vector Snippets ───────────────► Architectural G
                                [DeepSeek V4 Flash Reasoning]
                                               │
                                               ▼
-                                Grounded Code Intelligence
+                                Grounded Code Intelligence & PR Insights
 ```
 
-By enriching semantic vector retrieval with explicit import graphs, centrality indicators, and structural declarations, the system accurately maps codebase relationships, onboarding order, implementation dependencies, and change impacts without hallucinating non-existent modules.
+By enriching semantic vector retrieval with explicit import graphs, centrality indicators, structural symbol declarations, and delta patching, the system accurately maps codebase relationships, onboarding order, implementation dependencies, change impacts, PR risks, architecture drift, and dead code without hallucinating non-existent modules.
 
 ---
 
@@ -72,9 +72,12 @@ By enriching semantic vector retrieval with explicit import graphs, centrality i
 ### 1. Unified Repository Workspace
 The frontend layout organizes repository navigation into a unified tabbed dashboard workspace:
 - **Codebase Analysis:** Summary details, tech stack, and primary package declarations.
-- **Architecture Graph:** A React Flow-rendered, interactive node-link import graph of source files.
+- **Architecture Graph:** A React Flow-rendered, interactive node-link import graph of source files with support for search, neighborhood highlights, and forward/backward reachability dependency traces.
 - **Reading Path:** An ordered timeline sequence for codebase onboarding.
 - **Impact Analysis:** Interactive scenario inputs predicting file risk spreads.
+- **PR Intelligence:** Detailed risk analysis of pull requests, including size classification, blast radius propagation, symbol diff mapping, and focused review areas.
+- **Architecture Drift:** Tracks how a pull request alters the codebase structure, highlighting added/removed dependencies, new or resolved cycles, coupling changes, and hotspot modifications.
+- **Dead Code:** Identifies unreachable files, orphan modules, and dead dependency chains starting from execution entry points using graph-weighted cleanup scores.
 - **Issue Intelligence:** Step-by-step implementation guide generation.
 - **Chat:** Conversational context-grounded Q&A interface.
 
@@ -92,8 +95,11 @@ To prevent rate-limit interruptions (common on free-tier NVIDIA NIM keys), the s
 - It infers affected components using file path heuristics.
 - It returns a structured, retrieval-grounded fallback response directly to the chat window with cited sources and confidence scores, ensuring no raw back-end exceptions reach the developer.
 
-### 4. Analysis Persistence Lifecycle
-Computed ingestion analyses are saved directly to `data/analysis_store.json`. Upon application startup, the backend hydrates this store, allowing full repository workspace recovery and details retrieval without having to rebuild graphs or regenerate embeddings.
+### 4. Analysis & Symbol Persistence Lifecycle
+Computed ingestion analyses and symbol indexes are saved directly to `data/analysis_store.json` and `data/symbols/`. Upon application startup, the backend hydrates the stores, allowing full repository workspace recovery and details retrieval without having to rebuild graphs, re-parse symbols, or regenerate embeddings.
+
+### 5. Centralized GitHub Configuration & Hardening
+Implements centralized authentication config logic supporting secure token loading, rate limit monitoring, and detailed 5-stage pipeline logs to identify any connection, serialization, or symbol extraction issues during PR analysis.
 
 ---
 
@@ -115,7 +121,8 @@ graph TD
     subgraph Memory [Local Data Layer]
         ES --> Chroma[(ChromaDB Vector Store)]
         TS --> NX[NetworkX Graph Builder]
-        NX --> DB_Graph[(Persisted Graphs data/architecture/)]
+        NX --> DB_Graph[(Persisted Graphs data/graphs/)]
+        TS --> SYM[Symbol Indexer data/symbols/]
         API --> DB_Store[(Analysis Cache data/analysis_store.json)]
     end
 
@@ -125,6 +132,7 @@ graph TD
     
     Chroma --> API
     DB_Graph --> API
+    SYM --> API
 ```
 
 ---
@@ -139,7 +147,7 @@ graph TD
 | **Embeddings** | `BAAI/bge-small-en-v1.5` | Local SentenceTransformers generating 384-dimensional vectors |
 | **LLM Provider** | `DeepSeek V4 Flash` | Inference provider served via OpenAI-compatible NVIDIA NIM |
 | **AST Parser** | `Tree-sitter` | Lazy-loaded language parsers (Python, JS, TS, JSX, TSX) |
-| **Graph Calculations** | `NetworkX` | Directed dependency trees, BFS sweeps, composite centrality |
+| **Graph Calculations** | `NetworkX` | Directed dependency trees, BFS sweeps, composite centrality, delta patching |
 
 ---
 

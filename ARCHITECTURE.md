@@ -1,6 +1,6 @@
 # 🏗️ Architecture Specification
 
-This document provides a comprehensive technical overview of the **Repo Intelligence Agent** system architecture. It outlines the structural layers, data ingestion pipelines, API contracts, mathematical models, and operational workflows.
+This document provides a comprehensive technical overview of the **Repo Intelligence Agent** system architecture. It outlines the structural layers, data ingestion pipelines, API contracts, mathematical and heuristic models, and operational workflows.
 
 ---
 
@@ -30,29 +30,31 @@ The application follows a modular, layer-oriented architecture separating the cl
 ┌───────────────────────────┐ ┌──────────────────────────┐
 │        Data Layer         │ │     Reasoning Layer      │
 │  (ChromaDB, NetworkX,     │ │ (DeepSeek V4 Flash NIM)  │
-│   analysis_store.json)    │ │                          │
+│   analysis_store.json,    │ │                          │
+│   Symbol Indexer)         │ │                          │
 └───────────────────────────┘ └──────────────────────────┘
 ```
 
 ### 1. Client Layer (Astro 4 + React)
 - **Astro Pages:** Astro provides zero-JS static structure for routing and layout templates (`index.astro`, `chat.astro`, `analysis.astro`, `issues.astro`).
 - **React Hydration:** High-interaction dashboard elements are implemented as React components hydrated in the client browser.
-- **Visual Mapping:** Uses `React Flow` to render zoomable, interactive representations of dependency graphs and impact propagation paths.
+- **Visual Mapping:** Uses `React Flow` to render zoomable, interactive representations of dependency graphs and impact propagation paths. Features neighborhood inspection, search filtering, and BFS trace walks.
 - **Server-Sent Events (SSE):** Standard HTML5 `EventSource` handles real-time token streaming for chat and indexing logs.
 
 ### 2. API Gateway Layer (FastAPI)
-- **Asynchronous Execution:** Built on ASGI, utilizing `asyncio` and thread-pool execution (`asyncio.to_thread`) for long-running blocking operations like cloning and embedding generation.
-- **Runtime Port:** Serves HTTP traffic on port **8001** (as configured in `backend/main.py` and `frontend/src/lib/api.ts`).
+- **Asynchronous Execution:** Built on ASGI, utilizing `asyncio` and thread-pool execution (`asyncio.to_thread`) for long-running blocking operations like cloning, embedding generation, and graph analyses.
+- **Runtime Port:** Serves HTTP traffic on port **8001** (as configured in `backend/api.py` and `frontend/src/lib/api.ts`).
 - **Data Integrity:** Employs strictly-typed `Pydantic` models for request validation and response serialization, protecting backend services from malformed payloads.
 
 ### 3. Code Ingestion & Processing Layer
 - **Extracellular Walk:** Git command-line utility clones repositories locally. The file walker filters out binaries, images, and folders like `.git`, `.venv`, and `node_modules`.
-- **AST Parsing:** Tree-sitter runs syntax parsing. It uses compiled language objects for Python, JavaScript, TypeScript, JSX, and TSX to extract imports, exports, class variables, methods, and functions.
+- **AST Parsing:** Tree-sitter runs syntax parsing. It uses compiled language objects for Python, JavaScript, TypeScript, JSX, and TSX to extract imports, exports, class declarations, methods, functions, and symbols.
 - **Code Chunking:** Splits source code into sliding window text blocks (1500 characters, 200 character overlap) to prepare documents for vector indexing.
 
 ### 4. Memory & Vector DB Layer (Local)
 - **Vector Space:** ChromaDB stores code chunks. Dense representation utilizes `BAAI/bge-small-en-v1.5` loaded locally via `sentence_transformers`. Output vectors are static 384-dimensional arrays.
 - **Graph Space:** NetworkX handles directed graph (`DiGraph`) calculations, building import relationships where files represent nodes and imports represent edges.
+- **Symbol Indexer:** Stores symbol tables (class definitions, methods, functions, namespaces) locally in `data/symbols/` per repository.
 - **Relational Storage:** Repository metadata and parsed summary schemas are serialized to the local file system at `data/analysis_store.json` on changes, enabling persisted states to survive process recycles.
 
 ### 5. AI Reasoning Layer (NVIDIA NIM)
@@ -69,9 +71,12 @@ The application frontend wraps all repository-specific dashboards inside a **Uni
 ```
 Unified Repository Workspace
 ├── CODEBASE ANALYSIS (Overview, Tech Stack, Dependencies, Component Relations)
-├── ARCHITECTURE GRAPH (Interactive React Flow Dependency Mapping)
+├── ARCHITECTURE GRAPH (Interactive React Flow Dependency Mapping, Neighbors, Trace)
 ├── READING PATH (Suggested Code Timeline & Centrality Graph)
 ├── IMPACT ANALYSIS (BFS Traversal Change Predictor)
+├── PR INTELLIGENCE (PR Risk Analysis, Size Classification, Blast Radius, Symbol Diff)
+├── ARCHITECTURE DRIFT (Baseline vs Delta comparison: coupling changes, cycle additions)
+├── DEAD CODE (Reachability Analysis, cleanup score, orphan modules, dead chains)
 ├── ISSUE INTELLIGENCE (Issue Mapper Plan Generator)
 └── CHAT (Context-Grounded Conversational Q&A Panel)
 ```
@@ -86,7 +91,7 @@ To allow seamless workspace sharing and recovery across browser tabs, the active
 - **Rationale:** If the user reloads the browser, context is restored instantly. Since the backend persists analysis details to disk, the UI can re-fetch the complete cached analysis from `/api/analysis/{owner}/{repo}` using the stored name, preventing redundant re-clones.
 
 #### Non-persisted Session Store (React In-memory State):
-- **Fields:** React Flow graph nodes/edges, file-tree structures, impact analysis BFS paths, and current chat messages.
+- **Fields:** React Flow graph nodes/edges, file-tree structures, impact analysis BFS paths, PR analysis reports, and current chat messages.
 - **Rationale:** Large graph datasets exceed browser `localStorage` capacity limits (5MB) and degrade browser serialization performance. Storing these in React state keeps memory usage low and page loads fast.
 
 ---
@@ -101,46 +106,9 @@ Rather than holding processed analysis logs in volatile memory, the gateway pers
 
 ### 2. Chat Fallback Resilience Layer
 NVIDIA NIM free-tier API keys are rate-limited to ~3 requests per minute. To maintain a smooth user experience, the `/api/chat` and `/api/issues/map` endpoints implement a fallback structure:
-
-```
-                  ┌────────────────────────────────────────┐
-                  │          Submit User Request           │
-                  └───────────────────┬────────────────────┘
-                                      ▼
-                  ┌────────────────────────────────────────┐
-                  │        Vector ChromaDB Retrieve        │
-                  └───────────────────┬────────────────────┘
-                                      ▼
-                  ┌────────────────────────────────────────┐
-                  │    Attempt DeepSeek V4 NIM Call        │
-                  └─────────┬────────────────────┬─────────┘
-                            │                    │
-                    Success │                    │ Rate Limit / 429 / Timeout
-                            ▼                    ▼
-     ┌──────────────────────────────┐    ┌───────────────────────────────────┐
-     │ Stream LLM Tokens to Client  │    │  Activate Grounded Fallback Mode  │
-     └──────────────┬───────────────┘    └─────────────────┬─────────────────┘
-                    │                                      │
-                    │                                      ▼
-                    │                    ┌───────────────────────────────────┐
-                    │                    │  Fuzzy Match Paths to Components  │
-                    │                    └─────────────────┬─────────────────┘
-                    │                                      │
-                    │                                      ▼
-                    │                    ┌───────────────────────────────────┐
-                    │                    │ Extract Chunks as Plan Sentences  │
-                    │                    └─────────────────┬─────────────────┘
-                    │                                      │
-                    ▼                                      ▼
-     ┌───────────────────────────────────────────────────────────────────────┐
-     │          Return Grounded Response + Cited Sources + Confidence         │
-     └───────────────────────────────────────────────────────────────────────┘
-```
-
-When NVIDIA NIM returns a `429 Too Many Requests` or provider exception:
-1. The backend intercepts the exception and suppresses raw HTTP status error traces.
+1. The backend intercepts rate-limit exceptions (HTTP 429) or provider exceptions and suppresses raw error traces.
 2. It fetches the top-5 relevant code blocks from ChromaDB.
-3. It performs local keyword path matching to categorize affected components (e.g. `auth` maps to `Authentication`).
+3. It performs local keyword path matching to categorize affected components.
 4. It extracts class/function headers from the retrieved code blocks to generate a step-by-step local fallback implementation plan.
 5. It outputs the local plan directly to the client alongside ChromaDB source files and a similarity-derived confidence score.
 
@@ -167,9 +135,7 @@ Where:
 - $W_{\text{centrality}} = 50.0$
 - $W_{\text{in-degree}} = 30.0$
 - $W_{\text{core}} = 15.0$
-- $W_{\text{peripheral}} = 100.0$
-
-The service calculates scores, applies topological sorting on the dependency graph to ensure dependencies are read before dependents, and falls back to ordering by composite score descending.
+- $W_{\text{peripheral}} = 40.0$ (subtracted if in peripheral directory)
 
 ---
 
@@ -191,25 +157,137 @@ The impact analyzer maps change propagation by walking the directed import graph
 
 ---
 
+### 3. PR Size & Blast Radius Classification Models
+
+#### PR Size Estimation
+PR size is classified using a composite score based on the count of changed files, changed symbols, and total lines changed:
+$$\text{Size Score} = S_{\text{files}} + S_{\text{symbols}} + S_{\text{lines}}$$
+Where:
+- $S_{\text{files}} = \min(N_{\text{files}} \times 3, 30)$
+- $S_{\text{symbols}} = \min(N_{\text{symbols}} \times 1.5, 30)$
+- $S_{\text{lines}} = \min(\text{Lines Changed} \times 0.1, 40)$
+
+**Size Thresholds:**
+- **XS**: $\text{Size Score} \le 20$
+- **S**: $20 < \text{Size Score} \le 40$
+- **M**: $40 < \text{Size Score} \le 60$
+- **L**: $60 < \text{Size Score} \le 80$
+- **XL**: $\text{Size Score} > 80$
+
+#### Blast Radius & Depth Promotion
+The impact boundary is initially classified by the number of affected files ($I_{\text{radius}}$):
+- **LOW**: $I_{\text{radius}} \le 5$
+- **MEDIUM**: $5 < I_{\text{radius}} \le 15$
+- **HIGH**: $15 < I_{\text{radius}} \le 30$
+- **EXTREME**: $I_{\text{radius}} > 30$
+
+**Depth Promotion Heuristic:**
+If the maximum propagation depth ($D_{\text{max}}$) is $\ge 3$, the blast radius risk is promoted by one tier to reflect higher downstream side-effects (e.g., LOW becomes MEDIUM, MEDIUM becomes HIGH, and HIGH becomes EXTREME).
+
+---
+
+### 4. Graph Delta Patching & Drift Analytics
+To analyze how a pull request impacts repository architecture, the system creates a virtual post-commit graph state ($G_{\text{after}}$) by patching the baseline graph ($G$):
+
+```
+                       ┌─────────────────────────────────┐
+                       │      Baseline Graph (G)         │
+                       └────────────────┬────────────────┘
+                                        │
+                         For each PR Changed File
+                                        ▼
+                  Is Status Removed? ─────── Yes ──► Remove Node from G
+                        │
+                        No
+                        ▼
+                Fetch Head Commit File Content
+                        │
+                        ▼
+               Parse Imports via Tree-sitter
+                        │
+                        ▼
+               Clear Outgoing Edges (if modified)
+                        │
+                        ▼
+               Add Nodes & Outgoing Edges to G
+                        │
+                        ▼
+                       ┌─────────────────────────────────┐
+                       │       Delta Graph (G_after)     │
+                       └─────────────────────────────────┘
+```
+
+#### Structural Drift Metrics:
+- **Dependency Edge Drift:**
+  - $\Delta_{\text{added}} = E(G_{\text{after}}) \setminus E(G)$
+  - $\Delta_{\text{removed}} = E(G) \setminus E(G_{\text{after}})$
+- **Dependency Cycles:** Detects cycle additions or resolutions by computing:
+  - $C_{\text{added}} = \text{cycles}(G_{\text{after}}) \setminus \text{cycles}(G)$
+  - $C_{\text{resolved}} = \text{cycles}(G) \setminus \text{cycles}(G_{\text{after}})$
+- **Coupling Changes:** Measures coupling shifts for each file $v$:
+  - $\Delta_{\text{coupling}}(v) = \text{deg}_{G_{\text{after}}}(v) - \text{deg}_{G}(v)$
+- **Architectural Hotspots:** Modified files that overlap with:
+  - Baseline application entry points
+  - Baseline core packages
+  - Baseline highly coupled modules (top 15% degree centrality)
+
+---
+
+### 5. Graph-Weighted Dead Code reachability Models
+The dead code analyzer executes a reachability sweep over the dependency graph starting from verified entry points:
+1. **Reachability Set ($R$):**
+   $$R = E_{\text{entry}} \cup \left( \bigcup_{e \in E_{\text{entry}}} \text{descendants}(G, e) \right)$$
+2. **Dead Code Set ($D$):**
+   $$D = V(G) \setminus R \setminus \text{ignored\_files}$$
+
+#### Cleanup Scoring and Deductions:
+For each unreachable file $v \in D$, a node weight is computed based on its topological metrics:
+$$\text{Weight}(v) = 1.0 + 10.0 \times C_D(v) + 0.5 \times \text{out-deg}_G(v) + 1.0 \times |\text{descendants}(H, v)|$$
+Where $H = G[D]$ is the unreachable subgraph.
+
+Deductions are computed using:
+- **Root Dead File ($in\text{-}deg(v) = 0$):** High-confidence unused file (no imports lead to it).
+  $$\text{Deduction}(v) = 6.0 \times \text{Weight}(v)$$
+- **Orphaned Module ($in\text{-}deg(v) > 0$):** Unreachable internal module (has imports but isolated from entry points).
+  $$\text{Deduction}(v) = 4.0 \times \text{Weight}(v)$$
+- **Dead Dependency Chain ($C_i$):** Weakly connected components in $H$ traced as chains.
+  $$\text{Deduction}(C_i) = 3.0 \times |C_i|$$
+
+**Final Cleanup Score:**
+$$\text{Cleanup Score} = \max\left(0, \min\left(100, 100 - \sum \text{Deductions}\right)\right)$$
+
+---
+
 ## 🔌 API Endpoint Specifications
 
 ### 🧭 Base URL: `http://127.0.0.1:8001`
 
-| HTTP Method | Path | Request Body | Response Schema | Description |
+| HTTP Method | Path | Request/Query | Response | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| **GET** | `/health` | None | `{backend, llm_provider, llm_model, embedding_provider, vector_db, status}` | Health check |
-| **GET** | `/api/repos/examples` | None | `List[{name, url, tech_stack, description}]` | Fetch pre-configured examples |
-| **GET** | `/api/repos/recent` | None | `List[{name, url, tech_stack, analyzed_at}]` | List analyzed repositories |
-| **POST** | `/api/index` | `{repo_url}` | `{status: "indexed", files: int, chunks: int}` | Index code chunks in ChromaDB |
-| **POST** | `/api/analyze` | `{url, branch, model}` | `text/event-stream` (SSE Progress) | Trigger full analysis pipeline |
-| **GET** | `/api/analysis/{owner}/{repo_name}` | None | `{analysis: RepositoryAnalysis, architecture: ArchitectureSummary}` | Fetch analysis details |
-| **POST** | `/api/issues/map` | `{repo, issue, title, description}` | `IssueMapResponse` | Generate implementation plan |
-| **POST** | `/api/chat` | `{repo, message, history: List}` | `text/event-stream` (SSE Chat Tokens) | Streaming chat Q&A |
-| **POST** | `/api/architecture/build` | `{repo}` | `{status, repo, files_parsed, dependencies_found, entry_points}` | Rebuild dependency graph |
-| **GET** | `/api/architecture/{owner}/{repo_name}` | None | `ArchitectureSummary` | Fetch architecture summary |
-| **POST** | `/api/reading-order` | `{repo}` | `ReadingOrder` | Generate onboarding path |
-| **POST** | `/api/impact-analysis` | `{repo, issue}` | `ImpactAnalysis` | Predict change impacts |
-| **GET** | `/api/architecture/{owner}/{repo_name}/graph` | Query: `q` (filter) | React Flow Node-Link JSON | Fetch dependency graph data |
+| **GET** | `/health` | None | Status JSON | Health check |
+| **GET** | `/api/repos/examples` | None | Example List | Fetch pre-configured examples |
+| **GET** | `/api/repos/recent` | None | Recent List | List analyzed repositories |
+| **POST** | `/api/index` | `{repo_url}` | Index status | Index code chunks in ChromaDB |
+| **POST** | `/api/analyze` | `{url, branch, model}` | SSE Stream | Trigger full analysis pipeline |
+| **GET** | `/api/analysis/{owner}/{repo_name}` | None | Analysis JSON | Fetch analysis details |
+| **POST** | `/api/issues/map` | `{repo, title, description}` | Plan JSON | Generate issue implementation plan |
+| **POST** | `/api/chat` | `{repo, message, history}` | SSE Stream | Streaming chat Q&A |
+| **POST** | `/api/architecture/build` | `{repo}` | Build status | Build AST dependency graph & symbols |
+| **GET** | `/api/architecture/{owner}/{repo_name}`| None | Summary JSON | Fetch architecture summary |
+| **POST** | `/api/reading-order` | `{repo}` | Order JSON | Generate onboarding reading order |
+| **POST** | `/api/impact-analysis` | `{repo, issue}` | Impact JSON | Predict change impact propagation |
+| **GET** | `/api/graph/{owner}/{repo}/full` | Query: `q` (filter) | React Flow JSON | Fetch full dependency graph |
+| **GET** | `/api/graph/{owner}/{repo}/neighbors/{node_path:path}`| None | Neighborhood JSON | Fetch node neighbors |
+| **GET** | `/api/graph/{owner}/{repo}/trace/{node_path:path}`| Query: `direction`, `depth` | Trace JSON | BFS path trace from node |
+| **GET** | `/api/graph/{owner}/{repo}/search` | Query: `q` | Search JSON | Highlight nodes matching query |
+| **GET** | `/api/symbols/{owner}/{repo}/file/{file_path:path}` | None | Symbols list | List symbols defined in a file |
+| **GET** | `/api/symbols/{owner}/{repo}/definition/{symbol_name}` | None | Def JSON | Find definition site of a symbol |
+| **GET** | `/api/symbols/{owner}/{repo}/references/{symbol_name}` | None | Ref list | Find references of a symbol |
+| **POST** | `/api/pr/analyze` | PR Details JSON | PR Analysis JSON | Run PR Risk and Blast Radius analysis |
+| **GET** | `/api/pr/health` | Query: `owner`, `repo` | Diagnostic JSON | PR analysis pipeline health check |
+| **POST** | `/api/repos/repair` | `{owner, repo}` | Rebuilt status | Re-generate missing graph/symbol indices |
+| **POST** | `/api/architecture/drift` | PR Details JSON | Drift JSON | Map architectural changes in PR |
+| **POST** | `/api/dead-code/analyze` | `{owner, repo}` | Dead Code JSON | Sweep codebase for dead code |
 
 ---
 

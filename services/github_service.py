@@ -29,6 +29,16 @@ class BranchNotFoundError(ValueError):
     """Raised when the requested branch/ref does not exist in the repository."""
 
 
+class GitHubConfig:
+    token: Optional[str] = None
+
+    @classmethod
+    def load_token(cls) -> Optional[str]:
+        if cls.token is None:
+            cls.token = os.environ.get("GITHUB_TOKEN")
+        return cls.token
+
+
 class GitHubService:
     """Wrapper class containing helpers to query GitHub repositories or clone them locally."""
 
@@ -38,11 +48,17 @@ class GitHubService:
         Args:
             token: GitHub Personal Access Token (PAT).
         """
-        self.token = token or os.environ.get("GITHUB_TOKEN")
+        self.token = token or GitHubConfig.load_token()
         self.session = requests.Session()
         if self.token:
-            self.session.headers.update({"Authorization": f"token {self.token}"})
-        self.session.headers.update({"Accept": "application/vnd.github.v3+json"})
+            self.session.headers.update({"Authorization": f"Bearer {self.token}"})
+        self.session.headers.update({"Accept": "application/vnd.github+json"})
+        
+        # Verify request headers
+        logger.info(
+            "GitHub Authorization header present: %s",
+            "Authorization" in self.session.headers
+        )
 
     def parse_repo_url(self, repo_url: str) -> Dict[str, str]:
         """Parses repository URL into owner and repo name.
@@ -272,6 +288,8 @@ class GitHubService:
                 raise IOError(f"Error reading file {file_path} from local storage: {e}")
         
         # If not found locally, try to fetch via GitHub API
+        if not self.token:
+            raise RuntimeError("GITHUB_TOKEN is not loaded.")
         url = f"https://api.github.com/repos/{repo_fullName}/contents/{file_path}?ref={ref}"
         try:
             resp = self.session.get(url)
@@ -299,6 +317,8 @@ class GitHubService:
         Returns:
             A list of dictionary records containing issue numbers, titles, bodies, and URLs.
         """
+        if not self.token:
+            raise RuntimeError("GITHUB_TOKEN is not loaded.")
         url = f"https://api.github.com/repos/{repo_fullName}/issues"
         params = {"state": state, "per_page": 100}
         
@@ -324,3 +344,103 @@ class GitHubService:
             logger.error(f"Failed to fetch issues for {repo_fullName}: {e}")
             # Fallback to empty list or raise depending on preferences
             return []
+
+    def fetch_pull_request_metadata(self, owner: str, repo: str, pr_number: int) -> Dict[str, Any]:
+        """Fetch PR metadata from the GitHub API.
+
+        Args:
+            owner: Owner of the repository.
+            repo: Name of the repository.
+            pr_number: Pull request number.
+
+        Returns:
+            Dict containing title, state, html_url, additions, deletions, etc.
+        """
+        if not self.token:
+            raise RuntimeError("GITHUB_TOKEN is not loaded.")
+        url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+        try:
+            resp = self.session.get(url)
+            resp.raise_for_status()
+            data = resp.json()
+            return {
+                "title": data.get("title", ""),
+                "state": data.get("state", "open"),
+                "html_url": data.get("html_url", ""),
+                "additions": data.get("additions", 0),
+                "deletions": data.get("deletions", 0),
+                "head_sha": data.get("head", {}).get("sha", ""),
+            }
+        except Exception as e:
+            logger.error(f"Failed to fetch PR metadata for {owner}/{repo}/pulls/{pr_number}: {e}")
+            raise RuntimeError(f"Failed to fetch PR metadata: {e}")
+
+    def fetch_pull_request_files(self, owner: str, repo: str, pr_number: int) -> List[Dict[str, Any]]:
+        """Fetch files changed in a PR from the GitHub API (handles pagination).
+
+        Args:
+            owner: Owner of the repository.
+            repo: Name of the repository.
+            pr_number: Pull request number.
+
+        Returns:
+            List of dict records for each changed file.
+        """
+        if not self.token:
+            raise RuntimeError("GITHUB_TOKEN is not loaded.")
+        url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/files"
+        result = []
+        page = 1
+        per_page = 100
+        
+        while True:
+            try:
+                resp = self.session.get(url, params={"page": page, "per_page": per_page})
+                resp.raise_for_status()
+                files = resp.json()
+                if not files:
+                    break
+                for f in files:
+                    result.append({
+                        "filename": f.get("filename", ""),
+                        "status": f.get("status", ""),
+                        "additions": f.get("additions", 0),
+                        "deletions": f.get("deletions", 0),
+                        "changes": f.get("changes", 0),
+                    })
+                if len(files) < per_page:
+                    break
+                page += 1
+            except Exception as e:
+                logger.error(f"Failed to fetch PR files for {owner}/{repo}/pulls/{pr_number} page {page}: {e}")
+                raise RuntimeError(f"Failed to fetch PR files: {e}")
+                
+        return result
+
+    def get_rate_limit_info(self) -> Dict[str, Any]:
+        """Fetch rate limit information from the GitHub API.
+
+        Returns:
+            Dict containing remaining rate limit, reset time, etc.
+        """
+        if not self.token:
+            raise RuntimeError("GITHUB_TOKEN is not loaded.")
+        url = "https://api.github.com/rate_limit"
+        try:
+            resp = self.session.get(url)
+            resp.raise_for_status()
+            data = resp.json()
+            rate = data.get("resources", {}).get("core", {})
+            return {
+                "limit": rate.get("limit", 0),
+                "remaining": rate.get("remaining", 0),
+                "reset": rate.get("reset", 0),
+            }
+        except Exception as e:
+            logger.error(f"Failed to fetch rate limit info: {e}")
+            return {
+                "limit": 0,
+                "remaining": 0,
+                "reset": 0,
+            }
+

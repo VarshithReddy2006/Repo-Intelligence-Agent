@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { apiUrl } from '../../lib/api';
+import { apiUrl, extractErrorMessage } from '../../lib/api';
 import FileTree from './FileTree';
 import IssueMapper from './IssueMapper';
 import ChatInterface from './ChatInterface';
-import { ArchitectureGraph } from './ArchitectureGraph';
+import { InteractiveDependencyGraph } from './graph/InteractiveDependencyGraph';
 import { ReadingOrderTimeline } from './ReadingOrderTimeline';
 import { ImpactAnalysisGraph } from './ImpactAnalysisGraph';
-import { Layers, Box, Code2, BookOpen, Cpu, Info, CheckCircle2, Target, HelpCircle, MessageSquareCode } from 'lucide-react';
+import { PRIntelligence } from './PRIntelligence';
+import { ArchitectureDrift } from './ArchitectureDrift';
+import { DeadCodeAnalyzer } from './DeadCodeAnalyzer';
+import { Layers, Box, Code2, BookOpen, Cpu, Info, CheckCircle2, Target, HelpCircle, MessageSquareCode, GitPullRequest, GitCompare, Trash2 } from 'lucide-react';
 
 interface ComponentRelationship {
   source: string;
@@ -37,7 +40,7 @@ export const AnalysisDashboard: React.FC<DashboardProps> = ({ repoParam }) => {
   const [data, setData] = useState<AnalysisData | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'analysis' | 'graph' | 'reading_path' | 'impact_analysis' | 'issues' | 'chat'>('analysis');
+  const [activeTab, setActiveTab] = useState<'analysis' | 'graph' | 'reading_path' | 'impact_analysis' | 'issues' | 'chat' | 'pr_intelligence' | 'architecture_drift' | 'dead_code'>('analysis');
 
   // Impact Analysis states
   const [impactData, setImpactData] = useState<any | null>(null);
@@ -119,8 +122,11 @@ export const AnalysisDashboard: React.FC<DashboardProps> = ({ repoParam }) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ repo: repoName, issue: queryText })
     })
-      .then((res) => {
-        if (!res.ok) throw new Error("Failed to analyze impact");
+      .then(async (res) => {
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(extractErrorMessage(errData) || "Failed to analyze impact");
+        }
         return res.json();
       })
       .then((resData) => {
@@ -129,7 +135,7 @@ export const AnalysisDashboard: React.FC<DashboardProps> = ({ repoParam }) => {
       })
       .catch((err) => {
         console.error(err);
-        setImpactError(err.message || 'Failed to complete impact analysis.');
+        setImpactError(extractErrorMessage(err));
         setImpactLoading(false);
       });
   };
@@ -251,6 +257,39 @@ export const AnalysisDashboard: React.FC<DashboardProps> = ({ repoParam }) => {
             >
               <Cpu className="h-4 w-4" />
               <span>ISSUE INTELLIGENCE</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('pr_intelligence')}
+              className={`flex items-center gap-2 px-4 py-2 text-xs font-mono tracking-wider font-semibold border-b-2 transition-all ${
+                activeTab === 'pr_intelligence'
+                  ? 'border-primary text-text bg-primary/5'
+                  : 'border-transparent text-text-muted hover:text-text hover:bg-card/20'
+              }`}
+            >
+              <GitPullRequest className="h-4 w-4" />
+              <span>PR INTELLIGENCE</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('architecture_drift')}
+              className={`flex items-center gap-2 px-4 py-2 text-xs font-mono tracking-wider font-semibold border-b-2 transition-all ${
+                activeTab === 'architecture_drift'
+                  ? 'border-primary text-text bg-primary/5'
+                  : 'border-transparent text-text-muted hover:text-text hover:bg-card/20'
+              }`}
+            >
+              <GitCompare className="h-4 w-4" />
+              <span>ARCHITECTURE DRIFT</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('dead_code')}
+              className={`flex items-center gap-2 px-4 py-2 text-xs font-mono tracking-wider font-semibold border-b-2 transition-all ${
+                activeTab === 'dead_code'
+                  ? 'border-primary text-text bg-primary/5'
+                  : 'border-transparent text-text-muted hover:text-text hover:bg-card/20'
+              }`}
+            >
+              <Trash2 className="h-4 w-4" />
+              <span>DEAD CODE</span>
             </button>
             <button
               onClick={() => setActiveTab('chat')}
@@ -434,6 +473,24 @@ export const AnalysisDashboard: React.FC<DashboardProps> = ({ repoParam }) => {
             </div>
           )}
 
+          {activeTab === 'pr_intelligence' && (
+            <div className="border border-border bg-card/5 rounded-lg p-4">
+              <PRIntelligence repoName={repoName} />
+            </div>
+          )}
+
+          {activeTab === 'architecture_drift' && (
+            <div className="border border-border bg-card/5 rounded-lg p-4">
+              <ArchitectureDrift repoName={repoName} />
+            </div>
+          )}
+
+          {activeTab === 'dead_code' && (
+            <div className="border border-border bg-card/5 rounded-lg p-4">
+              <DeadCodeAnalyzer repoName={repoName} />
+            </div>
+          )}
+
           {activeTab === 'issues' && (
             <div className="border border-border bg-card/5 rounded-lg p-4">
               <IssueMapper repoName={repoName} />
@@ -447,7 +504,7 @@ export const AnalysisDashboard: React.FC<DashboardProps> = ({ repoParam }) => {
           )}
 
           {activeTab === 'graph' && (
-            <ArchitectureGraph repoName={repoName} />
+            <InteractiveDependencyGraph repoName={repoName} />
           )}
         </div>
       </div>
