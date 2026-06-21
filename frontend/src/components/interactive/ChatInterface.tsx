@@ -490,9 +490,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ repoName }) => {
             <button
               type="submit"
               disabled={isStreaming || !input.trim() || !activeRepo}
-              className="bg-primary hover:bg-primary-hover text-text font-medium px-3.5 py-2 rounded flex items-center gap-1.5 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label="Send message"
+              className="bg-primary hover:bg-primary-hover text-primary-foreground font-medium px-3.5 py-2 rounded flex items-center gap-1.5 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:shadow-ring"
             >
-              <Send className="h-4 w-4" />
+              <Send className="h-4 w-4" aria-hidden="true" />
             </button>
           </form>
         </div>

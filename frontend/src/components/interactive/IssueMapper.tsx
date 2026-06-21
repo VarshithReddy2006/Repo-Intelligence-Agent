@@ -296,23 +296,22 @@ export const IssueMapper: React.FC<IssueMapperProps> = ({ repoName }) => {
               </h3>
               <div className="space-y-3">
                 {plan.implementation_plan.map((step) => {
-                  const isDone = completedSteps[step.step_number];
+                  const isDone = !!completedSteps[step.step_number];
 
                   return (
-                    <div
+                    <label
                       key={step.step_number}
-                      onClick={() => toggleStep(step.step_number)}
-                      className={`border rounded p-3.5 cursor-pointer transition-all duration-300 ${
+                      className={`block border rounded p-3.5 cursor-pointer transition-all duration-300 focus-within:shadow-ring ${
                         isDone
-                          ? 'bg-emerald-500/5 border-emerald-500/20 opacity-70'
+                          ? 'bg-success/5 border-success/30 opacity-70'
                           : 'bg-card/30 border-border hover:border-primary/50'
                       }`}
                     >
                       <div className="flex items-start gap-3">
                         <input
                           type="checkbox"
-                          checked={!!isDone}
-                          onChange={() => {}} // toggled by parent div click
+                          checked={isDone}
+                          onChange={() => toggleStep(step.step_number)}
                           className="mt-1 h-3.5 w-3.5 rounded border-border text-primary focus:ring-primary focus:ring-offset-0 accent-primary"
                         />
                         <div className="space-y-2">
@@ -320,7 +319,7 @@ export const IssueMapper: React.FC<IssueMapperProps> = ({ repoName }) => {
                             <span className="font-mono text-primary font-bold mr-1">Step {step.step_number}:</span>
                             {step.description}
                           </p>
-                          
+
                           <div className="flex flex-wrap gap-1.5">
                             {step.files_to_modify.map((f) => (
                               <span key={f} className="text-[10px] font-mono bg-canvas border border-border px-1.5 py-0.5 rounded text-text-muted">
@@ -330,7 +329,7 @@ export const IssueMapper: React.FC<IssueMapperProps> = ({ repoName }) => {
                           </div>
                         </div>
                       </div>
-                    </div>
+                    </label>
                   );
                 })}
               </div>

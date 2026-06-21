@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Timeline } from './Timeline';
 import type { TimelineStep } from './Timeline';
-import { Sparkles, Terminal, ArrowRight, BookOpen, AlertCircle } from 'lucide-react';
+import { Terminal, ArrowRight, BookOpen, AlertCircle } from 'lucide-react';
 import { apiUrl } from '../../lib/api';
 
 interface ExampleRepo {
@@ -11,24 +11,25 @@ interface ExampleRepo {
   description: string;
 }
 
+const initialSteps: TimelineStep[] = [
+  { id: 'cloning',   label: 'Clone repository from GitHub',                  status: 'pending' },
+  { id: 'detecting', label: 'Detect languages and frameworks',              status: 'pending' },
+  { id: 'analyzing', label: 'Run architecture scanning & index codebase',   status: 'pending' },
+  { id: 'mapping',   label: 'Map issue relationships & suggested reading',  status: 'pending' },
+];
+
 export const RepoInput: React.FC = () => {
   const [url, setUrl] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [examples, setExamples] = useState<ExampleRepo[]>([]);
-  const [timelineSteps, setTimelineSteps] = useState<TimelineStep[]>([
-    { id: 'cloning', label: 'Clone repository from GitHub', status: 'pending' },
-    { id: 'detecting', label: 'Detect languages and frameworks', status: 'pending' },
-    { id: 'analyzing', label: 'Run architecture scanning & index codebase', status: 'pending' },
-    { id: 'mapping', label: 'Map issue relationships & suggested reading order', status: 'pending' },
-  ]);
+  const [timelineSteps, setTimelineSteps] = useState<TimelineStep[]>(initialSteps);
 
   useEffect(() => {
-    // Fetch example repos on mount
     fetch(apiUrl('/api/repos/examples'))
-      .then(res => res.json())
-      .then(data => setExamples(data))
-      .catch(err => console.error(err));
+      .then((res) => res.json())
+      .then((data) => setExamples(data))
+      .catch((err) => console.error(err));
   }, []);
 
   const handleAnalyze = async (repoUrl: string) => {
@@ -37,24 +38,18 @@ export const RepoInput: React.FC = () => {
     setIsAnalyzing(true);
     setErrorMessage(null);
     setTimelineSteps([
-      { id: 'cloning', label: 'Clone repository from GitHub', status: 'active' },
-      { id: 'detecting', label: 'Detect languages and frameworks', status: 'pending' },
-      { id: 'analyzing', label: 'Run architecture scanning & index codebase', status: 'pending' },
-      { id: 'mapping', label: 'Map issue relationships & suggested reading order', status: 'pending' },
+      { ...initialSteps[0], status: 'active' },
+      initialSteps[1], initialSteps[2], initialSteps[3],
     ]);
 
     try {
       const response = await fetch(apiUrl('/api/analyze'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url: repoUrl,
-          branch: 'main',
-          model: 'deepseek-ai/deepseek-v4-flash'
-        })
+        body: JSON.stringify({ url: repoUrl, branch: 'main' }),
       });
 
-      if (!response.body) throw new Error("Stream not available");
+      if (!response.body) throw new Error('Stream not available');
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -63,157 +58,145 @@ export const RepoInput: React.FC = () => {
       while (!finished) {
         const { value, done } = await reader.read();
         finished = done;
-        if (value) {
-          const chunk = decoder.decode(value);
-          const lines = chunk.split('\n');
+        if (!value) continue;
 
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6));
-                console.log('SSE Event:', data);
-                
-                if (data.status === 'error') {
-                  // Strip legacy "✗ " prefix if present
-                  const rawMsg: string = data.message || 'An error occurred during analysis.';
-                  const cleanMsg = rawMsg.replace(/^[✗×x]\s*/i, '').trim();
-                  console.error('Analysis error from backend:', cleanMsg);
-                  setErrorMessage(cleanMsg);
+        const lines = decoder.decode(value).split('\n');
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const data = JSON.parse(line.slice(6));
+
+            if (data.status === 'error') {
+              const cleanMsg = (data.message || 'An error occurred during analysis.')
+                .replace(/^[✗×x]\s*/i, '').trim();
+              setErrorMessage(cleanMsg);
+              setIsAnalyzing(false);
+            }
+
+            if (data.status === 'cloned') {
+              setTimelineSteps((p) => p.map((s) =>
+                s.id === 'cloning' ? { ...s, status: 'completed' as const } :
+                s.id === 'detecting' ? { ...s, status: 'active' as const } : s));
+            } else if (data.status === 'detected') {
+              setTimelineSteps((p) => p.map((s) =>
+                s.id === 'detecting' ? { ...s, status: 'completed' as const } :
+                s.id === 'analyzing' ? { ...s, status: 'active' as const } : s));
+            } else if (data.status === 'analyzed') {
+              setTimelineSteps((p) => p.map((s) =>
+                s.id === 'analyzing' ? { ...s, status: 'completed' as const } :
+                s.id === 'mapping' ? { ...s, status: 'active' as const } : s));
+            } else if (data.status === 'complete') {
+              setTimelineSteps((p) => p.map((s) =>
+                s.id === 'mapping' ? { ...s, status: 'completed' as const } : s));
+            } else if (data.status === 'done') {
+              const repoPath = data.repo || data.repository
+                || (data.owner && data.repo_name ? `${data.owner}/${data.repo_name}` : null);
+
+              if (repoPath) {
+                const [owner, repo] = repoPath.split('/');
+                if (owner && repo) {
+                  if (typeof window !== 'undefined') {
+                    localStorage.setItem('activeRepo', repoPath);
+                  }
+                  window.location.href = `/analysis?owner=${owner}&repo=${repo}`;
+                } else {
+                  setErrorMessage('Invalid repo format received');
                   setIsAnalyzing(false);
                 }
-
-                // Update timeline status
-                if (data.status === 'cloned') {
-                  setTimelineSteps(prev => prev.map(s => s.id === 'cloning' ? { ...s, status: 'completed' as const } : s.id === 'detecting' ? { ...s, status: 'active' as const } : s));
-                } else if (data.status === 'detected') {
-                  setTimelineSteps(prev => prev.map(s => s.id === 'detecting' ? { ...s, status: 'completed' as const } : s.id === 'analyzing' ? { ...s, status: 'active' as const } : s));
-                } else if (data.status === 'analyzed') {
-                  setTimelineSteps(prev => prev.map(s => s.id === 'analyzing' ? { ...s, status: 'completed' as const } : s.id === 'mapping' ? { ...s, status: 'active' as const } : s));
-                } else if (data.status === 'complete') {
-                  setTimelineSteps(prev => prev.map(s => s.id === 'mapping' ? { ...s, status: 'completed' as const } : s));
-                } else if (data.status === 'done') {
-                  const repoPath = data.repo || data.repository || (data.owner && data.repo_name ? `${data.owner}/${data.repo_name}` : null);
-                  
-                  if (repoPath) {
-                    const parts = repoPath.split('/')
-                    if (parts.length === 2) {
-                      const [owner, repo] = parts;
-                      if (typeof window !== 'undefined') {
-                        localStorage.setItem('activeRepo', repoPath);
-                      }
-                      window.location.href = `/analysis?owner=${owner}&repo=${repo}`;
-                    } else {
-                      setErrorMessage('Invalid repo format received');
-                      setIsAnalyzing(false);
-                    }
-                  } else {
-                    setErrorMessage('Missing repo in analysis result');
-                    setIsAnalyzing(false);
-                  }
-                }
-              } catch (e) {
-                // Ignore parsing issues
+              } else {
+                setErrorMessage('Missing repo in analysis result');
+                setIsAnalyzing(false);
               }
             }
-          }
+          } catch {/* ignore malformed SSE */}
         }
       }
     } catch (err) {
-      console.error("Analysis stream interrupted", err);
+      console.error('Analysis stream interrupted', err);
       setIsAnalyzing(false);
     }
   };
 
   return (
-    <div className="space-y-12 max-w-3xl mx-auto w-full py-8">
-      {/* Hero Header */}
-      <div className="text-center space-y-4">
-        <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-text">
-          Repo Intelligence <span className="text-primary">Agent</span>
-        </h1>
-        <p className="text-text-muted text-base sm:text-lg max-w-xl mx-auto font-mono">
-          Understand any codebase in minutes.
-        </p>
-      </div>
-
-      {/* URL Input Form */}
-      <div className="bg-card/10 border border-border rounded-xl p-6 space-y-4 shadow-xl">
+    <div className="space-y-8 max-w-3xl mx-auto w-full">
+      {/* Input card */}
+      <div className="card p-6 sm:p-8 shadow-card">
         <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleAnalyze(url);
-          }}
+          onSubmit={(e) => { e.preventDefault(); handleAnalyze(url); }}
           className="flex flex-col sm:flex-row gap-3"
         >
+          <label htmlFor="repo-url" className="sr-only">GitHub repository URL</label>
           <div className="relative flex-grow">
-            <span className="absolute inset-y-0 left-3 flex items-center text-text-muted">
-              <Terminal className="h-4 w-4" />
+            <span className="absolute inset-y-0 left-3 flex items-center text-text-muted pointer-events-none">
+              <Terminal className="h-4 w-4" aria-hidden="true" />
             </span>
             <input
+              id="repo-url"
               type="url"
               required
               disabled={isAnalyzing}
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://github.com/owner/repo"
-              className="w-full bg-canvas border border-border rounded-lg pl-10 pr-3 py-3 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-text placeholder:text-text-muted/40 font-mono"
+              className="input pl-10 disabled:opacity-60"
             />
           </div>
           <button
             type="submit"
             disabled={isAnalyzing || !url.trim()}
-            className="bg-primary hover:bg-primary-hover text-text font-semibold px-6 py-3 rounded-lg flex items-center justify-center gap-2 text-sm transition-all shadow-md hover:shadow-primary/10 disabled:opacity-50"
+            className="btn-primary px-6 py-3 text-sm shrink-0"
           >
             <span>Analyze Repository</span>
-            <ArrowRight className="h-4 w-4" />
+            <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </button>
         </form>
 
         {isAnalyzing && (
-          <div className="pt-4 border-t border-border flex justify-center">
+          <div className="pt-5 mt-5 border-t border-border flex justify-center" role="status" aria-live="polite">
             <Timeline steps={timelineSteps} />
           </div>
         )}
 
         {errorMessage && (
-          <div className="flex items-start gap-3 bg-red-500/5 border border-red-500/20 text-red-400 rounded-lg p-4 font-mono text-xs mt-2">
-            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+          <div
+            role="alert"
+            className="mt-4 flex items-start gap-3 bg-danger/10 border border-danger/30 text-danger rounded-lg p-4 font-sans text-xs"
+          >
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
             <div className="space-y-1">
               <span className="font-bold uppercase tracking-wider text-[10px] block">Analysis Failed</span>
               <p className="leading-relaxed">{errorMessage}</p>
-              {errorMessage.includes('quota') || errorMessage.includes('429') || errorMessage.includes('RESOURCE_EXHAUSTED') || errorMessage.includes('rate limit') ? (
-                <p className="text-red-300/70 text-[10px] mt-1">
+              {(errorMessage.includes('quota') || errorMessage.includes('429') || errorMessage.includes('RESOURCE_EXHAUSTED') || errorMessage.includes('rate limit')) && (
+                <p className="text-danger/70 text-[10px] mt-1">
                   AI provider rate limit reached. Please wait a moment before retrying.
                 </p>
-              ) : null}
+              )}
             </div>
           </div>
         )}
       </div>
 
-      {/* Examples Grid */}
+      {/* Examples */}
       {!isAnalyzing && examples.length > 0 && (
-        <div className="space-y-4">
-          <h2 className="text-xs uppercase tracking-wider font-semibold text-text-muted font-mono flex items-center gap-1.5">
-            <Sparkles className="h-3.5 w-3.5 text-primary" /> Example Repositories
+        <div className="space-y-4 fade-up">
+          <h2 className="text-xs uppercase tracking-widest font-semibold text-text-subtle font-mono">
+            Try a sample repository
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {examples.map((repo) => (
-              <div
+              <button
                 key={repo.name}
-                onClick={() => {
-                  setUrl(repo.url);
-                  handleAnalyze(repo.url);
-                }}
-                className="border border-border bg-card/20 hover:bg-border/20 p-4 rounded-lg cursor-pointer transition-colors space-y-3 group"
+                type="button"
+                onClick={() => { setUrl(repo.url); handleAnalyze(repo.url); }}
+                className="card p-4 text-left transition-all hover:border-primary/40 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:shadow-ring space-y-3 group"
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-xs text-text font-semibold group-hover:text-primary transition-colors">
+                  <span className="font-mono text-xs text-text font-semibold group-hover:text-primary transition-colors truncate">
                     {repo.name}
                   </span>
-                  <BookOpen className="h-3.5 w-3.5 text-text-muted" />
+                  <BookOpen className="h-3.5 w-3.5 text-text-muted shrink-0" aria-hidden="true" />
                 </div>
-                <p className="text-xs text-text-muted line-clamp-2 leading-relaxed">
+                <p className="text-xs text-text-muted line-clamp-2 leading-relaxed font-sans">
                   {repo.description}
                 </p>
                 <div className="flex flex-wrap gap-1">
@@ -223,7 +206,7 @@ export const RepoInput: React.FC = () => {
                     </span>
                   ))}
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </div>

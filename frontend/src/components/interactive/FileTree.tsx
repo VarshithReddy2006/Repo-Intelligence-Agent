@@ -50,14 +50,22 @@ export const FileTree: React.FC<FileTreeProps> = ({ structure, onFileSelect }) =
             <div key={dir} className="space-y-0.5">
               {/* Folder Header */}
               {!isRoot && (
-                <div
+                <button
+                  type="button"
                   onClick={() => toggleFolder(dir)}
-                  className="flex items-center gap-1.5 py-1 px-1.5 rounded hover:bg-border/40 cursor-pointer text-text-muted select-none transition-colors"
+                  aria-expanded={isOpen}
+                  className="w-full flex items-center gap-1.5 py-1 px-1.5 rounded text-left
+                             hover:bg-border/40 text-text-muted select-none transition-colors
+                             focus-visible:outline-none focus-visible:shadow-ring"
                 >
-                  {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                  {isOpen ? <FolderOpen className="h-4 w-4 text-primary" /> : <Folder className="h-4 w-4 text-primary" />}
+                  {isOpen
+                    ? <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+                    : <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />}
+                  {isOpen
+                    ? <FolderOpen className="h-4 w-4 text-primary" aria-hidden="true" />
+                    : <Folder className="h-4 w-4 text-primary" aria-hidden="true" />}
                   <span className="text-text font-medium text-xs">{dir}</span>
-                </div>
+                </button>
               )}
 
               {/* Folder Contents */}
@@ -68,18 +76,21 @@ export const FileTree: React.FC<FileTreeProps> = ({ structure, onFileSelect }) =
                     const isSelected = selectedFile === fullPath;
 
                     return (
-                      <div
+                      <button
                         key={file}
+                        type="button"
                         onClick={() => handleFileClick(fullPath)}
-                        className={`flex items-center gap-2 py-1 px-2 rounded cursor-pointer select-none text-xs transition-colors ${
+                        aria-pressed={isSelected}
+                        className={`w-full flex items-center gap-2 py-1 px-2 rounded select-none text-xs text-left
+                                    transition-colors focus-visible:outline-none focus-visible:shadow-ring ${
                           isSelected
                             ? 'bg-primary/15 text-primary border-l-2 border-primary'
                             : 'hover:bg-border/30 text-text-muted hover:text-text'
                         }`}
                       >
-                        <FileCode className={`h-3.5 w-3.5 ${isSelected ? 'text-primary' : 'text-text-muted/60'}`} />
+                        <FileCode className={`h-3.5 w-3.5 ${isSelected ? 'text-primary' : 'text-text-muted/60'}`} aria-hidden="true" />
                         <span>{file}</span>
-                      </div>
+                      </button>
                     );
                   })}
                 </div>

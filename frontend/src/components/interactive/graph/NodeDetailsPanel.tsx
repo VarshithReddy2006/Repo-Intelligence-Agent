@@ -10,6 +10,7 @@ interface NodeDetailsPanelProps {
   onTraceForward: (nodeId: string) => void;
   onTraceBackward: (nodeId: string) => void;
   onTraceBoth: (nodeId: string) => void;
+  className?: string;
 }
 
 interface ActionButtonProps {
@@ -43,6 +44,7 @@ export const NodeDetailsPanel: React.FC<NodeDetailsPanelProps> = ({
   onTraceForward,
   onTraceBackward,
   onTraceBoth,
+  className,
 }) => {
   const color = CATEGORY_COLORS[node.category] ?? CATEGORY_COLORS.regular;
   const categoryLabel = CATEGORY_LABELS[node.category] ?? node.category;
@@ -51,8 +53,16 @@ export const NodeDetailsPanel: React.FC<NodeDetailsPanelProps> = ({
     ? node.id.substring(0, node.id.lastIndexOf('/'))
     : '';
 
+  // Responsive: bottom sheet on mobile, right drawer on md+
+  const positionClass = className ??
+    'fixed inset-x-0 bottom-0 max-h-[60vh] md:absolute md:right-0 md:top-0 md:bottom-0 md:max-h-none md:w-72';
+
   return (
-    <div className="absolute right-0 top-0 bottom-0 w-72 bg-zinc-950 border-l border-border flex flex-col z-20 shadow-2xl">
+    <div
+      role="dialog"
+      aria-label={`Node details: ${fileName}`}
+      className={`${positionClass} bg-surface-2 border-t md:border-t-0 md:border-l border-border flex flex-col z-20 shadow-2xl`}
+    >
       {/* Header */}
       <div className="flex items-start justify-between px-4 pt-4 pb-3 border-b border-border/60 shrink-0">
         <div className="space-y-0.5 min-w-0 pr-2">
@@ -72,10 +82,12 @@ export const NodeDetailsPanel: React.FC<NodeDetailsPanelProps> = ({
           )}
         </div>
         <button
+          type="button"
           onClick={onClose}
-          className="text-text-muted hover:text-text shrink-0 rounded p-0.5 mt-0.5"
+          aria-label="Close node details"
+          className="text-text-muted hover:text-text shrink-0 rounded p-0.5 mt-0.5 focus-visible:outline-none focus-visible:shadow-ring"
         >
-          <X className="h-4 w-4" />
+          <X className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>
 

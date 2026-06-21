@@ -2,74 +2,282 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  :root {
-    --background: 240 10% 1%; /* #010102 */
-    --foreground: 0 0% 97%;  /* #f7f8f8 */
-    
-    --card: 240 10% 3%;       /* #08080a */
-    --card-foreground: 0 0% 97%;
-    
-    --popover: 240 10% 4%;    /* #0b0b0e */
-    --popover-foreground: 0 0% 97%;
-    
-    --primary: 234 59% 60%;   /* #5e6ad2 */
-    --primary-foreground: 0 0% 100%;
-    
-    --secondary: 240 5% 10%;
-    --secondary-foreground: 0 0% 97%;
-    
-    --muted: 240 5% 12%;
-    --muted-foreground: 240 5% 65%;
-    
-    --accent: 234 59% 60%;
-    --accent-foreground: 0 0% 97%;
-    
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 97%;
-    
-    --border: 223 9% 15%;     /* #23252a */
-    --input: 223 9% 15%;
-    --ring: 234 59% 60%;
-    
-    --radius: 0.5rem;
-  }
+/* ---------------------------------------------------------------------------
+ * Design tokens — single source of truth.
+ * Dark theme is the default and only theme. No light variant.
+ * ------------------------------------------------------------------------- */
+
+:root {
+  /* surfaces */
+  --canvas:        #0a0a0c;
+  --surface-1:     #0f1014;
+  --surface-2:     #15161b;
+  --surface-3:     #1c1d23;
+
+  /* borders */
+  --border:        #23252a;
+  --border-strong: #2f3138;
+
+  /* text */
+  --text:          #f7f8f8;
+  --text-muted:    #9ca0a8;
+  --text-subtle:   #6b6f78;
+
+  /* brand */
+  --primary:        #5e6ad2;
+  --primary-hover:  #4d5ac0;
+  --primary-soft:   rgba(94,106,210,0.10);
+  --primary-ring:   rgba(94,106,210,0.35);
+
+  /* semantic */
+  --success: #10b981;
+  --warn:    #f59e0b;
+  --danger:  #ef4444;
+  --info:    #3b82f6;
+
+  /* shadcn-style vars kept for back-compat */
+  --background: 240 10% 4%;
+  --foreground: 0 0% 97%;
+  --card: 240 10% 6%;
+  --card-foreground: 0 0% 97%;
+  --popover: 240 10% 8%;
+  --popover-foreground: 0 0% 97%;
+  --primary-h: 234 59% 60%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 240 5% 10%;
+  --secondary-foreground: 0 0% 97%;
+  --muted: 240 5% 12%;
+  --muted-foreground: 240 5% 65%;
+  --accent: 234 59% 60%;
+  --accent-foreground: 0 0% 97%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 0 0% 97%;
+  --ring: 234 59% 60%;
+  --radius: 0.5rem;
 }
 
+/* Lock the document into dark theme */
+html { color-scheme: dark; }
+html.dark, html { color-scheme: dark; }
+
 @layer base {
-  * {
-    @apply border-border;
-  }
+  * { border-color: var(--border); }
+
   body {
-    @apply bg-canvas text-text font-sans antialiased;
-    background-color: #010102;
-    color: #f7f8f8;
+    @apply font-sans antialiased;
+    background-color: var(--canvas);
+    color: var(--text);
+    min-height: 100vh;
   }
 }
 
-/* Custom Scrollbar for premium dev feel */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* ---------------------------------------------------------------------------
+ * Component classes — plain CSS so they never depend on Tailwind's @apply
+ * picking up new theme tokens after a config edit.
+ * ------------------------------------------------------------------------- */
+
+@layer components {
+  /* Surface containers */
+  .card {
+    border: 1px solid var(--border);
+    background-color: var(--surface-1);
+    border-radius: 0.75rem;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.03) inset, 0 1px 2px rgba(0,0,0,0.5);
+  }
+  .card-padded { @apply card p-5; }
+  .card-flat {
+    border: 1px solid var(--border);
+    background-color: rgba(15,16,20,0.6);
+    border-radius: 0.5rem;
+  }
+
+  /* Section titles */
+  .panel-title {
+    @apply text-xs font-bold uppercase tracking-wider font-mono flex items-center gap-1.5;
+    color: var(--text-muted);
+  }
+
+  /* Buttons */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 text-sm font-semibold
+           rounded-md px-4 py-2 transition-colors
+           focus-visible:outline-none
+           disabled:cursor-not-allowed;
+    background-color: var(--primary);
+    color: var(--text);
+  }
+  .btn-primary:hover:not(:disabled) { background-color: var(--primary-hover); }
+  .btn-primary:focus-visible        { box-shadow: 0 0 0 1px var(--primary), 0 0 0 4px var(--primary-ring); }
+  .btn-primary:disabled             { background-color: rgba(94,106,210,0.4); }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 text-sm font-medium
+           rounded-md px-3 py-1.5 transition-colors
+           focus-visible:outline-none
+           disabled:opacity-50 disabled:cursor-not-allowed;
+    background-color: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    color: var(--text);
+    border-color: rgba(94,106,210,0.4);
+  }
+  .btn-ghost:focus-visible {
+    box-shadow: 0 0 0 1px var(--primary), 0 0 0 4px var(--primary-ring);
+  }
+
+  /* Form controls */
+  .input {
+    @apply w-full rounded-md px-3 py-2 text-sm font-mono
+           focus:outline-none focus:ring-1;
+    background-color: var(--canvas);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .input::placeholder { color: var(--text-subtle); }
+  .input:focus {
+    border-color: var(--primary);
+    --tw-ring-color: var(--primary);
+  }
+
+  /* Badges */
+  .badge {
+    @apply inline-flex items-center gap-1 text-[10px] font-bold uppercase
+           tracking-wider font-mono px-2 py-0.5 rounded-md;
+    border: 1px solid transparent;
+  }
+  .badge-success {
+    @apply badge;
+    color: var(--success);
+    border-color: rgba(16,185,129,0.30);
+    background-color: rgba(16,185,129,0.10);
+  }
+  .badge-warn {
+    @apply badge;
+    color: var(--warn);
+    border-color: rgba(245,158,11,0.30);
+    background-color: rgba(245,158,11,0.10);
+  }
+  .badge-danger {
+    @apply badge;
+    color: var(--danger);
+    border-color: rgba(239,68,68,0.30);
+    background-color: rgba(239,68,68,0.10);
+  }
+  .badge-info {
+    @apply badge;
+    color: var(--info);
+    border-color: rgba(59,130,246,0.30);
+    background-color: rgba(59,130,246,0.10);
+  }
+  .badge-neutral {
+    @apply badge;
+    color: var(--text-muted);
+    border-color: var(--border);
+    background-color: var(--surface-2);
+  }
 }
 
-::-webkit-scrollbar-track {
-  background: #010102;
+/* Scrollbars */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--canvas); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+* { scrollbar-width: thin; scrollbar-color: var(--border) var(--canvas); }
+
+/* ---------------------------------------------------------------------------
+ * Skeleton shimmer
+ * ------------------------------------------------------------------------- */
+@keyframes skeleton-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton {
+  background:
+    linear-gradient(
+      90deg,
+      rgba(35,37,42,0.5) 0%,
+      rgba(47,49,56,0.9) 50%,
+      rgba(35,37,42,0.5) 100%
+    );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.8s linear infinite;
 }
 
-::-webkit-scrollbar-thumb {
-  background: #23252a;
-  border-radius: 3px;
+/* ---------------------------------------------------------------------------
+ * Subtle entry animations
+ * ------------------------------------------------------------------------- */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-up        { animation: fade-up 280ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.fade-up-delay  { animation: fade-up 320ms cubic-bezier(0.16, 1, 0.3, 1) 60ms both; }
+
+/* ---------------------------------------------------------------------------
+ * Table polish — opt-in via .table-base
+ * ------------------------------------------------------------------------- */
+.table-base {
+  width: 100%;
+  text-align: left;
+  font-size: 0.75rem;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.table-base thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-2);
+  color: var(--text-subtle);
+  font-family: ui-monospace, 'JetBrains Mono', monospace;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 10px;
+  padding: 0.75rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+.table-base tbody td {
+  padding: 0.75rem;
+  border-bottom: 1px solid rgba(35,37,42,0.5);
+  color: var(--text);
+  font-family: ui-monospace, 'JetBrains Mono', monospace;
+}
+.table-base tbody tr:hover { background: rgba(94,106,210,0.04); }
+.table-base tbody tr:nth-child(even) { background: rgba(15,16,20,0.4); }
+.table-base tbody tr:nth-child(even):hover { background: rgba(94,106,210,0.06); }
+
+.table-scroll {
+  overflow: auto;
+  max-height: 520px;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: rgba(10,10,12,0.5);
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #5e6ad2;
+/* ---------------------------------------------------------------------------
+ * Utility — gradient text for landing hero
+ * ------------------------------------------------------------------------- */
+.text-gradient-brand {
+  background: linear-gradient(135deg, #f7f8f8 0%, #b5bce8 50%, var(--primary) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
 }
 
-/* Base Utility Classes */
+/* Reduced motion — opt out of decorative animations */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+  .fade-up, .fade-up-delay { animation: none; }
+}
+
+/* Legacy glass utility kept for back-compat */
 .glass-panel {
-  background: rgba(8, 8, 10, 0.7);
+  background: rgba(15, 16, 20, 0.7);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid #23252a;
+  border: 1px solid var(--border);
 }

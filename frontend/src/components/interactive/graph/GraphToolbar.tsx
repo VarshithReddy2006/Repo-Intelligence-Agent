@@ -12,6 +12,7 @@ import type { GraphMode } from './types';
 
 interface GraphToolbarProps {
   mode: GraphMode;
+  traceDir: 'forward' | 'backward' | 'both';
   focusNode: string | null;
   loading: boolean;
   nodeCount: number;
@@ -65,6 +66,7 @@ const ToolButton: React.FC<ToolButtonProps> = ({
 
 export const GraphToolbar: React.FC<GraphToolbarProps> = ({
   mode,
+  traceDir,
   focusNode,
   loading,
   nodeCount,
@@ -97,7 +99,7 @@ export const GraphToolbar: React.FC<GraphToolbarProps> = ({
 
         <ToolButton
           onClick={onTraceForward}
-          active={mode === 'trace_fwd'}
+          active={mode === 'trace_fwd' && traceDir === 'forward'}
           disabled={!hasFocus}
           title={hasFocus ? `Trace forward deps of ${focusNode}` : 'Click a node first'}
         >
@@ -107,7 +109,7 @@ export const GraphToolbar: React.FC<GraphToolbarProps> = ({
 
         <ToolButton
           onClick={onTraceBackward}
-          active={mode === 'trace_bwd'}
+          active={mode === 'trace_bwd' && traceDir === 'backward'}
           disabled={!hasFocus}
           title={hasFocus ? `Trace who imports ${focusNode}` : 'Click a node first'}
         >
@@ -117,7 +119,7 @@ export const GraphToolbar: React.FC<GraphToolbarProps> = ({
 
         <ToolButton
           onClick={onTraceBoth}
-          active={mode === 'trace_fwd' && mode === 'trace_bwd'}
+          active={mode === 'trace_fwd' && traceDir === 'both'}
           disabled={!hasFocus}
           title={hasFocus ? `Trace both directions from ${focusNode}` : 'Click a node first'}
         >

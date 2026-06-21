@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import ReactFlow, {
   MiniMap,
   Controls,
@@ -6,7 +6,6 @@ import ReactFlow, {
   useNodesState,
   useEdgesState,
   MarkerType,
-  useReactFlow,
   type Node,
   type Edge,
 } from 'reactflow';
@@ -142,25 +141,14 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const rfRef = useRef<any>(null);
 
-  // Rebuild React Flow nodes/edges whenever the API data changes
-  const prevApiNodesRef = useRef<GraphNode[]>([]);
-  const prevApiEdgesRef = useRef<GraphEdge[]>([]);
-
-  // Only re-layout when the data actually changed (by reference)
-  if (
-    apiNodes !== prevApiNodesRef.current ||
-    apiEdges !== prevApiEdgesRef.current
-  ) {
-    prevApiNodesRef.current = apiNodes;
-    prevApiEdgesRef.current = apiEdges;
-
+  // Re-layout whenever the API data changes — keep setState inside an effect.
+  useEffect(() => {
     const rfNodes = toReactFlowNodes(apiNodes);
     const rfEdges = toReactFlowEdges(apiEdges);
     const { nodes: laid, edges: laidEdges } = applyDagreLayout(rfNodes, rfEdges, 'TB');
-    // setNodes/setEdges are stable refs — safe to call outside effect
     setNodes(laid);
     setEdges(laidEdges);
-  }
+  }, [apiNodes, apiEdges, setNodes, setEdges]);
 
   // Expose fitView to parent via ref
   const onInit = useCallback(

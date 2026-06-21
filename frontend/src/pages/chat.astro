@@ -17,9 +17,9 @@ import { MessageSquare } from 'lucide-react';
       </p>
     </div>
 
-    {/* Chat Interface react island */}
+    {/* Chat Interface react island — client:only because it reads localStorage during init */}
     <div class="w-full flex justify-center flex-grow pt-2">
-      <ChatInterface repoName="" client:load />
+      <ChatInterface repoName="" client:only="react" />
     </div>
   </div>
 </Layout>

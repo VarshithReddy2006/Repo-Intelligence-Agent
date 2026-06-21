@@ -5,7 +5,7 @@ import React, {
   useCallback,
   useMemo,
 } from 'react';
-import { Info, RefreshCw } from 'lucide-react';
+import { Info, RefreshCw, GitBranch, Network, Layers, RotateCw } from 'lucide-react';
 import { ReactFlowProvider } from 'reactflow';
 
 import { apiUrl, extractErrorMessage } from '../../../lib/api';
@@ -13,7 +13,11 @@ import { GraphCanvas } from './GraphCanvas';
 import { GraphToolbar } from './GraphToolbar';
 import { SearchBar } from './SearchBar';
 import { NodeDetailsPanel } from './NodeDetailsPanel';
+import { computeGraphStats } from './graphStats';
+import { CATEGORY_COLORS, CATEGORY_LABELS } from './types';
 import type { GraphNode, GraphEdge, GraphMode, GraphResponse } from './types';
+import { EmptyState } from '../../ui/EmptyState';
+import { Button } from '../../ui/Button';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -263,32 +267,51 @@ export const InteractiveDependencyGraph: React.FC<
     if (node) setFocusNode(node.id);
   }, []);
 
+  // Compute lightweight stats client-side over current view
+  const stats = useMemo(() => computeGraphStats(apiNodes, apiEdges), [apiNodes, apiEdges]);
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="border border-border bg-card/5 rounded-lg flex flex-col h-[640px] relative overflow-hidden">
-      {/* ── Top bar: search left, legend right ─────────────────────── */}
-      <div className="px-3 py-2 border-b border-border bg-canvas/40 flex items-center gap-3 z-10">
+    <div className="card overflow-hidden flex flex-col h-[640px] relative">
+      {/* Statistics + search header */}
+      <div className="px-3 py-2.5 border-b border-border bg-surface-2 flex items-center gap-3 z-10 flex-wrap">
         <SearchBar
           value={searchQuery}
           matchCount={matchCount}
           onChange={handleSearchChange}
           onClear={handleSearchClear}
         />
-        <div className="ml-auto text-[9px] font-mono text-text-muted hidden sm:flex items-center gap-2.5">
-          <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" /> Entry
+
+        {/* Stat pills */}
+        <div className="flex items-center gap-1.5 font-mono text-[10px]">
+          <StatPill icon={<Network className="h-3 w-3" />} label="Nodes" value={apiNodes.length} />
+          <StatPill icon={<GitBranch className="h-3 w-3" />} label="Edges" value={apiEdges.length} />
+          <StatPill icon={<Layers className="h-3 w-3" />} label="Components" value={stats.components} />
+          <StatPill
+            icon={<RotateCw className="h-3 w-3" />}
+            label="Cycles"
+            value={stats.cycleClusters}
+            tone={stats.cycleClusters > 0 ? 'danger' : 'neutral'}
+          />
+        </div>
+
+        {/* Legend */}
+        <div className="ml-auto text-[10px] font-mono text-text-muted hidden lg:flex items-center gap-3">
+          {(['entry_point', 'core_module', 'high_coupling'] as const).map((k) => (
+            <span key={k} className="flex items-center gap-1.5">
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: CATEGORY_COLORS[k] }}
+                aria-hidden="true"
+              />
+              {CATEGORY_LABELS[k]}
+            </span>
+          ))}
+          <span className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-amber-400" aria-hidden="true" /> Match
           </span>
-          <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-blue-500" /> Core
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-orange-500" /> Coupled
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-amber-400" /> Match
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-white" /> Focus
+          <span className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-white" aria-hidden="true" /> Focus
           </span>
         </div>
       </div>
@@ -296,13 +319,13 @@ export const InteractiveDependencyGraph: React.FC<
       {/* ── Toolbar ─────────────────────────────────────────────────── */}
       <GraphToolbar
         mode={mode}
+        traceDir={traceDir}
         focusNode={focusNode}
         loading={loading}
         nodeCount={apiNodes.length}
         edgeCount={apiEdges.length}
         onFitView={handleFitView}
         onReset={handleReset}
-        onExpand={handleExpand}
         onTraceForward={() => handleTraceForward()}
         onTraceBackward={() => handleTraceBackward()}
         onTraceBoth={() => handleTraceBoth()}
@@ -313,35 +336,42 @@ export const InteractiveDependencyGraph: React.FC<
       <div className="flex-grow relative flex overflow-hidden">
         {/* Loading overlay */}
         {loading && (
-          <div className="absolute inset-0 bg-canvas/70 flex flex-col items-center justify-center gap-2 z-30 font-mono text-xs text-text-muted">
-            <RefreshCw className="h-5 w-5 animate-spin text-primary" />
+          <div
+            role="status"
+            aria-live="polite"
+            className="absolute inset-0 bg-canvas/70 backdrop-blur-sm flex flex-col items-center justify-center gap-2 z-30 font-mono text-xs text-text-muted"
+          >
+            <RefreshCw className="h-5 w-5 animate-spin text-primary" aria-hidden="true" />
             <span>Loading graph…</span>
           </div>
         )}
 
         {/* Error overlay */}
         {!loading && error && (
-          <div className="absolute inset-0 bg-canvas/80 flex flex-col items-center justify-center gap-3 z-30 p-6 text-center">
-            <Info className="h-6 w-6 text-primary" />
-            <span className="font-mono text-xs text-text-muted max-w-sm leading-relaxed">
-              {error}
-            </span>
-            <button
-              onClick={handleReset}
-              className="text-primary border border-primary/20 px-3 py-1.5 rounded text-xs font-mono hover:bg-primary/5 transition-colors"
-            >
-              Retry
-            </button>
+          <div className="absolute inset-0 bg-canvas/80 backdrop-blur-sm flex items-center justify-center z-30 p-6">
+            <EmptyState
+              tone="danger"
+              icon={<Info className="h-6 w-6" aria-hidden="true" />}
+              title="Graph failed to load"
+              description={error}
+              action={<Button variant="ghost" onClick={handleReset}>Retry</Button>}
+            />
           </div>
         )}
 
         {/* Empty state */}
         {!loading && !error && apiNodes.length === 0 && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 z-30">
-            <Info className="h-5 w-5 text-primary" />
-            <span className="font-mono text-xs text-text-muted">
-              {searchQuery ? 'No nodes matched your search.' : 'No graph data available.'}
-            </span>
+          <div className="absolute inset-0 flex items-center justify-center z-30 p-6">
+            <EmptyState
+              icon={<Network className="h-6 w-6" aria-hidden="true" />}
+              title={searchQuery ? 'No nodes matched your search' : 'Graph is empty'}
+              description={
+                searchQuery
+                  ? 'Try a different keyword or clear the search to see the full graph.'
+                  : 'Run a repository analysis to populate the dependency graph.'
+              }
+              action={searchQuery ? <Button variant="ghost" onClick={handleSearchClear}>Clear search</Button> : undefined}
+            />
           </div>
         )}
 
@@ -376,5 +406,27 @@ export const InteractiveDependencyGraph: React.FC<
     </div>
   );
 };
+
+interface StatPillProps {
+  icon: React.ReactNode;
+  label: string;
+  value: number | string;
+  tone?: 'neutral' | 'danger';
+}
+const StatPill: React.FC<StatPillProps> = ({ icon, label, value, tone = 'neutral' }) => (
+  <span
+    className={[
+      'flex items-center gap-1 px-2 py-0.5 rounded border',
+      tone === 'danger'
+        ? 'border-danger/30 bg-danger/10 text-danger'
+        : 'border-border bg-canvas text-text',
+    ].join(' ')}
+    title={`${label}: ${value}`}
+  >
+    <span className="text-text-muted" aria-hidden="true">{icon}</span>
+    <span className="text-text-muted">{label}</span>
+    <span className="font-bold">{value}</span>
+  </span>
+);
 
 export default InteractiveDependencyGraph;
