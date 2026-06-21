@@ -7,10 +7,13 @@ interface Props {
   description?: string;
 }
 
-const { 
-  title = "Repo Intelligence Agent", 
-  description = "Understand any codebase in minutes with a multi-agent AI comprehension assistant." 
+const {
+  title = 'Repo Intelligence Agent',
+  description = 'Understand any codebase in minutes with a multi-agent AI comprehension assistant.',
 } = Astro.props;
+
+const year = new Date().getFullYear();
+const canonical = Astro.url.href;
 ---
 
 <!DOCTYPE html>
@@ -18,31 +21,41 @@ const {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    
-    <!-- SEO Best Practices -->
+
     <title>{title}</title>
     <meta name="description" content={description} />
-    <meta name="theme-color" content="#010102" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" fallback="/favicon.ico" />
-    
+    <meta name="theme-color" content="#0a0a0c" />
+
+    <!-- Canonical / Social -->
+    <link rel="canonical" href={canonical} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonical} />
+    <meta name="twitter:card" content="summary" />
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="alternate icon" href="/favicon.ico" />
+
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
   </head>
   <body class="bg-canvas text-text min-h-screen flex flex-col selection:bg-primary/30">
-    <!-- Top Navigation -->
     <Navbar />
-    
-    <!-- Main Content Area -->
+
     <main class="flex-grow flex flex-col w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <slot />
     </main>
 
-    <!-- Footer -->
     <footer class="w-full border-t border-border py-4 mt-12 bg-canvas">
       <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row justify-between items-center text-xs text-text-muted font-mono">
-        <p>© 2026 Repo Intelligence Agent. Kaggle Capstone Project.</p>
+        <p>© {year} Repo Intelligence Agent. Kaggle Capstone Project.</p>
         <p class="mt-2 sm:mt-0">Built with Astro + FastAPI + Gemini 2.5</p>
       </div>
     </footer>
