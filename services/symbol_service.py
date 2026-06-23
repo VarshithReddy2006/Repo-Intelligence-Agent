@@ -29,10 +29,12 @@ import logging
 import os
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from models.symbol import Symbol, SymbolIndex
 from services.tree_sitter_service import TreeSitterService, _LANGUAGE_REGISTRY
+from storage.snapshot_store import SnapshotStore
+from core.cache import AnalysisCache
 
 logger = logging.getLogger(__name__)
 
@@ -58,15 +60,45 @@ class SymbolService:
     that all query methods read from.
     """
 
-    def __init__(self, symbols_dir: str = _SYMBOLS_DIR) -> None:
+    @property
+    def schema_version(self) -> int:
+        return _SCHEMA_VERSION
+
+    @classmethod
+    def get_schema_version(cls) -> int:
+        return _SCHEMA_VERSION
+
+    def __init__(
+        self,
+        symbols_dir: str = _SYMBOLS_DIR,
+        snapshot_store: Optional[SnapshotStore] = None,
+        analysis_cache: Optional[AnalysisCache] = None,
+    ) -> None:
         """Initialise the service.
 
         Args:
             symbols_dir: Directory where symbol JSON indices are saved.
                          Defaults to data/symbols/ relative to project root.
+            snapshot_store: Shared snapshot store instance.
+            analysis_cache: Shared analysis cache instance.
         """
         self.symbols_dir = symbols_dir
         os.makedirs(self.symbols_dir, exist_ok=True)
+
+        if snapshot_store is None:
+            if symbols_dir != _SYMBOLS_DIR:
+                parent_dir = os.path.dirname(symbols_dir)
+                dir_name = os.path.basename(symbols_dir)
+                from storage.snapshot_store import JsonSnapshotStore
+                self.snapshot_store = JsonSnapshotStore(base_dir=parent_dir, key_map={"symbols": dir_name})
+            else:
+                from backend.dependencies import snapshot_store as default_store
+                self.snapshot_store = default_store
+        else:
+            self.snapshot_store = snapshot_store
+
+        self.analysis_cache = analysis_cache or AnalysisCache()
+
         # Reuse TreeSitterService's lazy-loading parser cache
         self._ts = TreeSitterService()
 
@@ -82,21 +114,17 @@ class SymbolService:
     ) -> Dict[str, Any]:
         """Extract symbols from a repository and persist the index.
 
-        Provide either *repo_path* (cloned directory on disk) or *files*
-        (pre-extracted [{path, content}] list).  At least one must be given —
-        matching the same convention used by ArchitectureService.build().
-
-        Args:
-            repo_name:  Repository identifier (owner/repo).
-            repo_path:  Absolute path to the cloned repository root.
-            files:      Pre-extracted [{path, content}] list.
-
-        Returns:
-            Dict with: status, repo, symbol_count, files_indexed.
-
-        Raises:
-            ValueError: If neither repo_path nor files is provided.
+        Provides backward compatibility by delegating to build_full.
         """
+        return self.build_full(repo_name, repo_path=repo_path, files=files)
+
+    def build_full(
+        self,
+        repo_name: str,
+        repo_path: Optional[str] = None,
+        files: Optional[List[Dict[str, str]]] = None,
+    ) -> Dict[str, Any]:
+        """Extract all symbols from scratch and persist the index."""
         if repo_path is None and files is None:
             raise ValueError("Provide either repo_path or files.")
 
@@ -116,7 +144,7 @@ class SymbolService:
 
         self._save(repo_name, symbols)
         logger.info(
-            "Symbol index built for %s — %d symbols from %d files",
+            "Full symbol index built for %s — %d symbols from %d files",
             repo_name,
             len(symbols),
             files_indexed,
@@ -128,13 +156,69 @@ class SymbolService:
             "files_indexed": files_indexed,
         }
 
+    def build_partial(
+        self,
+        repo_name: str,
+        changed_files: Set[str],
+        repo_path: Optional[str] = None,
+        files: Optional[List[Dict[str, str]]] = None,
+    ) -> Dict[str, Any]:
+        """Incrementally update the symbol index using changed files list."""
+        old_index = self.load(repo_name)
+        if old_index is None:
+            logger.info("No existing symbol index found for %s, running full build.", repo_name)
+            return self.build_full(repo_name, repo_path=repo_path, files=files)
+
+        if repo_path is None and files is None:
+            raise ValueError("Provide either repo_path or files.")
+
+        file_list = files if files is not None else self._walk_repo(repo_path)
+
+        # 1. Filter out symbols belonging to modified or deleted files
+        retained_symbols = [
+            sym for sym in old_index.symbols
+            if sym.file_path not in changed_files
+        ]
+
+        # 2. Extract new symbols from added or modified files
+        new_symbols: List[Symbol] = []
+        files_indexed = 0
+        for f in file_list:
+            path = f.get("path", "")
+            content = f.get("content", "")
+            if not path or not content:
+                continue
+            # Only parse files that have actually changed
+            if path in changed_files:
+                file_syms = self._extract_file_symbols(path, content)
+                if file_syms:
+                    new_symbols.extend(file_syms)
+                    files_indexed += 1
+
+        # 3. Merge and save
+        merged_symbols = retained_symbols + new_symbols
+        self._save(repo_name, merged_symbols)
+        logger.info(
+            "Incremental symbol index built for %s — %d retained, %d new from %d changed files",
+            repo_name,
+            len(retained_symbols),
+            len(new_symbols),
+            files_indexed,
+        )
+        return {
+            "status": "success",
+            "repo": repo_name,
+            "symbol_count": len(merged_symbols),
+            "files_indexed": files_indexed,
+        }
+
     # ------------------------------------------------------------------
     # Public API — Query
     # ------------------------------------------------------------------
 
     def index_exists(self, repo_name: str) -> bool:
         """Return True if a symbol index exists for *repo_name*."""
-        return os.path.exists(self._index_path(repo_name))
+        return self.snapshot_store.exists(repo_name, "symbols")
 
     def load(self, repo_name: str) -> Optional[SymbolIndex]:
         """Load a persisted symbol index.
@@ -142,11 +226,27 @@ class SymbolService:
         Returns:
             A SymbolIndex Pydantic model, or None if not found / stale.
         """
-        data = self._load_raw(repo_name)
+        cached = self.analysis_cache.get(repo_name, "symbols", _SCHEMA_VERSION)
+        if cached is not None:
+            return cached
+
+        data = self.snapshot_store.load(repo_name, "symbols")
         if data is None:
             return None
+
+        stored_version = data.get("_schema_version", 0)
+        if stored_version < _SCHEMA_VERSION:
+            logger.warning(
+                "Discarding stale symbol index for %s (schema v%d < current v%d)",
+                repo_name, stored_version, _SCHEMA_VERSION
+            )
+            return None
+
         try:
-            return SymbolIndex(**data)
+            filtered = {k: v for k, v in data.items() if not k.startswith("_")}
+            index = SymbolIndex(**filtered)
+            self.analysis_cache.set(repo_name, "symbols", index, _SCHEMA_VERSION)
+            return index
         except Exception as exc:
             logger.error(
                 "Failed to deserialise symbol index for %s: %s", repo_name, exc
@@ -572,45 +672,29 @@ class SymbolService:
     # ------------------------------------------------------------------
 
     def _index_path(self, repo_name: str) -> str:
-        safe = repo_name.replace("/", "_")
-        return os.path.join(self.symbols_dir, f"{safe}.json")
+        return self.snapshot_store._get_path(repo_name, "symbols")
 
     def _save(self, repo_name: str, symbols: List[Symbol]) -> None:
-        path = self._index_path(repo_name)
         payload = {
             "repo": repo_name,
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "symbol_count": len(symbols),
             "symbols": [s.model_dump() for s in symbols],
-            # Internal metadata — stripped by _load_raw
             "_schema_version": _SCHEMA_VERSION,
             "_built_at": int(time.time()),
         }
-        with open(path, "w", encoding="utf-8") as fh:
-            json.dump(payload, fh, indent=2)
-        logger.info("Symbol index saved → %s  (%d symbols)", path, len(symbols))
+        self.snapshot_store.save(repo_name, "symbols", payload)
+
+        try:
+            index_obj = SymbolIndex(
+                repo=repo_name,
+                generated_at=payload["generated_at"],
+                symbol_count=len(symbols),
+                symbols=symbols,
+            )
+            self.analysis_cache.set(repo_name, "symbols", index_obj, _SCHEMA_VERSION)
+        except Exception as exc:
+            logger.error("Failed to update cache in SymbolService._save: %s", exc)
 
     def _load_raw(self, repo_name: str) -> Optional[Dict[str, Any]]:
-        path = self._index_path(repo_name)
-        if not os.path.exists(path):
-            return None
-        try:
-            with open(path, "r", encoding="utf-8") as fh:
-                data = json.load(fh)
-            stored_version = data.get("_schema_version", 0)
-            if stored_version < _SCHEMA_VERSION:
-                logger.warning(
-                    "Discarding stale symbol index for %s "
-                    "(schema v%d < current v%d)",
-                    repo_name,
-                    stored_version,
-                    _SCHEMA_VERSION,
-                )
-                return None
-            # Strip internal metadata fields before returning
-            return {k: v for k, v in data.items() if not k.startswith("_")}
-        except Exception as exc:
-            logger.error(
-                "Failed to load symbol index from %s: %s", path, exc
-            )
-            return None
+        return self.snapshot_store.load(repo_name, "symbols")

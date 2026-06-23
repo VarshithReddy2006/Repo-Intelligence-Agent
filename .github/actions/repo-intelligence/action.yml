@@ -1,0 +1,56 @@
+name: Repository Intelligence Review
+description: Post an AI-assisted sticky PR review comment and a Check Run.
+author: Repo Intelligence Agent
+
+inputs:
+  github-token:
+    description: Token with `pull-requests: write` and `checks: write` (typically `${{ secrets.GITHUB_TOKEN }}`).
+    required: true
+  api-url:
+    description: Base URL of the Repo Intelligence backend (e.g. `https://repo-intel.example.com`).
+    required: true
+  api-token:
+    description: Optional bearer token forwarded to the Repo Intelligence backend.
+    required: false
+    default: ""
+  check-name:
+    description: Display name for the Check Run.
+    required: false
+    default: "Repository Intelligence"
+
+outputs:
+  risk-score:
+    description: Risk score 0-100.
+    value: ${{ steps.repo-intel.outputs.risk-score }}
+  risk-level:
+    description: One of LOW | MEDIUM | HIGH | CRITICAL.
+    value: ${{ steps.repo-intel.outputs.risk-level }}
+  comment-url:
+    description: HTML URL of the sticky review comment.
+    value: ${{ steps.repo-intel.outputs.comment-url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: Install action dependencies
+      shell: bash
+      run: python -m pip install --quiet "httpx>=0.27" "pydantic>=2"
+
+    - name: Run Repository Intelligence
+      id: repo-intel
+      shell: bash
+      env:
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_API_URL: ${{ inputs.api-url }}
+        INPUT_API_TOKEN: ${{ inputs.api-token }}
+        INPUT_CHECK_NAME: ${{ inputs.check-name }}
+        INPUT_OWNER: ${{ github.event.pull_request.base.repo.owner.login }}
+        INPUT_REPO: ${{ github.event.pull_request.base.repo.name }}
+        INPUT_PR_NUMBER: ${{ github.event.pull_request.number }}
+        INPUT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      run: python ${{ github.action_path }}/entrypoint.py

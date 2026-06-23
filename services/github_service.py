@@ -35,7 +35,8 @@ class GitHubConfig:
     @classmethod
     def load_token(cls) -> Optional[str]:
         if cls.token is None:
-            cls.token = os.environ.get("GITHUB_TOKEN")
+            from backend.settings import settings
+            cls.token = settings.github_token
         return cls.token
 
 
@@ -103,10 +104,10 @@ class GitHubService:
         # CLONED_REPOS_PATH; defaults to ~/.repo_intelligence/cloned_repos.
         base_dir = str(get_cloned_repos_dir())
         safe_name = repo_fullName.replace("/", "_")
-        return os.path.join(base_dir, safe_name)
+        return os.path.abspath(os.path.join(base_dir, safe_name))
 
     def clone_repository(self, repo_url: str, branch: Optional[str] = None) -> str:
-        """Clones a GitHub repository to a local directory using Git CLI.
+        """Clones a GitHub repository to a local directory using Git CLI with fallback reliability.
 
         Args:
             repo_url: GitHub repository URL or owner/repo identifier.
@@ -115,6 +116,9 @@ class GitHubService:
         Returns:
             The local path to the cloned repository.
         """
+        import urllib.parse
+        import subprocess
+
         try:
             parsed = self.parse_repo_url(repo_url)
         except ValueError as e:
@@ -123,34 +127,104 @@ class GitHubService:
         repo_fullName = f"{parsed['owner']}/{parsed['repo']}"
         dest_dir = self.get_local_repo_path(repo_fullName)
 
-        # Prepare URL with token if available to handle private repos
-        clone_url = repo_url
-        if self.token:
-            parsed_url = urllib.parse.urlparse(repo_url)
+        # 1. Determine clone URL for anonymous cloning
+        parsed_url = urllib.parse.urlparse(repo_url)
+        if parsed_url.scheme:
+            public_url = repo_url
+        else:
+            public_url = f"https://github.com/{repo_fullName}.git"
+
+        # 2. Check if repository is publicly accessible (anonymous check)
+        is_public = False
+        try:
+            cmd_check = ["git", "ls-remote", public_url, "HEAD"]
+            res = subprocess.run(cmd_check, capture_output=True, text=True, check=False)
+            if res.returncode == 0:
+                is_public = True
+        except Exception:
+            pass
+
+        # 3. Determine actual URL to use
+        if is_public:
+            clone_url = public_url
+            logger.info("Cloning public repository anonymously: %s", repo_fullName)
+        elif self.token:
+            # Private repo, use token
             if parsed_url.scheme == "https":
                 netloc = f"{self.token}@{parsed_url.netloc}"
                 clone_url = urllib.parse.urlunparse(parsed_url._replace(netloc=netloc))
-            elif not parsed_url.scheme:
-                # If it's owner/repo format, build the https clone URL
+            else:
                 clone_url = f"https://{self.token}@github.com/{repo_fullName}.git"
-        elif not urllib.parse.urlparse(repo_url).scheme:
-            # If it's owner/repo format and no token
-            clone_url = f"https://github.com/{repo_fullName}.git"
+            logger.info("Cloning private repository using PAT: %s", repo_fullName)
+        else:
+            clone_url = public_url
+            logger.info("Cloning repository anonymously (no token available): %s", repo_fullName)
 
-        # Validate branch existence (when requested) before cloning
+        # 4. Perform ls-remote connection diagnostics
+        try:
+            cmd_check = ["git", "ls-remote", clone_url, "HEAD"]
+            res = subprocess.run(cmd_check, capture_output=True, text=True, check=False)
+            if res.returncode != 0:
+                err_stderr = res.stderr.replace(self.token, "********") if self.token else res.stderr
+                err_lower = err_stderr.lower()
+                
+                # Check for Network Failure
+                if any(kw in err_lower for kw in ["could not resolve host", "temporary failure", "network is unreachable", "timed out"]):
+                    raise RuntimeError(f"Network failure: Check your internet connection. Detail: {err_stderr.strip()}")
+                # Check for Auth / Access Failures
+                elif any(kw in err_lower for kw in ["permission denied", "authorization", "terminal", "write access", "403", "401"]):
+                    if not self.token:
+                        raise RuntimeError(f"Repository private: The repository requires authentication but no GITHUB_TOKEN (PAT) is set in your environment.")
+                    else:
+                        raise RuntimeError(f"Authentication failure: The provided GITHUB_TOKEN (PAT) is invalid, expired, or does not have read access to {repo_fullName}.")
+                # Check for Not Found
+                elif any(kw in err_lower for kw in ["not found", "repository not found", "fatal: repository"]):
+                    if not is_public and not self.token:
+                        raise RuntimeError(f"Repository private: Repository {repo_fullName} was not found anonymously. It might be private; please provide a valid GITHUB_TOKEN (PAT).")
+                    else:
+                        raise RepositoryNotFoundError(f"Repository not found: Repository {repo_fullName} does not exist. Detail: {err_stderr.strip()}")
+                else:
+                    raise RuntimeError(f"Connection failure: Failed to connect to repository {repo_fullName}. Detail: {err_stderr.strip()}")
+        except Exception as e:
+            if isinstance(e, (RepositoryNotFoundError, RuntimeError)):
+                raise e
+            raise RuntimeError(f"Connection failure: {e}")
+
+        # 5. Resolve Branch name (and auto-discover if requested branch is default 'main' but not present)
+        actual_branch = branch
         if branch:
-            # Use ls-remote against the remote to confirm refs exist.
-            # --heads ensures branch refs only.
+            # Check if requested branch exists
             cmd_check = ["git", "ls-remote", "--heads", clone_url, branch]
             res_check = subprocess.run(cmd_check, capture_output=True, text=True, check=False)
-            if res_check.returncode != 0:
-                err_msg = res_check.stderr.replace(self.token, "********") if self.token else res_check.stderr
-                # For safety treat nonzero as missing branch (API will return 400/422).
-                raise BranchNotFoundError(f"Failed to validate branch '{branch}' for {repo_fullName}: {err_msg.strip()}")
-            if not res_check.stdout.strip():
-                raise BranchNotFoundError(f"Branch '{branch}' does not exist for repository {repo_fullName}.")
+            branch_exists = (res_check.returncode == 0 and bool(res_check.stdout.strip()))
+            
+            if not branch_exists:
+                if branch == "main":
+                    # Try to auto-discover default branch
+                    try:
+                        cmd_sym = ["git", "ls-remote", "--symref", clone_url, "HEAD"]
+                        res_sym = subprocess.run(cmd_sym, capture_output=True, text=True, check=False)
+                        discovered = None
+                        if res_sym.returncode == 0:
+                            for line in res_sym.stdout.splitlines():
+                                if line.startswith("ref:"):
+                                    parts = line.split()
+                                    if len(parts) >= 2 and parts[1].startswith("refs/heads/"):
+                                        discovered = parts[1].replace("refs/heads/", "")
+                                        break
+                        if discovered:
+                            actual_branch = discovered
+                            logger.info(f"Branch 'main' not found. Auto-discovered default branch: '{actual_branch}'")
+                        else:
+                            raise BranchNotFoundError(f"Branch 'main' not found, and failed to auto-discover default branch.")
+                    except Exception as e:
+                        if isinstance(e, BranchNotFoundError):
+                            raise e
+                        raise BranchNotFoundError(f"Branch 'main' not found for repository {repo_fullName}.")
+                else:
+                    raise BranchNotFoundError(f"Branch '{branch}' does not exist for repository {repo_fullName}.")
 
-        # Remove existing directory if it exists
+        # 6. Clear target directory
         if os.path.exists(dest_dir):
             try:
                 if os.name == "nt":
@@ -162,19 +236,16 @@ class GitHubService:
 
         os.makedirs(os.path.dirname(dest_dir), exist_ok=True)
 
-        logger.info(f"Cloning repository {repo_fullName} to {dest_dir}...")
+        # 7. Perform Clone
+        logger.info(f"Cloning repository {repo_fullName} to {dest_dir} (branch={actual_branch})...")
         cmd = ["git", "clone", "--depth", "1", "--single-branch"]
-        if branch:
-            cmd.extend(["--branch", branch])
+        if actual_branch:
+            cmd.extend(["--branch", actual_branch])
         cmd.extend([clone_url, dest_dir])
 
         result = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if result.returncode != 0:
             err_msg = result.stderr.replace(self.token, "********") if self.token else result.stderr
-            lower = (result.stderr or "").lower()
-            # Heuristics for 404-like cases
-            if any(s in lower for s in ["not found", "repository not found", "fatal: repository", "could not read from remote repository"]):
-                raise RepositoryNotFoundError(f"Repository {repo_fullName} not found. {err_msg.strip()}")
             raise RuntimeError(f"Failed to clone repository: {err_msg}")
 
         return dest_dir
@@ -188,7 +259,7 @@ class GitHubService:
         Returns:
             A list of dictionary records containing file paths and contents.
         """
-        ignored_names = {"node_modules", ".git", "dist", "build", ".next", "venv", "__pycache__"}
+        ignored_names = {"node_modules", ".git", "dist", "build", ".next", "venv", ".venv", "__pycache__", ".tox", "coverage", "data"}
         extracted_files = []
         
         for root, dirs, files in os.walk(local_path):
@@ -248,7 +319,7 @@ class GitHubService:
                 raise
 
         files_meta = []
-        ignored_names = {"node_modules", ".git", "dist", "build", ".next", "venv", "__pycache__"}
+        ignored_names = {"node_modules", ".git", "dist", "build", ".next", "venv", ".venv", "__pycache__", ".tox", "coverage", "data"}
         
         for root, dirs, files in os.walk(dest_dir):
             dirs[:] = [d for d in dirs if d not in ignored_names]

@@ -41,7 +41,11 @@ export function usePrerequisites(activeRepo: string): UsePrerequisitesResult {
     }
   }, [activeRepo]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    setHealthStatus(null);
+    setRepairError(null);
+    refresh();
+  }, [activeRepo, refresh]);
 
   const repair = useCallback(async () => {
     if (!activeRepo) return;

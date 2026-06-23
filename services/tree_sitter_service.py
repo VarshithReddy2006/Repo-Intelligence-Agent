@@ -12,7 +12,10 @@ import logging
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
+import threading
+
 logger = logging.getLogger(__name__)
+
 
 # ---------------------------------------------------------------------------
 # Language registry
@@ -64,8 +67,8 @@ class TreeSitterService:
     """
 
     def __init__(self) -> None:
-        # Cache: language_name → tree_sitter.Parser
-        self._parsers: Dict[str, Any] = {}
+        # Thread-local storage for parsers: each thread gets its own Parser cache
+        self._local = threading.local()
 
     # ------------------------------------------------------------------
     # Public API
@@ -160,15 +163,18 @@ class TreeSitterService:
 
     def _get_parser(self, language_name: str, loader) -> Optional[Any]:
         """Return a cached Parser for the given language, creating one if needed."""
-        if language_name in self._parsers:
-            return self._parsers[language_name]
+        if not hasattr(self._local, "parsers"):
+            self._local.parsers = {}
+
+        if language_name in self._local.parsers:
+            return self._local.parsers[language_name]
 
         try:
             from tree_sitter import Parser
             language = loader()
             parser = Parser()
             parser.set_language(language)
-            self._parsers[language_name] = parser
+            self._local.parsers[language_name] = parser
             return parser
         except Exception as exc:
             logger.error("Failed to initialise Tree-Sitter parser for %s: %s", language_name, exc)

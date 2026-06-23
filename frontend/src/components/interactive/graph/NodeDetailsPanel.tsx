@@ -53,7 +53,6 @@ export const NodeDetailsPanel: React.FC<NodeDetailsPanelProps> = ({
     ? node.id.substring(0, node.id.lastIndexOf('/'))
     : '';
 
-  // Responsive: bottom sheet on mobile, right drawer on md+
   const positionClass = className ??
     'fixed inset-x-0 bottom-0 max-h-[60vh] md:absolute md:right-0 md:top-0 md:bottom-0 md:max-h-none md:w-72';
 

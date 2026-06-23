@@ -56,10 +56,10 @@ function categoryBadge(cat: string): { label: string; cls: string } {
     case 'CYCLE_INTRODUCED':   return { label: 'Cycle Introduced',   cls: 'bg-danger/10 text-danger border-danger/30' };
     case 'CYCLE_RESOLVED':     return { label: 'Cycle Resolved',     cls: 'bg-success/10 text-success border-success/30' };
     case 'COUPLING_INCREASED': return { label: 'Coupling Increased', cls: 'bg-warn/10 text-warn border-warn/30' };
-    case 'COUPLING_DECREASED': return { label: 'Coupling Decreased', cls: 'bg-teal-500/10 text-teal-400 border-teal-500/30' };
+    case 'COUPLING_DECREASED': return { label: 'Coupling Decreased', cls: 'bg-info/10 text-info border-info/30' };
     case 'ENTRY_POINT_ADDED':  return { label: 'Entry Point Added',  cls: 'bg-info/10 text-info border-info/30' };
     case 'ENTRY_POINT_REMOVED':return { label: 'Entry Point Removed',cls: 'bg-primary/10 text-primary border-primary/30' };
-    case 'DEPENDENCY_ADDED':   return { label: 'Dependency Added',   cls: 'bg-purple-500/10 text-purple-400 border-purple-500/30' };
+    case 'DEPENDENCY_ADDED':   return { label: 'Dependency Added',   cls: 'bg-primary/10 text-primary border-primary/30' };
     case 'DEPENDENCY_REMOVED': return { label: 'Dependency Removed', cls: 'bg-surface-2 text-text-muted border-border' };
     default: return { label: cat.replace('_', ' '), cls: 'bg-surface-2 text-text-muted border-border' };
   }
@@ -78,6 +78,18 @@ export const ArchitectureDrift: React.FC<Props> = ({ repoName }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [driftResult, setDriftResult] = useState<PRDriftResult | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Sync activeRepo with repoName prop changes and clear stale results
+  React.useEffect(() => {
+    const nextRepo = resolveRepo(repoName);
+    setActiveRepo(nextRepo);
+    setDriftResult(null);
+    setErrorMsg('');
+    setPrUrlInput('');
+    setOwnerInput('');
+    setRepoInput('');
+    setPrNumberInput('');
+  }, [repoName]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

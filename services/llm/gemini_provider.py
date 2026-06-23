@@ -1,0 +1,287 @@
+"""Google Gemini provider via modern google-genai SDK.
+
+Implements the BaseLLMProvider interface so it integrates seamlessly with the rest
+of the codebase.
+"""
+
+import asyncio
+import logging
+import time
+from typing import AsyncIterator, List, Dict, Any, Optional
+
+from google import genai
+from google.genai import types
+from .base_provider import BaseLLMProvider, ProviderHealth
+from .provider_errors import classify_gemini_error, ProviderErrorType
+
+logger = logging.getLogger(__name__)
+
+_HEALTH_CHECK_TIMEOUT = 10.0   # seconds — list models is cheap, 10s is generous
+_HEALTH_CHECK_PROMPT = "Reply with the single word: ready"
+
+
+class GeminiProvider(BaseLLMProvider):
+    """LLM provider backed by Google Gemini using the google-genai SDK."""
+
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+    ) -> None:
+        from backend.settings import settings
+        self.api_key = api_key or settings.gemini_api_key or ""
+        self.model = model or settings.gemini_model or "gemini-2.5-flash"
+
+        if not self.api_key:
+            logger.warning(
+                "GEMINI_API_KEY is not set — requests to Gemini will fail."
+            )
+            # In production settings.py validator will fail fast if key is missing,
+            # but we initialize the client here safely.
+
+        self.client = genai.Client(api_key=self.api_key)
+
+    # ------------------------------------------------------------------
+    # Health check
+    # ------------------------------------------------------------------
+
+    async def health_check(self) -> ProviderHealth:
+        """Validate Gemini credentials by listing available models.
+
+        ``models.list`` is an inexpensive read-only call that exercises the
+        authentication path without generating any content.  It will raise
+        a ``ClientError`` with 401/UNAUTHENTICATED if the credential is wrong
+        or the wrong credential type is supplied.
+
+        Returns:
+            ProviderHealth — never raises.
+        """
+        # Fast-path: missing credential — no need to make a network call
+        if not self.api_key:
+            from .provider_errors import _GEMINI_MESSAGES
+            msg, rec = _GEMINI_MESSAGES[ProviderErrorType.MISSING_CREDENTIAL]
+            logger.error(
+                "PROVIDER_HEALTH provider=gemini model=%s authenticated=false "
+                "error_type=%s message=%s",
+                self.model,
+                ProviderErrorType.MISSING_CREDENTIAL.value,
+                msg,
+            )
+            return ProviderHealth(
+                healthy=False,
+                provider="gemini",
+                model=self.model,
+                authenticated=False,
+                latency_ms=0.0,
+                error_message=msg,
+                error_type=ProviderErrorType.MISSING_CREDENTIAL.value,
+                recommendation=rec,
+            )
+
+        t0 = time.perf_counter()
+        try:
+            # google-genai SDK: list models is a lightweight auth validation call
+            await asyncio.wait_for(
+                self.client.aio.models.list(),
+                timeout=_HEALTH_CHECK_TIMEOUT,
+            )
+            latency_ms = (time.perf_counter() - t0) * 1000
+
+            logger.info(
+                "PROVIDER_HEALTH provider=gemini model=%s healthy=true "
+                "authenticated=true latency_ms=%.0f",
+                self.model,
+                latency_ms,
+            )
+            return ProviderHealth(
+                healthy=True,
+                provider="gemini",
+                model=self.model,
+                authenticated=True,
+                latency_ms=latency_ms,
+            )
+
+        except Exception as exc:
+            latency_ms = (time.perf_counter() - t0) * 1000
+            error = classify_gemini_error(exc, "gemini")
+            is_auth = error.error_type in (
+                ProviderErrorType.AUTHENTICATION_ERROR,
+                ProviderErrorType.INVALID_CREDENTIAL_TYPE,
+                ProviderErrorType.MISSING_CREDENTIAL,
+            )
+
+            logger.error(
+                "PROVIDER_HEALTH provider=gemini model=%s healthy=false "
+                "authenticated=%s error_type=%s latency_ms=%.0f "
+                "exc_type=%s recommendation=%s",
+                self.model,
+                not is_auth,
+                error.error_type.value,
+                latency_ms,
+                type(exc).__name__,
+                error.recommendation,
+            )
+            return ProviderHealth(
+                healthy=False,
+                provider="gemini",
+                model=self.model,
+                authenticated=not is_auth,
+                latency_ms=latency_ms,
+                error_message=error.message,
+                error_type=error.error_type.value,
+                recommendation=error.recommendation,
+            )
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _build_contents(
+        self,
+        prompt: str,
+        history: Optional[List[Dict[str, Any]]],
+    ) -> List[Dict[str, Any]]:
+        """Assembles the list of history turns plus current prompt for google-genai SDK."""
+        contents: List[Dict[str, Any]] = []
+
+        if history:
+            for turn in history:
+                role = turn.get("role", "user")
+                # Normalize Gemini/OpenAI roles
+                if role == "assistant":
+                    role = "model"
+                
+                content = turn.get("content", "")
+                contents.append(
+                    {"role": role, "parts": [{"text": str(content)}]}
+                )
+
+        contents.append({"role": "user", "parts": [{"text": prompt}]})
+        return contents
+
+    async def generate(
+        self,
+        prompt: str,
+        system_instruction: Optional[str] = None,
+        history: Optional[List[Dict[str, Any]]] = None,
+        response_mime_type: Optional[str] = None,
+    ) -> str:
+        """Generate a complete text response from Gemini with backoff retry and timeout."""
+        import random
+
+        contents = self._build_contents(prompt, history)
+
+        config = types.GenerateContentConfig()
+        if system_instruction:
+            config.system_instruction = system_instruction
+        if response_mime_type == "application/json":
+            config.response_mime_type = response_mime_type
+
+        max_retries = 3
+        base_delay = 1.0
+        timeout_seconds = 30.0
+
+        for attempt in range(max_retries + 1):
+            try:
+                response = await asyncio.wait_for(
+                    self.client.aio.models.generate_content(
+                        model=self.model,
+                        contents=contents,
+                        config=config,
+                    ),
+                    timeout=timeout_seconds,
+                )
+                return response.text or ""
+            except asyncio.CancelledError:
+                logger.info("Gemini generate call cancelled by client/system.")
+                raise
+            except Exception as e:
+                error = classify_gemini_error(e, "gemini")
+                if attempt == max_retries:
+                    logger.error(
+                        "Gemini generate failed after %d retries: "
+                        "model=%s error_type=%s exc_type=%s",
+                        max_retries,
+                        self.model,
+                        error.error_type.value,
+                        type(e).__name__,
+                        exc_info=True,
+                    )
+                    raise
+
+                delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
+                logger.warning(
+                    "Gemini generate failed: model=%s attempt=%d/%d "
+                    "error_type=%s exc_type=%s retrying_in=%.2fs",
+                    self.model,
+                    attempt + 1,
+                    max_retries,
+                    error.error_type.value,
+                    type(e).__name__,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+        return ""
+
+    async def stream(
+        self,
+        prompt: str,
+        system_instruction: Optional[str] = None,
+        history: Optional[List[Dict[str, Any]]] = None,
+    ) -> AsyncIterator[str]:
+        """Stream token-by-token text output from Gemini with backoff retry and timeout."""
+        import random
+
+        contents = self._build_contents(prompt, history)
+
+        config = types.GenerateContentConfig()
+        if system_instruction:
+            config.system_instruction = system_instruction
+
+        max_retries = 3
+        base_delay = 1.0
+        timeout_seconds = 30.0
+
+        for attempt in range(max_retries + 1):
+            try:
+                response_stream = await asyncio.wait_for(
+                    self.client.aio.models.generate_content_stream(
+                        model=self.model,
+                        contents=contents,
+                        config=config,
+                    ),
+                    timeout=timeout_seconds,
+                )
+                async for chunk in response_stream:
+                    if chunk.text:
+                        yield chunk.text
+                return
+            except asyncio.CancelledError:
+                logger.info("Gemini stream call cancelled by client/system.")
+                raise
+            except Exception as e:
+                error = classify_gemini_error(e, "gemini")
+                if attempt == max_retries:
+                    logger.error(
+                        "Gemini stream failed after %d retries: "
+                        "model=%s error_type=%s exc_type=%s",
+                        max_retries,
+                        self.model,
+                        error.error_type.value,
+                        type(e).__name__,
+                        exc_info=True,
+                    )
+                    raise
+
+                delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
+                logger.warning(
+                    "Gemini stream failed: model=%s attempt=%d/%d "
+                    "error_type=%s exc_type=%s retrying_in=%.2fs",
+                    self.model,
+                    attempt + 1,
+                    max_retries,
+                    error.error_type.value,
+                    type(e).__name__,
+                    delay,
+                )
+                await asyncio.sleep(delay)

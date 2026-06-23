@@ -19,6 +19,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import networkx as nx
 
+import threading
+
 logger = logging.getLogger(__name__)
 
 # Default storage directory relative to the project root
@@ -40,6 +42,7 @@ class GraphService:
         """
         self.graphs_dir = graphs_dir
         os.makedirs(self.graphs_dir, exist_ok=True)
+        self._lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Public API
@@ -149,8 +152,9 @@ class GraphService:
         """
         safe_name = repo_name.replace("/", "_")
         path = os.path.join(self.graphs_dir, f"{safe_name}.pkl")
-        with open(path, "wb") as fh:
-            pickle.dump(graph, fh, protocol=pickle.HIGHEST_PROTOCOL)
+        with self._lock:
+            with open(path, "wb") as fh:
+                pickle.dump(graph, fh, protocol=pickle.HIGHEST_PROTOCOL)
         logger.info("Graph saved to %s", path)
         return path
 
@@ -165,16 +169,17 @@ class GraphService:
         """
         safe_name = repo_name.replace("/", "_")
         path = os.path.join(self.graphs_dir, f"{safe_name}.pkl")
-        if not os.path.exists(path):
-            return None
-        try:
-            with open(path, "rb") as fh:
-                graph = pickle.load(fh)
-            logger.info("Graph loaded from %s", path)
-            return graph
-        except Exception as exc:
-            logger.error("Failed to load graph from %s: %s", path, exc)
-            return None
+        with self._lock:
+            if not os.path.exists(path):
+                return None
+            try:
+                with open(path, "rb") as fh:
+                    graph = pickle.load(fh)
+                logger.info("Graph loaded from %s", path)
+                return graph
+            except Exception as exc:
+                logger.error("Failed to load graph from %s: %s", path, exc)
+                return None
 
     def graph_exists(self, repo_name: str) -> bool:
         """Return True if a persisted graph file exists for the given repo."""

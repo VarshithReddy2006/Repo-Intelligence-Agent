@@ -1,5 +1,6 @@
 ---
 import Navbar from '../components/Navbar.astro';
+import RepoContextBar from '../components/RepoContextBar.astro';
 import '../styles/global.css';
 
 interface Props {
@@ -38,18 +39,34 @@ const canonical = Astro.url.href;
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="alternate icon" href="/favicon.ico" />
 
-    <!-- Fonts -->
+    <!-- Fonts — preload Inter to eliminate FOUT -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="preload"
+      as="style"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap"
+    />
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap"
       rel="stylesheet"
     />
   </head>
   <body class="bg-canvas text-text min-h-screen flex flex-col selection:bg-primary/30">
-    <Navbar />
+    <!-- Skip link for keyboard/screen-reader users -->
+    <a
+      href="#main-content"
+      class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[9999]
+             focus:px-4 focus:py-2 focus:rounded-md focus:bg-primary focus:text-white
+             focus:text-sm focus:font-semibold focus:shadow-float"
+    >
+      Skip to main content
+    </a>
 
-    <main class="flex-grow flex flex-col w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <Navbar />
+    <RepoContextBar />
+
+    <main id="main-content" class="flex-grow flex flex-col w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <slot />
     </main>
 

@@ -12,10 +12,16 @@ interface ExampleRepo {
 }
 
 const initialSteps: TimelineStep[] = [
-  { id: 'cloning',   label: 'Clone repository from GitHub',                  status: 'pending' },
-  { id: 'detecting', label: 'Detect languages and frameworks',              status: 'pending' },
-  { id: 'analyzing', label: 'Run architecture scanning & index codebase',   status: 'pending' },
-  { id: 'mapping',   label: 'Map issue relationships & suggested reading',  status: 'pending' },
+  { id: 'cloning',              label: 'Cloning Repository',                    status: 'pending' },
+  { id: 'detecting',            label: 'Detecting Languages',                    status: 'pending' },
+  { id: 'parsing',              label: 'Parsing Source Files',                   status: 'pending' },
+  { id: 'generating_embeddings', label: 'Generating Embeddings',                  status: 'pending' },
+  { id: 'building_symbols',     label: 'Building Symbol Index',                  status: 'pending' },
+  { id: 'building_dependency',  label: 'Building Dependency Graph',              status: 'pending' },
+  { id: 'building_call',        label: 'Building Call Graph',                    status: 'pending' },
+  { id: 'building_api',         label: 'Computing API Surface',                  status: 'pending' },
+  { id: 'computing_intel',      label: 'Computing Repository Intelligence',      status: 'pending' },
+  { id: 'generating_report',    label: 'Generating Report',                      status: 'pending' },
 ];
 
 export const RepoInput: React.FC = () => {
@@ -39,7 +45,7 @@ export const RepoInput: React.FC = () => {
     setErrorMessage(null);
     setTimelineSteps([
       { ...initialSteps[0], status: 'active' },
-      initialSteps[1], initialSteps[2], initialSteps[3],
+      ...initialSteps.slice(1),
     ]);
 
     try {
@@ -71,24 +77,42 @@ export const RepoInput: React.FC = () => {
                 .replace(/^[✗×x]\s*/i, '').trim();
               setErrorMessage(cleanMsg);
               setIsAnalyzing(false);
+              reader.cancel().catch(() => {});
+              return;
             }
 
-            if (data.status === 'cloned') {
-              setTimelineSteps((p) => p.map((s) =>
-                s.id === 'cloning' ? { ...s, status: 'completed' as const } :
-                s.id === 'detecting' ? { ...s, status: 'active' as const } : s));
-            } else if (data.status === 'detected') {
-              setTimelineSteps((p) => p.map((s) =>
-                s.id === 'detecting' ? { ...s, status: 'completed' as const } :
-                s.id === 'analyzing' ? { ...s, status: 'active' as const } : s));
-            } else if (data.status === 'analyzed') {
-              setTimelineSteps((p) => p.map((s) =>
-                s.id === 'analyzing' ? { ...s, status: 'completed' as const } :
-                s.id === 'mapping' ? { ...s, status: 'active' as const } : s));
-            } else if (data.status === 'complete') {
-              setTimelineSteps((p) => p.map((s) =>
-                s.id === 'mapping' ? { ...s, status: 'completed' as const } : s));
-            } else if (data.status === 'done') {
+            const activeStatus = data.status;
+            
+            // Advance steps in the timeline
+            setTimelineSteps((prev) => {
+              const currentIdx = prev.findIndex((s) => s.id === activeStatus);
+              if (currentIdx !== -1) {
+                return prev.map((s, idx) => {
+                  if (idx < currentIdx) {
+                    return { ...s, status: 'completed' as const };
+                  } else if (idx === currentIdx) {
+                    return { ...s, status: 'active' as const };
+                  } else {
+                    return { ...s, status: 'pending' as const };
+                  }
+                });
+              } else if (activeStatus === 'cloned') {
+                return prev.map((s) =>
+                  s.id === 'cloning' ? { ...s, status: 'completed' as const } :
+                  s.id === 'detecting' ? { ...s, status: 'active' as const } : s
+                );
+              } else if (activeStatus === 'detected') {
+                return prev.map((s) =>
+                  s.id === 'detecting' ? { ...s, status: 'completed' as const } :
+                  s.id === 'parsing' ? { ...s, status: 'active' as const } : s
+                );
+              } else if (activeStatus === 'complete') {
+                return prev.map((s) => ({ ...s, status: 'completed' as const }));
+              }
+              return prev;
+            });
+
+            if (data.status === 'done') {
               const repoPath = data.repo || data.repository
                 || (data.owner && data.repo_name ? `${data.owner}/${data.repo_name}` : null);
 

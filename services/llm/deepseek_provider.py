@@ -5,12 +5,14 @@ SDK is required beyond what is already standard in the Python ecosystem.
 """
 
 import asyncio
+import json
 import logging
-import os
+import time
 from typing import AsyncIterator, List, Dict, Any, Optional
 
 import httpx
-from .base_provider import BaseLLMProvider
+from .base_provider import BaseLLMProvider, ProviderHealth
+from .provider_errors import classify_deepseek_error, ProviderErrorType
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +21,7 @@ _DEFAULT_MAX_RETRIES = 2       # reduced for MVP — fail fast on sustained 429
 _DEFAULT_INITIAL_DELAY = 5.0
 _DEFAULT_BACKOFF_FACTOR = 2.0
 _DEFAULT_TIMEOUT = 120.0
+_HEALTH_CHECK_TIMEOUT = 10.0  # /models is cheap
 
 
 class DeepSeekProvider(BaseLLMProvider):
@@ -32,20 +35,106 @@ class DeepSeekProvider(BaseLLMProvider):
         max_retries: int = _DEFAULT_MAX_RETRIES,
         timeout: float = _DEFAULT_TIMEOUT,
     ) -> None:
-        self.api_key = api_key or os.environ.get("DEEPSEEK_API_KEY", "")
+        from backend.settings import settings
+        self.api_key = api_key or settings.deepseek_api_key or ""
         self.base_url = (
             base_url
-            or os.environ.get("DEEPSEEK_BASE_URL", "https://integrate.api.nvidia.com/v1")
+            or settings.deepseek_base_url
         ).rstrip("/")
-        self.model = model or os.environ.get(
-            "DEEPSEEK_MODEL", "deepseek-ai/deepseek-v4-flash"
-        )
+        self.model = model or settings.deepseek_model
         self.max_retries = max_retries
         self.timeout = timeout
 
         if not self.api_key:
             logger.warning(
                 "DEEPSEEK_API_KEY is not set — requests to NVIDIA NIM will be rejected."
+            )
+
+    # ------------------------------------------------------------------
+    # Health check
+    # ------------------------------------------------------------------
+
+    async def health_check(self) -> ProviderHealth:
+        """Validate DeepSeek/NVIDIA NIM credentials via GET /models.
+
+        ``GET /models`` is an inexpensive read-only call that exercises the
+        authentication path without generating any content.
+
+        Returns:
+            ProviderHealth — never raises.
+        """
+        # Fast-path: missing credential
+        if not self.api_key:
+            from .provider_errors import _DEEPSEEK_MESSAGES
+            msg, rec = _DEEPSEEK_MESSAGES[ProviderErrorType.MISSING_CREDENTIAL]
+            logger.error(
+                "PROVIDER_HEALTH provider=deepseek model=%s authenticated=false "
+                "error_type=%s message=%s",
+                self.model,
+                ProviderErrorType.MISSING_CREDENTIAL.value,
+                msg,
+            )
+            return ProviderHealth(
+                healthy=False,
+                provider="deepseek",
+                model=self.model,
+                authenticated=False,
+                latency_ms=0.0,
+                error_message=msg,
+                error_type=ProviderErrorType.MISSING_CREDENTIAL.value,
+                recommendation=rec,
+            )
+
+        t0 = time.perf_counter()
+        url = f"{self.base_url}/models"
+        try:
+            async with httpx.AsyncClient(timeout=_HEALTH_CHECK_TIMEOUT) as client:
+                response = await client.get(url, headers=self._headers())
+                response.raise_for_status()
+
+            latency_ms = (time.perf_counter() - t0) * 1000
+            logger.info(
+                "PROVIDER_HEALTH provider=deepseek model=%s healthy=true "
+                "authenticated=true latency_ms=%.0f",
+                self.model,
+                latency_ms,
+            )
+            return ProviderHealth(
+                healthy=True,
+                provider="deepseek",
+                model=self.model,
+                authenticated=True,
+                latency_ms=latency_ms,
+            )
+
+        except Exception as exc:
+            latency_ms = (time.perf_counter() - t0) * 1000
+            error = classify_deepseek_error(exc, "deepseek")
+            is_auth = error.error_type in (
+                ProviderErrorType.AUTHENTICATION_ERROR,
+                ProviderErrorType.MISSING_CREDENTIAL,
+            )
+
+            logger.error(
+                "PROVIDER_HEALTH provider=deepseek model=%s healthy=false "
+                "authenticated=%s error_type=%s latency_ms=%.0f "
+                "exc_type=%s recommendation=%s",
+                self.model,
+                not is_auth,
+                error.error_type.value,
+                latency_ms,
+                type(exc).__name__,
+                error.recommendation,
+            )
+            return ProviderHealth(
+                healthy=False,
+                provider="deepseek",
+                model=self.model,
+                authenticated=not is_auth,
+                latency_ms=latency_ms,
+                error_message=error.message,
+                error_type=error.error_type.value,
+                recommendation=error.recommendation,
             )
 
     # ------------------------------------------------------------------
@@ -159,8 +248,19 @@ class DeepSeekProvider(BaseLLMProvider):
             "stream": False,
         }
 
-        async with httpx.AsyncClient() as client:
-            response = await self._post_with_retry(client, payload)
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await self._post_with_retry(client, payload)
+        except Exception as exc:
+            error = classify_deepseek_error(exc, "deepseek")
+            logger.error(
+                "DeepSeek generate failed: model=%s error_type=%s exc_type=%s",
+                self.model,
+                error.error_type.value,
+                type(exc).__name__,
+                exc_info=True,
+            )
+            raise
 
         data = response.json()
         text = data["choices"][0]["message"]["content"]
@@ -227,6 +327,14 @@ class DeepSeekProvider(BaseLLMProvider):
                     await asyncio.sleep(delay)
                     delay *= _DEFAULT_BACKOFF_FACTOR
                     continue
+                error = classify_deepseek_error(exc, "deepseek")
+                logger.error(
+                    "DeepSeek stream failed: model=%s error_type=%s exc_type=%s",
+                    self.model,
+                    error.error_type.value,
+                    type(exc).__name__,
+                    exc_info=True,
+                )
                 raise
 
 

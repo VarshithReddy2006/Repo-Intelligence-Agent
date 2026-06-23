@@ -3,5 +3,7 @@ export { Card, CardHeader } from './Card';
 export { Badge } from './Badge';
 export { MetricCard } from './MetricCard';
 export { EmptyState } from './EmptyState';
-export { Skeleton, SkeletonCard, SkeletonRow, SkeletonGauge, SkeletonGroup } from './Skeleton';
+export { Skeleton, SkeletonCard, SkeletonRow, SkeletonGauge, SkeletonGraph, SkeletonGroup } from './Skeleton';
 export { PageHeader, SectionHeader } from './PageHeader';
+export { AnimatedNumber } from './AnimatedNumber';
+export { SVGDonut } from './SVGDonut';

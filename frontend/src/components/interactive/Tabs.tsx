@@ -4,6 +4,8 @@ export interface TabItem<T extends string> {
   id: T;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
+  /** Optional group label — rendered as a separator when the group changes */
+  group?: string;
 }
 
 interface TabsProps<T extends string> {
@@ -14,9 +16,10 @@ interface TabsProps<T extends string> {
 }
 
 /**
- * Accessible, horizontally-scrollable tab strip.
+ * Accessible, horizontally-scrollable tab strip with optional group labels.
  * - role="tablist" with arrow-key navigation
  * - aria-selected on the active tab
+ * - Group labels rendered as non-interactive separators
  * - parent renders its panels with id={`tabpanel-${id}`} role="tabpanel"
  */
 export function Tabs<T extends string>({ items, active, onChange, className = '' }: TabsProps<T>) {
@@ -45,10 +48,11 @@ export function Tabs<T extends string>({ items, active, onChange, className = ''
       role="tablist"
       ref={listRef}
       onKeyDown={onKey}
-      className={`flex overflow-x-auto border-b border-border ${className}`}
+      className={`flex overflow-x-auto border-b border-border items-end ${className}`}
     >
       {items.map(({ id, label, icon: Icon }) => {
         const isActive = active === id;
+
         return (
           <button
             key={id}

@@ -46,6 +46,8 @@ export const ReadingOrderTimeline: React.FC<TimelineProps> = ({ repoName }) => {
 
   // 1. Fetch reading order data (lazy loaded on mount)
   useEffect(() => {
+    setSelectedFile(null);
+    setReadingPath(null);
     const fetchReadingOrder = async () => {
       setLoading(true);
       setError(null);

@@ -44,6 +44,45 @@ from .dead_code import (
     DeadCodeRequest,
     DeadCodeResult,
 )
+from .call_graph import (
+    CallNode,
+    CallEdge,
+    BlastRadiusResult,
+    CallHierarchyNode,
+    CallGraphSummary,
+)
+from .api_surface import (
+    Visibility,
+    ApiKind,
+    ApiStatus,
+    BreakingChangeKind,
+    ClassifiedSymbol,
+    BreakingChange,
+    APISurfaceStats,
+    APISurface,
+)
+from .report import (
+    ScoreBreakdown,
+    ReportMetadata,
+    ArchReportSection,
+    ApiReportSection,
+    HygieneReportSection,
+    OnboardingReportSection,
+    ReportDataModel,
+)
+
+from .build_manifest import BuildManifest
+
+from .build_event import (
+    BuildEvent,
+    TaskQueued,
+    TaskStarted,
+    TaskCompleted,
+    TaskSkipped,
+    TaskFailed,
+    StageCompleted,
+    BuildCompleted,
+)
 
 __all__ = [
     # Existing schemas
@@ -54,6 +93,17 @@ __all__ = [
     "ImplementationPlanStep",
     "EvaluationResult",
     "IssueMapResponse",
+    # Build Manifest
+    "BuildManifest",
+    # Build Events
+    "BuildEvent",
+    "TaskQueued",
+    "TaskStarted",
+    "TaskCompleted",
+    "TaskSkipped",
+    "TaskFailed",
+    "StageCompleted",
+    "BuildCompleted",
     # Phase 1 — Architecture Foundation
     "ParsedFile",
     "GraphNode",
@@ -84,5 +134,28 @@ __all__ = [
     "DeadDependencyChain",
     "DeadCodeRequest",
     "DeadCodeResult",
+    # Call Graph Intelligence
+    "CallNode",
+    "CallEdge",
+    "BlastRadiusResult",
+    "CallHierarchyNode",
+    "CallGraphSummary",
+    # API Surface Intelligence
+    "Visibility",
+    "ApiKind",
+    "ApiStatus",
+    "BreakingChangeKind",
+    "ClassifiedSymbol",
+    "BreakingChange",
+    "APISurfaceStats",
+    "APISurface",
+    "ScoreBreakdown",
+    "ReportMetadata",
+    "ArchReportSection",
+    "ApiReportSection",
+    "HygieneReportSection",
+    "OnboardingReportSection",
+    "ReportDataModel",
 ]
+
 

@@ -64,12 +64,20 @@ function resolveRepo(repoName?: string): string {
 }
 
 export const DeadCodeAnalyzer: React.FC<Props> = ({ repoName }) => {
-  const [activeRepo] = useState(() => resolveRepo(repoName));
+  const [activeRepo, setActiveRepo] = useState(() => resolveRepo(repoName));
   const { healthStatus, hasPrerequisites, isRepairing, repair } = usePrerequisites(activeRepo);
 
   const [isLoading, setIsLoading] = useState(false);
   const [analyzerResult, setAnalyzerResult] = useState<DeadCodeResult | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Sync activeRepo with repoName prop changes and clear stale results
+  React.useEffect(() => {
+    const nextRepo = resolveRepo(repoName);
+    setActiveRepo(nextRepo);
+    setAnalyzerResult(null);
+    setErrorMsg('');
+  }, [repoName]);
 
   const handleRunAnalysis = async () => {
     if (!activeRepo) { setErrorMsg('No active repository loaded.'); return; }

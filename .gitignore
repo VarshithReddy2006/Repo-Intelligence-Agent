@@ -150,6 +150,8 @@ activemq-data/
 # Environments
 .env
 .envrc
+.env.*
+.env.local
 .venv
 env/
 venv/
@@ -227,4 +229,13 @@ frontend/.vercel/
 # Local data directory containing DBs, cloned repos, graphs, etc.
 data/
 test_analyze.py
+
+# AI / vector DB persistence (for non-default locations)
+chroma_db/
+chroma_db/**
+
+# Runtime SQLite artifacts (for non-default locations)
+*.sqlite
+*.sqlite3
+*.db
 

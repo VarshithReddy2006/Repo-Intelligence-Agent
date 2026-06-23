@@ -6,38 +6,38 @@ const features = [
   {
     title: 'Dependency Graph',
     description: 'Interactive force-directed map of every file, edge, and cycle in your codebase.',
-    iconPath: 'M5 6h14M5 12h14M5 18h14',
+    icon: `<path d="M5 6h14M5 12h14M5 18h14"/>`,
   },
   {
     title: 'PR Risk Intelligence',
     description: 'Blast radius, symbol diffs, and propagation paths for every pull request.',
-    iconPath: 'M12 2 4 6v6c0 5 3.5 9.4 8 10 4.5-.6 8-5 8-10V6l-8-4Z',
+    icon: `<path d="M12 2 4 6v6c0 5 3.5 9.4 8 10 4.5-.6 8-5 8-10V6l-8-4Z"/>`,
   },
   {
     title: 'Architecture Drift',
     description: 'Track cycles, coupling shifts, and entry-point changes across releases.',
-    iconPath: 'M12 2v20M2 12h20M4.9 4.9l14.2 14.2M19.1 4.9 4.9 19.1',
+    icon: `<path d="M12 2v20M2 12h20M4.9 4.9l14.2 14.2M19.1 4.9 4.9 19.1"/>`,
   },
   {
     title: 'Dead Code Analyzer',
     description: 'Surface unreachable modules and orphan chains with cleanup confidence scores.',
-    iconPath: 'M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14',
+    icon: `<path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14"/>`,
   },
   {
     title: 'Reading Path',
     description: 'Ranked onboarding flow — read the right files in the right order.',
-    iconPath: 'M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z',
+    icon: `<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/>`,
   },
   {
     title: 'Codebase Chat',
     description: 'Conversational answers grounded in retrieval, cited file by file.',
-    iconPath: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
+    icon: `<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>`,
   },
 ];
 
 const pipeline = [
-  ['01', 'Clone',   'Shallow clone the GitHub repo'],
-  ['02', 'Detect',  'Languages, frameworks, manifests'],
+  ['01', 'Clone',   'Shallow clone the target GitHub repo'],
+  ['02', 'Detect',  'Languages, frameworks & manifests'],
   ['03', 'Index',   'AST → symbol & dependency graph'],
   ['04', 'Analyze', 'Centrality, cycles, hotspots'],
   ['05', 'Answer',  'Retrieval-grounded responses'],
@@ -51,13 +51,15 @@ const previewKpis = [
   { label: 'Health',       value: 'A' },
 ];
 
-const techStack = [
-  'Astro', 'React', 'TailwindCSS', 'TypeScript', 'React Flow',
-  'FastAPI', 'Python', 'Gemini 2.5', 'NetworkX', 'GitHub API',
-];
+const techStack = {
+  frontend: ['Astro', 'React', 'TailwindCSS', 'TypeScript', 'React Flow', 'Framer Motion'],
+  backend:  ['FastAPI', 'Python 3.12', 'NetworkX', 'GitHub API', 'Jinja2'],
+  ai:       ['Gemini 2.5 Flash', 'ChromaDB', 'Tree-sitter', 'Incremental Analysis'],
+};
 ---
 
 <Layout title="Repo Intelligence Agent — Understand any codebase in minutes">
+
   {/* ============================================================
         HERO
         ============================================================ */}
@@ -113,13 +115,12 @@ const techStack = [
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
         {features.map((f) => (
           <article class="card p-5 space-y-3 transition-all hover:border-primary/40 hover:-translate-y-0.5">
+            <!-- Icon: proper inline SVG using the icon path -->
             <div
               class="h-9 w-9 rounded-lg border border-primary/30 bg-primary/10 text-primary flex items-center justify-center"
               aria-hidden="true"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d={f.iconPath} />
-              </svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={f.icon} />
             </div>
             <h3 class="text-base font-semibold text-text">{f.title}</h3>
             <p class="text-sm text-text-muted leading-relaxed">{f.description}</p>
@@ -130,11 +131,11 @@ const techStack = [
   </section>
 
   {/* ============================================================
-        ARCHITECTURE PREVIEW
+        PIPELINE STEPPER
         ============================================================ */}
   <section class="py-12 sm:py-16" aria-labelledby="arch-heading">
     <div class="max-w-6xl mx-auto">
-      <div class="card p-6 sm:p-8 space-y-6">
+      <div class="card p-6 sm:p-8 space-y-8">
         <header class="space-y-2 max-w-2xl">
           <p class="text-[11px] font-mono uppercase tracking-widest text-primary font-semibold">
             Under the hood
@@ -148,12 +149,29 @@ const techStack = [
           </p>
         </header>
 
-        <ol class="grid grid-cols-1 md:grid-cols-5 gap-3 sm:gap-4 text-xs font-mono">
-          {pipeline.map(([n, title, desc]) => (
-            <li class="card-flat p-4 space-y-1.5">
-              <div class="text-primary font-bold tracking-wider">{n}</div>
-              <div class="text-text font-semibold">{title}</div>
-              <div class="text-text-muted leading-relaxed font-sans text-[11px]">{desc}</div>
+        <!-- Visual stepper -->
+        <ol class="grid grid-cols-1 md:grid-cols-5 gap-0 relative" aria-label="Analysis pipeline stages">
+          {pipeline.map(([n, title, desc], idx) => (
+            <li class="flex md:flex-col gap-4 md:gap-3 items-start md:items-center text-center relative">
+              <!-- Connector line (hidden on mobile) -->
+              {idx < pipeline.length - 1 && (
+                <div
+                  class="hidden md:block absolute top-5 left-[calc(50%+28px)] right-[calc(-50%+28px)] h-px bg-border"
+                  aria-hidden="true"
+                ></div>
+              )}
+              <!-- Number circle -->
+              <div
+                class="relative z-10 shrink-0 h-10 w-10 rounded-full bg-primary/10 border border-primary/30
+                       flex items-center justify-center text-[11px] font-mono font-bold text-primary"
+                aria-hidden="true"
+              >
+                {n}
+              </div>
+              <div class="text-left md:text-center space-y-1">
+                <div class="text-sm font-semibold text-text">{title}</div>
+                <div class="text-[11px] text-text-muted leading-relaxed font-sans">{desc}</div>
+              </div>
             </li>
           ))}
         </ol>
@@ -219,22 +237,29 @@ const techStack = [
       </div>
     </div>
   </section>
-
   {/* ============================================================
-        TECH BADGES
+        TECH STACK — grouped by category
         ============================================================ */}
   <section class="py-12" aria-labelledby="tech-heading">
-    <div class="max-w-4xl mx-auto text-center space-y-5">
-      <p id="tech-heading" class="text-[11px] font-mono uppercase tracking-widest text-text-subtle">
+    <div class="max-w-4xl mx-auto space-y-6">
+      <p id="tech-heading" class="text-center text-[11px] font-mono uppercase tracking-widest text-text-subtle">
         Powered by
       </p>
-      <div class="flex flex-wrap items-center justify-center gap-2">
-        {techStack.map((t) => (
-          <span class="text-xs font-mono px-2.5 py-1 rounded-md border border-border bg-surface-1 text-text-muted hover:text-text hover:border-primary/30 transition-colors">
-            {t}
-          </span>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {Object.entries(techStack).map(([category, items]) => (
+          <div class="space-y-2">
+            <p class="text-[10px] font-mono uppercase tracking-widest text-text-subtle text-center capitalize">{category}</p>
+            <div class="flex flex-wrap justify-center gap-1.5">
+              {items.map((t) => (
+                <span class="text-xs font-mono px-2.5 py-1 rounded-md border border-border bg-surface-1 text-text-muted hover:text-text hover:border-primary/30 transition-colors">
+                  {t}
+                </span>
+              ))}
+            </div>
+          </div>
         ))}
       </div>
     </div>
   </section>
+
 </Layout>

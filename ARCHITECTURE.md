@@ -1,309 +1,654 @@
-# 🏗️ Architecture Specification
+# Architecture Specification
 
-This document provides a comprehensive technical overview of the **Repo Intelligence Agent** system architecture. It outlines the structural layers, data ingestion pipelines, API contracts, mathematical and heuristic models, and operational workflows.
+This document describes the production architecture of Repo Intelligence Agent v1.0. Every diagram, component, and flow reflects the current implementation in the codebase.
 
 ---
 
-## 🏛️ System Overview & Multi-Layer Design
+## Table of Contents
 
-The application follows a modular, layer-oriented architecture separating the client-side presentation from the local parsing engines and backend intelligence nodes.
+1. [High-Level Architecture](#high-level-architecture)
+2. [Component Diagram](#component-diagram)
+3. [Startup Lifecycle](#startup-lifecycle)
+4. [Authentication Flow](#authentication-flow)
+5. [Request Lifecycle](#request-lifecycle)
+6. [Repository Chat Pipeline (v2)](#repository-chat-pipeline-v2)
+7. [Streaming Lifecycle](#streaming-lifecycle)
+8. [Retrieval Pipeline](#retrieval-pipeline)
+9. [Provider Manager & Failover](#provider-manager--failover)
+10. [Embedding Pipeline](#embedding-pipeline)
+11. [Repository Analysis Pipeline](#repository-analysis-pipeline)
+12. [Incremental Build System](#incremental-build-system)
+13. [Tree-sitter Parsing](#tree-sitter-parsing)
+14. [Vector Search](#vector-search)
+15. [Repository Intelligence](#repository-intelligence)
+16. [Health Validation](#health-validation)
+17. [Observability & Logging](#observability--logging)
+18. [Mathematical Models](#mathematical-models)
+19. [API Endpoint Table](#api-endpoint-table)
+20. [Skeletal Stubs](#skeletal-stubs)
+
+---
+
+## High-Level Architecture
 
 ```
-┌────────────────────────────────────────────────────────┐
-│               Astro 4 & React Frontend                 │
-│  (Chat Panel, React Flow Visualiser, Reading Timeline)  │
-└───────────────────────────┬────────────────────────────┘
-                            │ HTTP & SSE (Event Stream)
+┌────────────────────────────────────────────────────────────┐
+│                 Astro 4 + React Dashboard                  │
+│  (Chat, React Flow Graphs, Reading Timeline, Reports)      │
+└───────────────────────────┬────────────────────────────────┘
+                            │ HTTP / SSE
                             ▼
-┌────────────────────────────────────────────────────────┐
-│                   FastAPI API Gateway                  │
-│  (Binds to Port 8001, SSE Emitters, Request Routing)   │
-└───────────────────────────┬────────────────────────────┘
-                            │ In-memory & Thread Pools
-                            ▼
-┌────────────────────────────────────────────────────────┐
-│                Code Processing Engine                  │
-│  (GitHub Extractor, Code Chunking, Tree-sitter Parser)  │
-└─────────────┬─────────────────────────────┬────────────┘
-              │                             │
-              ▼                             ▼
-┌───────────────────────────┐ ┌──────────────────────────┐
-│        Data Layer         │ │     Reasoning Layer      │
-│  (ChromaDB, NetworkX,     │ │ (DeepSeek V4 Flash NIM)  │
-│   analysis_store.json,    │ │                          │
-│   Symbol Indexer)         │ │                          │
-└───────────────────────────┘ └──────────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│               FastAPI API Gateway  (port 8001)             │
+│  RequestId · RateLimit · Metrics · GZip · CORS · Trusted  │
+└──────────────┬─────────────────────────────┬───────────────┘
+               │                             │
+               ▼                             ▼
+  ┌─────────────────────┐      ┌───────────────────────────┐
+  │  Ingestion Layer    │      │   Chat Pipeline (v2)      │
+  │  GitHub Clone       │      │   Conversation Memory     │
+  │  Tree-sitter AST    │      │   Intent Detector         │
+  │  Code Chunking      │      │   Intent Router           │
+  │  BGE Embeddings     │      │   Weighted Retrieval      │
+  │  ChromaDB Index     │      │   Context Builder         │
+  │  NetworkX Graph     │      │   Provider Manager        │
+  └──────────┬──────────┘      │   Fallback Renderer       │
+             │                 └────────────┬──────────────┘
+             ▼                              │
+  ┌──────────────────────────────────────────────────────┐
+  │                      Data Layer                      │
+  │  ChromaDB (vectors)  ·  NetworkX Graphs (disk)       │
+  │  Symbol Index (disk) ·  SQLite (reports, migrations) │
+  │  JSON Snapshot Store ·  Analysis Cache (in-memory)   │
+  └──────────────────────────────────────────────────────┘
+             │
+             ▼
+  ┌──────────────────────────────────────────────────────┐
+  │                 LLM Reasoning Layer                  │
+  │  Primary: Gemini 2.5 Flash (google-genai SDK)        │
+  │  Fallback: DeepSeek V4 Flash (NVIDIA NIM)            │
+  │  Circuit Breaker · Exponential Backoff               │
+  │  Startup Health Checks · Error Classification        │
+  └──────────────────────────────────────────────────────┘
 ```
 
-### 1. Client Layer (Astro 4 + React)
-- **Astro Pages:** Astro provides zero-JS static structure for routing and layout templates (`index.astro`, `chat.astro`, `analysis.astro`, `issues.astro`).
-- **React Hydration:** High-interaction dashboard elements are implemented as React components hydrated in the client browser.
-- **Visual Mapping:** Uses `React Flow` to render zoomable, interactive representations of dependency graphs and impact propagation paths. Features neighborhood inspection, search filtering, and BFS trace walks.
-- **Server-Sent Events (SSE):** Standard HTML5 `EventSource` handles real-time token streaming for chat and indexing logs.
-
-### 2. API Gateway Layer (FastAPI)
-- **Asynchronous Execution:** Built on ASGI, utilizing `asyncio` and thread-pool execution (`asyncio.to_thread`) for long-running blocking operations like cloning, embedding generation, and graph analyses.
-- **Runtime Port:** Serves HTTP traffic on port **8001** (as configured in `backend/api.py` and `frontend/src/lib/api.ts`).
-- **Data Integrity:** Employs strictly-typed `Pydantic` models for request validation and response serialization, protecting backend services from malformed payloads.
-
-### 3. Code Ingestion & Processing Layer
-- **Extracellular Walk:** Git command-line utility clones repositories locally. The file walker filters out binaries, images, and folders like `.git`, `.venv`, and `node_modules`.
-- **AST Parsing:** Tree-sitter runs syntax parsing. It uses compiled language objects for Python, JavaScript, TypeScript, JSX, and TSX to extract imports, exports, class declarations, methods, functions, and symbols.
-- **Code Chunking:** Splits source code into sliding window text blocks (1500 characters, 200 character overlap) to prepare documents for vector indexing.
-
-### 4. Memory & Vector DB Layer (Local)
-- **Vector Space:** ChromaDB stores code chunks. Dense representation utilizes `BAAI/bge-small-en-v1.5` loaded locally via `sentence_transformers`. Output vectors are static 384-dimensional arrays.
-- **Graph Space:** NetworkX handles directed graph (`DiGraph`) calculations, building import relationships where files represent nodes and imports represent edges.
-- **Symbol Indexer:** Stores symbol tables (class definitions, methods, functions, namespaces) locally in `data/symbols/` per repository.
-- **Relational Storage:** Repository metadata and parsed summary schemas are serialized to the local file system at `data/analysis_store.json` on changes, enabling persisted states to survive process recycles.
-
-### 5. AI Reasoning Layer (NVIDIA NIM)
-- **Remote Host:** Connects to DeepSeek V4 Flash (`deepseek-ai/deepseek-v4-flash`) hosted on NVIDIA NIM via an OpenAI-compatible interface.
-- **Fault Tolerance:** Includes retry policies (exponential backoff) and an automatic fallback mechanism to retrieve and formulate responses locally when API requests fail.
-
 ---
 
-## 💾 Unified Workspace & Session Store
+## Component Diagram
 
-The application frontend wraps all repository-specific dashboards inside a **Unified Repository Workspace**.
+```mermaid
+graph TD
+    UI[Astro 4 + React Dashboard] -->|HTTP / SSE| API[FastAPI Gateway :8001]
 
-### 1. Unified Repository Workspace Tabs Layout
-```
-Unified Repository Workspace
-├── CODEBASE ANALYSIS (Overview, Tech Stack, Dependencies, Component Relations)
-├── ARCHITECTURE GRAPH (Interactive React Flow Dependency Mapping, Neighbors, Trace)
-├── READING PATH (Suggested Code Timeline & Centrality Graph)
-├── IMPACT ANALYSIS (BFS Traversal Change Predictor)
-├── PR INTELLIGENCE (PR Risk Analysis, Size Classification, Blast Radius, Symbol Diff)
-├── ARCHITECTURE DRIFT (Baseline vs Delta comparison: coupling changes, cycle additions)
-├── DEAD CODE (Reachability Analysis, cleanup score, orphan modules, dead chains)
-├── ISSUE INTELLIGENCE (Issue Mapper Plan Generator)
-└── CHAT (Context-Grounded Conversational Q&A Panel)
-```
+    subgraph Middleware
+        API --> RM[RequestIdMiddleware]
+        API --> RL[RateLimitMiddleware 60/min]
+        API --> MM[MetricsMiddleware]
+        API --> GZ[GZipMiddleware]
+        API --> TH[TrustedHostMiddleware]
+        API --> CO[CORSMiddleware]
+    end
 
-The parent `AnalysisDashboard` component fetches the codebase metadata once on initial load, caching it in React state. Switching tabs updates the UI view instantly without invoking re-analysis or repeat backend queries.
+    subgraph Ingestion
+        API --> GH[GitHubService clone + extract]
+        GH --> TS[TreeSitterService AST parse]
+        TS --> CK[CodeChunker 1500/200]
+        CK --> ES[EmbeddingService BGE-small]
+        ES --> CS[(ChromaDB)]
+        TS --> GS[GraphService NetworkX DiGraph]
+        GS --> SS[SymbolService]
+    end
 
-### 2. Session Context Sync
-To allow seamless workspace sharing and recovery across browser tabs, the active session is divided into two stores:
+    subgraph Chat
+        API --> IP[IntentDetector rule-based]
+        IP --> IR[IntentRouter structured services]
+        IR --> RP[RetrievalPipeline top-15 rerank top-5]
+        RP --> PM[ProviderManager circuit breaker]
+        PM --> GP[GeminiProvider]
+        PM --> DP[DeepSeekProvider]
+        PM --> FR[FallbackRenderer]
+    end
 
-#### Persisted Session Store (`localStorage`):
-- **Fields:** `owner`, `repo`, `indexing status`, `graph status`, and `last analyzed timestamp`.
-- **Rationale:** If the user reloads the browser, context is restored instantly. Since the backend persists analysis details to disk, the UI can re-fetch the complete cached analysis from `/api/analysis/{owner}/{repo}` using the stored name, preventing redundant re-clones.
-
-#### Non-persisted Session Store (React In-memory State):
-- **Fields:** React Flow graph nodes/edges, file-tree structures, impact analysis BFS paths, PR analysis reports, and current chat messages.
-- **Rationale:** Large graph datasets exceed browser `localStorage` capacity limits (5MB) and degrade browser serialization performance. Storing these in React state keeps memory usage low and page loads fast.
-
----
-
-## 🛡️ Ingestion Persistence & Chat Fallback
-
-### 1. Ingestion Analysis Persistence Lifecycle
-Rather than holding processed analysis logs in volatile memory, the gateway persists state details to `data/analysis_store.json`.
-- **Startup Hydration:** On backend startup, FastAPI walks the JSON file and hydrates the `ANALYSIS_STORE` cache.
-- **Repository Recovery:** If the FastAPI backend crashes or restarts during local development, already analyzed repositories are recovered instantly without requiring a re-index.
-- **Lifecycle Updates:** Any new repository processed via `/api/analyze` triggers an atomic write-back to the JSON file upon completion.
-
-### 2. Chat Fallback Resilience Layer
-NVIDIA NIM free-tier API keys are rate-limited to ~3 requests per minute. To maintain a smooth user experience, the `/api/chat` and `/api/issues/map` endpoints implement a fallback structure:
-1. The backend intercepts rate-limit exceptions (HTTP 429) or provider exceptions and suppresses raw error traces.
-2. It fetches the top-5 relevant code blocks from ChromaDB.
-3. It performs local keyword path matching to categorize affected components.
-4. It extracts class/function headers from the retrieved code blocks to generate a step-by-step local fallback implementation plan.
-5. It outputs the local plan directly to the client alongside ChromaDB source files and a similarity-derived confidence score.
-
----
-
-## 🧮 Mathematical & Graph Processing Models
-
-### 1. Onboarding Reading Path Heuristics
-The Reading Path generator calculates an onboarding hierarchy using structural indicators extracted from the dependency graph. The composite scoring model is defined as:
-
-$$\text{Composite Score}(v) = (W_{\text{entry}} \times \mathbb{I}_{\text{entry}}(v)) + (W_{\text{centrality}} \times C_D(v)) + (W_{\text{in-degree}} \times I_D(v)) + (W_{\text{core}} \times \mathbb{I}_{\text{core}}(v)) - (W_{\text{peripheral}} \times \mathbb{I}_{\text{peripheral}}(v))$$
-
-Where:
-- $\mathbb{I}_{\text{entry}}(v) \in \{0, 1\}$ indicates if the node $v$ is a detected framework entry point.
-- $C_D(v)$ represents the Normalized Degree Centrality of node $v$ in the undirected representation of the dependency graph:
-  $$C_D(v) = \frac{\text{deg}(v)}{N - 1}$$
-- $I_D(v)$ represents the Normalized In-Degree of node $v$ (number of other files importing $v$):
-  $$I_D(v) = \frac{\text{deg}^-(v)}{N - 1}$$
-- $\mathbb{I}_{\text{core}}(v) \in \{0, 1\}$ indicates if the file resides in a core system package (e.g. `services/`, `models/`, `core/`).
-- $\mathbb{I}_{\text{peripheral}}(v) \in \{0, 1\}$ indicates if the file is in a non-execution directory (e.g. `tests/`, `docs/`, `examples/`).
-
-#### Scoring Weights configuration:
-- $W_{\text{entry}} = 100.0$
-- $W_{\text{centrality}} = 50.0$
-- $W_{\text{in-degree}} = 30.0$
-- $W_{\text{core}} = 15.0$
-- $W_{\text{peripheral}} = 40.0$ (subtracted if in peripheral directory)
-
----
-
-### 2. Change Impact Analysis Walk Model
-The impact analyzer maps change propagation by walking the directed import graph.
-1. **Seed Localization:** Fuzzy matches issue keywords against file paths in the repository to establish the "Seed Set" $S$.
-2. **Forward BFS Walk (Direct Dependents):** Traverses edges matching $v \to u$ (where file $u$ imports file $v$) up to depth $4$, mapping immediate downstream dependents.
-3. **Reverse BFS Walk (Downstream Dependents):** Traverses backward paths to locate files containing dependencies of the seed files.
-4. **Risk Evaluation:** Computes risk score $R$:
-   $$R = |F_{\text{affected}}| + (\beta \times |F_{\text{core}}|) + (\gamma \times |F_{\text{coupled}}|)$$
-   Where:
-   - $F_{\text{affected}}$ is the combined set of directly and indirectly impacted files.
-   - $F_{\text{core}}$ is the subset of affected files located in core directories ($\beta = 2$).
-   - $F_{\text{coupled}}$ is the subset of affected files having degree centrality higher than average ($\gamma = 1$).
-   - **Risk Level:**
-     - Low: $R < 4$
-     - Medium: $4 \le R < 10$
-     - High: $R \ge 10$
-
----
-
-### 3. PR Size & Blast Radius Classification Models
-
-#### PR Size Estimation
-PR size is classified using a composite score based on the count of changed files, changed symbols, and total lines changed:
-$$\text{Size Score} = S_{\text{files}} + S_{\text{symbols}} + S_{\text{lines}}$$
-Where:
-- $S_{\text{files}} = \min(N_{\text{files}} \times 3, 30)$
-- $S_{\text{symbols}} = \min(N_{\text{symbols}} \times 1.5, 30)$
-- $S_{\text{lines}} = \min(\text{Lines Changed} \times 0.1, 40)$
-
-**Size Thresholds:**
-- **XS**: $\text{Size Score} \le 20$
-- **S**: $20 < \text{Size Score} \le 40$
-- **M**: $40 < \text{Size Score} \le 60$
-- **L**: $60 < \text{Size Score} \le 80$
-- **XL**: $\text{Size Score} > 80$
-
-#### Blast Radius & Depth Promotion
-The impact boundary is initially classified by the number of affected files ($I_{\text{radius}}$):
-- **LOW**: $I_{\text{radius}} \le 5$
-- **MEDIUM**: $5 < I_{\text{radius}} \le 15$
-- **HIGH**: $15 < I_{\text{radius}} \le 30$
-- **EXTREME**: $I_{\text{radius}} > 30$
-
-**Depth Promotion Heuristic:**
-If the maximum propagation depth ($D_{\text{max}}$) is $\ge 3$, the blast radius risk is promoted by one tier to reflect higher downstream side-effects (e.g., LOW becomes MEDIUM, MEDIUM becomes HIGH, and HIGH becomes EXTREME).
-
----
-
-### 4. Graph Delta Patching & Drift Analytics
-To analyze how a pull request impacts repository architecture, the system creates a virtual post-commit graph state ($G_{\text{after}}$) by patching the baseline graph ($G$):
-
-```
-                       ┌─────────────────────────────────┐
-                       │      Baseline Graph (G)         │
-                       └────────────────┬────────────────┘
-                                        │
-                         For each PR Changed File
-                                        ▼
-                  Is Status Removed? ─────── Yes ──► Remove Node from G
-                        │
-                        No
-                        ▼
-                Fetch Head Commit File Content
-                        │
-                        ▼
-               Parse Imports via Tree-sitter
-                        │
-                        ▼
-               Clear Outgoing Edges (if modified)
-                        │
-                        ▼
-               Add Nodes & Outgoing Edges to G
-                        │
-                        ▼
-                       ┌─────────────────────────────────┐
-                       │       Delta Graph (G_after)     │
-                       └─────────────────────────────────┘
+    subgraph Storage
+        GS --> JSS[JsonSnapshotStore data/graphs/]
+        SS --> JSS2[JsonSnapshotStore data/symbols/]
+        API --> AC[AnalysisCache in-memory]
+        API --> DB[(SQLite data/repo_understanding.db)]
+    end
 ```
 
-#### Structural Drift Metrics:
-- **Dependency Edge Drift:**
-  - $\Delta_{\text{added}} = E(G_{\text{after}}) \setminus E(G)$
-  - $\Delta_{\text{removed}} = E(G) \setminus E(G_{\text{after}})$
-- **Dependency Cycles:** Detects cycle additions or resolutions by computing:
-  - $C_{\text{added}} = \text{cycles}(G_{\text{after}}) \setminus \text{cycles}(G)$
-  - $C_{\text{resolved}} = \text{cycles}(G) \setminus \text{cycles}(G_{\text{after}})$
-- **Coupling Changes:** Measures coupling shifts for each file $v$:
-  - $\Delta_{\text{coupling}}(v) = \text{deg}_{G_{\text{after}}}(v) - \text{deg}_{G}(v)$
-- **Architectural Hotspots:** Modified files that overlap with:
-  - Baseline application entry points
-  - Baseline core packages
-  - Baseline highly coupled modules (top 15% degree centrality)
+---
+
+## Startup Lifecycle
+
+The startup sequence in `backend/api.py` follows this order:
+
+```mermaid
+sequenceDiagram
+    participant OS as OS/Environment
+    participant Settings as Settings (Pydantic)
+    participant Log as configure_logging()
+    participant Mig as run_migrations()
+    participant App as FastAPI app
+    participant MW as Middleware stack
+    participant Store as _load_analysis_store()
+    participant Warm as _warmup_services()
+    participant Val as validate_llm_providers()
+    participant Ready as Server ready
+
+    OS->>Settings: Load .env / environment vars
+    Settings->>Log: Apply log_level + log_format
+    Log->>Mig: Run SQLite migrations
+    Mig->>App: Create FastAPI(lifespan=lifespan)
+    App->>MW: Register 6 middlewares
+    MW->>Store: Hydrate ANALYSIS_STORE from disk
+    Store->>Warm: Eagerly load BGE model + tokenizer
+    Warm->>Warm: Warm Python Tree-sitter parser
+    Warm->>Val: validate_llm_providers() (inside lifespan)
+    Val->>Val: health_check() per configured provider
+    alt All providers healthy
+        Val->>Ready: INFO: LLM provider validation complete
+    else Primary unhealthy, fallback healthy
+        Val->>Ready: ERROR logged, startup continues
+    else All providers unhealthy (production)
+        Val->>OS: RuntimeError — fail fast
+    else All providers unhealthy (development)
+        Val->>Ready: CRITICAL warning, startup continues
+    end
+    Ready-->>OS: Accepting traffic on port 8001
+```
 
 ---
 
-### 5. Graph-Weighted Dead Code reachability Models
-The dead code analyzer executes a reachability sweep over the dependency graph starting from verified entry points:
-1. **Reachability Set ($R$):**
-   $$R = E_{\text{entry}} \cup \left( \bigcup_{e \in E_{\text{entry}}} \text{descendants}(G, e) \right)$$
-2. **Dead Code Set ($D$):**
-   $$D = V(G) \setminus R \setminus \text{ignored\_files}$$
+## Authentication Flow
 
-#### Cleanup Scoring and Deductions:
-For each unreachable file $v \in D$, a node weight is computed based on its topological metrics:
-$$\text{Weight}(v) = 1.0 + 10.0 \times C_D(v) + 0.5 \times \text{out-deg}_G(v) + 1.0 \times |\text{descendants}(H, v)|$$
-Where $H = G[D]$ is the unreachable subgraph.
+```mermaid
+sequenceDiagram
+    participant Startup
+    participant PF as ProviderFactory
+    participant GP as GeminiProvider
+    participant DP as DeepSeekProvider
+    participant PE as provider_errors.py
 
-Deductions are computed using:
-- **Root Dead File ($in\text{-}deg(v) = 0$):** High-confidence unused file (no imports lead to it).
-  $$\text{Deduction}(v) = 6.0 \times \text{Weight}(v)$$
-- **Orphaned Module ($in\text{-}deg(v) > 0$):** Unreachable internal module (has imports but isolated from entry points).
-  $$\text{Deduction}(v) = 4.0 \times \text{Weight}(v)$$
-- **Dead Dependency Chain ($C_i$):** Weakly connected components in $H$ traced as chains.
-  $$\text{Deduction}(C_i) = 3.0 \times |C_i|$$
+    Startup->>PF: validate_all_providers()
+    PF->>GP: health_check()
+    GP->>Google: GET /v1/models (list models)
+    alt 200 OK
+        Google-->>GP: models list
+        GP-->>PF: ProviderHealth(healthy=True, latency_ms=N)
+    else 401 ACCESS_TOKEN_TYPE_UNSUPPORTED
+        Google-->>GP: ClientError
+        GP->>PE: classify_gemini_error(exc)
+        PE-->>GP: ProviderError(INVALID_CREDENTIAL_TYPE)
+        GP-->>PF: ProviderHealth(healthy=False, error_type=invalid_credential_type)
+    else 401 generic
+        GP-->>PF: ProviderHealth(healthy=False, error_type=authentication_error)
+    end
+    PF->>DP: health_check()
+    DP->>NVIDIA: GET /v1/models
+    alt 200 OK
+        DP-->>PF: ProviderHealth(healthy=True)
+    else 401
+        DP-->>PF: ProviderHealth(healthy=False, error_type=authentication_error)
+    end
+    PF-->>Startup: {gemini: ProviderHealth, deepseek: ProviderHealth}
+```
 
-**Final Cleanup Score:**
-$$\text{Cleanup Score} = \max\left(0, \min\left(100, 100 - \sum \text{Deductions}\right)\right)$$
-
----
-
-## 🔌 API Endpoint Specifications
-
-### 🧭 Base URL: `http://127.0.0.1:8001`
-
-| HTTP Method | Path | Request/Query | Response | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| **GET** | `/health` | None | Status JSON | Health check |
-| **GET** | `/api/repos/examples` | None | Example List | Fetch pre-configured examples |
-| **GET** | `/api/repos/recent` | None | Recent List | List analyzed repositories |
-| **POST** | `/api/index` | `{repo_url}` | Index status | Index code chunks in ChromaDB |
-| **POST** | `/api/analyze` | `{url, branch, model}` | SSE Stream | Trigger full analysis pipeline |
-| **GET** | `/api/analysis/{owner}/{repo_name}` | None | Analysis JSON | Fetch analysis details |
-| **POST** | `/api/issues/map` | `{repo, title, description}` | Plan JSON | Generate issue implementation plan |
-| **POST** | `/api/chat` | `{repo, message, history}` | SSE Stream | Streaming chat Q&A |
-| **POST** | `/api/architecture/build` | `{repo}` | Build status | Build AST dependency graph & symbols |
-| **GET** | `/api/architecture/{owner}/{repo_name}`| None | Summary JSON | Fetch architecture summary |
-| **POST** | `/api/reading-order` | `{repo}` | Order JSON | Generate onboarding reading order |
-| **POST** | `/api/impact-analysis` | `{repo, issue}` | Impact JSON | Predict change impact propagation |
-| **GET** | `/api/graph/{owner}/{repo}/full` | Query: `q` (filter) | React Flow JSON | Fetch full dependency graph |
-| **GET** | `/api/graph/{owner}/{repo}/neighbors/{node_path:path}`| None | Neighborhood JSON | Fetch node neighbors |
-| **GET** | `/api/graph/{owner}/{repo}/trace/{node_path:path}`| Query: `direction`, `depth` | Trace JSON | BFS path trace from node |
-| **GET** | `/api/graph/{owner}/{repo}/search` | Query: `q` | Search JSON | Highlight nodes matching query |
-| **GET** | `/api/symbols/{owner}/{repo}/file/{file_path:path}` | None | Symbols list | List symbols defined in a file |
-| **GET** | `/api/symbols/{owner}/{repo}/definition/{symbol_name}` | None | Def JSON | Find definition site of a symbol |
-| **GET** | `/api/symbols/{owner}/{repo}/references/{symbol_name}` | None | Ref list | Find references of a symbol |
-| **POST** | `/api/pr/analyze` | PR Details JSON | PR Analysis JSON | Run PR Risk and Blast Radius analysis |
-| **GET** | `/api/pr/health` | Query: `owner`, `repo` | Diagnostic JSON | PR analysis pipeline health check |
-| **POST** | `/api/repos/repair` | `{owner, repo}` | Rebuilt status | Re-generate missing graph/symbol indices |
-| **POST** | `/api/architecture/drift` | PR Details JSON | Drift JSON | Map architectural changes in PR |
-| **POST** | `/api/dead-code/analyze` | `{owner, repo}` | Dead Code JSON | Sweep codebase for dead code |
+Error types from `services/llm/provider_errors.py`:
+`authentication_error`, `invalid_credential_type`, `missing_credential`, `rate_limit_error`, `quota_exceeded`, `timeout`, `network_error`, `configuration_error`, `unknown_error`
 
 ---
 
-## 🕳️ Skeletal Architectural Stubs
+## Request Lifecycle
 
-To ensure long-term structure while maintaining local-first MVP operations, the codebase contains four skeletal stubs:
+```mermaid
+sequenceDiagram
+    participant Client
+    participant MW as Middleware Stack
+    participant Router
+    participant Service
+    participant Storage
 
-1. **`SQLiteStore` (`memory/sqlite_store.py`):**
-   - **Current State:** Skeletal stub raising `NotImplementedError` across all transactional storage calls.
-   - **MVP Handling:** In-memory maps and fs-level caching in `data/analysis_store.json` and `data/issue_cache.json` handle state persistence.
-2. **`MCPService` (`services/mcp_service.py`):**
-   - **Current State:** Skeletal stub raising `NotImplementedError`.
-   - **MVP Handling:** Codebase cloning and indexing operations are performed directly via git execution and local walkers.
-3. **`RepositoryAnalyzer` (`agents/analyzer.py`):**
-   - **Current State:** Skeletal stub raising `NotImplementedError`.
-   - **MVP Handling:** Ingestion and stack analysis logic are implemented directly inside `backend/api.py`.
-4. **`ArchitectureExplainer` (`agents/explainer.py`):**
-   - **Current State:** Skeletal stub raising `NotImplementedError`.
-   - **MVP Handling:** Reading order and structural sorting calculations are handled directly inside `services/reading_order_service.py`.
+    Client->>MW: HTTP Request
+    MW->>MW: RequestIdMiddleware (X-Request-ID)
+    MW->>MW: RateLimitMiddleware (60/min per IP)
+    MW->>MW: MetricsMiddleware (increment counter)
+    MW->>MW: GZipMiddleware
+    MW->>MW: TrustedHostMiddleware
+    MW->>MW: CORSMiddleware
+    MW->>Router: Validated request
+    Router->>Service: Business logic call
+    Service->>Storage: Read/write data
+    Storage-->>Service: Result
+    Service-->>Router: Response model
+    Router-->>Client: JSON or SSE stream
+    MW->>MW: MetricsMiddleware (record status)
+```
+
+---
+
+## Repository Chat Pipeline (v2)
+
+The chat pipeline is implemented in `services/chat/retrieval_pipeline.py`. The router (`backend/routers/chat.py`) is a thin delegator.
+
+```mermaid
+graph TD
+    Request[ChatRequest repo + message + history + session_id]
+    CM[ConversationMemory pronoun resolution entity tracking]
+    ID[IntentDetector rule-based 9 intents zero LLM calls]
+    IR[IntentRouter dispatch to structured services]
+    SI[Structured Intelligence architecture summary symbol defs etc]
+    RET[Retrieval top-15 BGE vectors reranked to top-5]
+    CB[ContextBuilder token budget 3k-5k tokens priority slots]
+    PM[ProviderManager primary then fallback]
+    G[GeminiProvider 2.5 Flash]
+    D[DeepSeekProvider V4 Flash]
+    FB[FallbackRenderer no LLM structured response]
+    OBS[Observability CHAT_PIPELINE log line]
+    CMU[ConversationMemory update entities files]
+    Stream[SSE token stream to client]
+
+    Request-->CM
+    CM-->ID
+    ID-->IR
+    IR-->SI
+    SI-->CB
+    RET-->CB
+    CB-->PM
+    PM-->G
+    PM-->D
+    PM-->FB
+    G-->OBS
+    D-->OBS
+    FB-->OBS
+    OBS-->CMU
+    CMU-->Stream
+```
+
+### Intent Types
+
+| Intent | Trigger Keywords | Routes To |
+|---|---|---|
+| `ARCHITECTURE` | architecture, overview, entry point, structure | `ArchitectureService.get_summary()` |
+| `CIRCULAR_DEPENDENCY` | circular, cycle, cyclic, import loop | `ArchitectureService.get_summary()` (cycle data) |
+| `API_SURFACE` | api surface, endpoints, routes, exports | `APISurfaceService.load()` |
+| `CALL_GRAPH` | who calls, call graph, callers of, called by | `CallGraphService.get_summary()` |
+| `SYMBOL` | where is defined, find definition, definition of | `SymbolService.find_definition()` |
+| `READING_ORDER` | reading order, onboard, start reading | `ReadingOrderService.get_reading_order()` |
+| `IMPACT_ANALYSIS` | blast radius, what breaks, impact, affected files | `ImpactAnalysisService.analyze()` |
+| `GENERAL_QA` | how does, what does, explain, describe | Vector search only |
+| `UNKNOWN` | (no match) | Vector search only |
+
+---
+
+## Streaming Lifecycle
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Router as chat.py
+    participant Pipeline as RetrievalPipeline
+    participant PM as ProviderManager
+    participant Provider as Gemini/DeepSeek
+
+    Client->>Router: POST /api/chat
+    Router->>Pipeline: retrieve_stream(repo, question, session_id)
+    Pipeline->>PM: stream(prompt, system_instruction)
+    PM->>Provider: async stream generator
+    loop tokens
+        Provider-->>PM: token chunk
+        PM-->>Pipeline: token
+        Pipeline-->>Router: SSE: {"text": "..."}
+        Router-->>Client: data: {"text": "..."}
+    end
+    Pipeline-->>Client: data: {"sources": [...], "confidence": N, "status": "done"}
+    Note over PM: If 0 tokens yielded → safe to retry with next provider
+    Note over PM: If tokens already yielded → NEVER retry (prevents duplicate output)
+```
+
+---
+
+## Retrieval Pipeline
+
+### Tier Weights
+
+| Tier | Weight | File Patterns |
+|---|---|---|
+| 1 | 1.0 | `backend/`, `services/`, `models/`, `*.py`, `*.ts` |
+| 2 | 0.6 | `README.*`, `docs/`, `*.md`, `*.rst` |
+| 3 | 0.2 | `requirements.txt`, `pyproject.toml`, `*.toml` |
+| 4 | 0.0 | lock files, `node_modules/`, `dist/`, binaries |
+
+### Reranking Score
+
+```
+score = (0.5 × similarity + 0.3 × token_overlap) × tier_weight
+```
+
+Where `similarity = 1 / (1 + chroma_distance)` and `token_overlap` is normalised query-content keyword overlap.
+
+### BGE Asymmetric Embeddings
+
+Queries are prefixed: `"Represent this sentence for searching relevant passages: "`.
+Documents are indexed without any prefix (asymmetric design).
+
+---
+
+## Provider Manager & Failover
+
+`services/chat/provider_manager.py` manages all LLM calls with:
+
+1. **Priority ordering**: Primary provider tried first; secondary as fallback
+2. **Circuit breaker**: Opens after 3 failures, retries after 60 s (CLOSED → OPEN → HALF_OPEN → CLOSED)
+3. **Streaming safety**: 0 tokens yielded → safe retry; tokens already yielded → never retry (prevents duplicate output in the SSE stream)
+4. **Timeout enforcement**: Gemini 30 s per attempt (3 retries); DeepSeek 120 s per attempt (2 retries)
+
+```mermaid
+stateDiagram-v2
+    [*] --> CLOSED
+    CLOSED --> OPEN : failure_count >= 3
+    OPEN --> HALF_OPEN : recovery_timeout elapsed (60s)
+    HALF_OPEN --> CLOSED : success
+    HALF_OPEN --> OPEN : failure
+```
+
+---
+
+## Embedding Pipeline
+
+```mermaid
+graph LR
+    Files[Source files] --> Chunker[CodeChunker 1500 chars / 200 overlap]
+    Chunker --> Chunks[Text chunks + metadata]
+    Chunks --> BGE[EmbeddingService BAAI/bge-small-en-v1.5 384-dim]
+    BGE --> Vectors[Dense vectors]
+    Vectors --> Chroma[(ChromaDB collection partitioned by repo_name)]
+    Chunks --> Chroma
+```
+
+- Model: `BAAI/bge-small-en-v1.5` via `sentence-transformers`
+- Output: 384-dimensional float32 vectors
+- Storage: ChromaDB persistent collection, one collection shared across all repos, partitioned via `repo_name` metadata filter
+- Warmup: Model is loaded eagerly at startup and warmed with a dummy encode call to avoid first-request latency
+
+---
+
+## Repository Analysis Pipeline
+
+```mermaid
+graph TD
+    A[POST /api/analyze] --> B[Clone via GitHubService]
+    B --> C[extract_source_files filter binaries node_modules .git]
+    C --> D{Incremental?}
+    D -->|Yes| E[ChangeDetector file hashes vs BuildManifest]
+    D -->|No| F[Full pipeline all files]
+    E --> G[Delete stale Chroma chunks for modified/deleted files]
+    G --> H[Chunk + embed only added/modified files]
+    F --> H2[Delete all repo chunks → chunk + embed all files]
+    H --> I[Build Symbol Index partial]
+    H2 --> I2[Build Symbol Index full]
+    I --> J[Build Dependency Graph partial]
+    I2 --> J2[Build Dependency Graph full]
+    J --> K[Build Call Graph partial]
+    J2 --> K2[Build Call Graph full]
+    K --> L[Compute API Surface partial]
+    K2 --> L2[Compute API Surface full]
+    L --> M[Generate architecture summary]
+    L2 --> M
+    M --> N[Persist analysis to ANALYSIS_STORE + disk]
+    N --> O[Write BuildManifest with file hashes + schema versions]
+    O --> P[SSE: status done]
+```
+
+---
+
+## Incremental Build System
+
+The incremental build system (`core/change_detector.py`, `core/build_pipeline.py`) avoids full re-analysis on every run:
+
+1. `ChangeDetector.detect_changes()` hashes every source file and compares against the stored `BuildManifest`
+2. Returns a `ChangeSet` with `added`, `modified`, and `deleted` file sets
+3. Stale Chroma embeddings for modified/deleted files are bulk-deleted (with fallback to individual deletes)
+4. Only added/modified files are re-chunked, re-embedded, and re-indexed
+5. Symbol and graph services expose `build_partial()` methods that update only affected nodes and edges
+6. A new `BuildManifest` is written atomically after successful completion
+7. If schema versions for Symbol Index or Dependency Graph change, a full rebuild is triggered regardless of file changes
+
+---
+
+## Tree-sitter Parsing
+
+`services/tree_sitter_service.py` uses compiled tree-sitter language bindings for:
+
+| Language | Extracts |
+|---|---|
+| Python | imports, exports, class declarations, functions, methods |
+| JavaScript | imports, exports, class declarations, functions |
+| TypeScript | imports, exports, class declarations, functions, interfaces |
+| JSX / TSX | same as JS/TS with component detection |
+
+Parsers are loaded lazily on first use and warmed at startup (Python only, for latency). The Python Tree-sitter parser is warmed with `ts.parse_file("dummy.py", "def dummy(): pass")` during `_warmup_services()`.
+
+---
+
+## Vector Search
+
+`memory/chroma_store.py` wraps ChromaDB with:
+
+- **Collection**: One persistent collection, partitioned by `repo_name` metadata filter
+- **Search**: L2 distance; converted to similarity via `1 / (1 + dist)`
+- **Bulk insert**: `add_code_chunks_bulk()` for incremental updates
+- **Delete**: `delete_repository()` (full) or metadata-filtered delete (incremental)
+- **Chunk metadata**: `repo_name`, `file_path`, `chunk_id`, `language`
+
+---
+
+## Repository Intelligence
+
+The `RepositoryContext` class (`core/repository_context.py`) provides a single lazy-loading interface over all persisted analysis artifacts for a repository:
+
+| Property | Source | Description |
+|---|---|---|
+| `symbol_index` | `data/symbols/` | Full AST symbol table |
+| `dependency_graph` | `data/graphs/` | NetworkX DiGraph |
+| `call_graph` | `data/graphs/` | Function-level call graph |
+| `git_history` | `data/churn/` | Git churn summary (30-day default) |
+| `api_surface` | `data/api_surface/` | Exported symbol classifications |
+| `module_stability` | `data/stability/` | Martin's instability metrics |
+| `dependency_smells` | `data/dependency_smells/` | Architectural violations |
+| `architecture_health` | `data/health/` | Architecture health metrics |
+
+All properties use `AnalysisCache` for in-process caching with schema versioning.
+
+---
+
+## Health Validation
+
+`GET /health` — static configuration report:
+```json
+{
+  "backend": "online",
+  "llm_provider": "gemini",
+  "llm_model": "gemini-2.5-flash",
+  "embedding_provider": "BAAI/bge-small-en-v1.5",
+  "vector_db": "chromadb",
+  "status": "healthy"
+}
+```
+
+`GET /api/chat/health` — live provider health diagnostic:
+```json
+{
+  "status": "ok",
+  "provider": "gemini",
+  "api_key_present": true,
+  "authenticated": true,
+  "healthy": true,
+  "latency_ms": 234.5,
+  "error_type": null,
+  "error_message": null,
+  "recommendation": null,
+  "circuit_states": [{"name": "gemini", "circuit_state": "CLOSED", "failure_count": 0}],
+  "all_providers": {"gemini": {...}, "deepseek": {...}},
+  "timestamp": 1750000000.0
+}
+```
+
+```mermaid
+sequenceDiagram
+    Client->>Router: GET /api/chat/health
+    Router->>PF: ProviderFactory.validate_all_providers()
+    PF->>Gemini: health_check() → list models
+    PF->>DeepSeek: health_check() → GET /v1/models
+    PF-->>Router: {gemini: ProviderHealth, deepseek: ProviderHealth}
+    Router->>PM: provider_manager.provider_status()
+    PM-->>Router: circuit breaker states
+    Router-->>Client: full health JSON
+```
+
+---
+
+## Observability & Logging
+
+Every chat request emits a `CHAT_PIPELINE` structured log line:
+
+```
+CHAT_PIPELINE | repo=owner/repo intent=ARCHITECTURE provider=gemini \
+  retrieved=15→5 context_tokens=3842 llm_ms=1240 total_ms=1650 fallback=False
+```
+
+And a `CHAT_TRACE` JSON debug log with full stage breakdown (similarity scores, rerank scores, discarded chunks, context slot breakdown, provider circuit state).
+
+Prometheus metrics at `GET /metrics`:
+
+```text
+# HELP http_requests_total Total number of HTTP requests.
+# TYPE http_requests_total counter
+http_requests_total{method="POST",path="/api/chat",status="200"} 42.0
+
+# HELP active_requests_count Total number of active requests.
+# TYPE active_requests_count gauge
+active_requests_count 1.0
+
+# HELP build_duration_seconds Build pipeline durations in seconds.
+# TYPE build_duration_seconds summary
+build_duration_seconds_sum{repository="fastapi/fastapi"} 45.123
+
+# HELP cache_hits_total Total number of analysis cache hits.
+# TYPE cache_hits_total counter
+cache_hits_total{cache_key="symbols"} 12.0
+```
+
+---
+
+## Mathematical Models
+
+### Reading Order Composite Score
+
+$$\text{Score}(v) = (100 \cdot \mathbb{I}_{\text{entry}}) + (50 \cdot C_D(v)) + (30 \cdot I_D(v)) + (15 \cdot \mathbb{I}_{\text{core}}) - (40 \cdot \mathbb{I}_{\text{peripheral}})$$
+
+Where $C_D(v)$ is normalized degree centrality, $I_D(v)$ is normalized in-degree, and $\mathbb{I}$ indicators are 0 or 1.
+
+### PR Size Score
+
+$$\text{SizeScore} = \min(N_{\text{files}} \times 3, 30) + \min(N_{\text{symbols}} \times 1.5, 30) + \min(\text{Lines} \times 0.1, 40)$$
+
+Thresholds: XS ≤ 20 · S ≤ 40 · M ≤ 60 · L ≤ 80 · XL > 80
+
+### Blast Radius Depth Promotion
+
+Initial classification by affected file count (LOW/MEDIUM/HIGH/EXTREME), promoted by one tier if propagation depth $\geq 3$.
+
+### Repository Health Score
+
+$$S_{repo} = 0.25 S_{arch} + 0.20 S_{api} + 0.20 S_{hygiene} + 0.20 S_{churn} + 0.15 S_{read}$$
+
+See [docs/repository_intelligence_report_rfc.md](docs/repository_intelligence_report_rfc.md) for full sub-score formulas.
+
+---
+
+## API Endpoint Table
+
+Base URL: `http://localhost:8001` — all routes also available under `/api/v1/` prefix.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/health` | Static health check |
+| `GET` | `/metrics` | Prometheus metrics |
+| `GET` | `/api/repos/examples` | Pre-configured example repos |
+| `GET` | `/api/repos/recent` | Recently analyzed repos |
+| `POST` | `/api/index` | Vector-only indexing |
+| `POST` | `/api/analyze` | Full analysis pipeline (SSE) |
+| `GET` | `/api/analysis/{owner}/{repo}` | Fetch analysis result |
+| `POST` | `/api/repos/repair` | Rebuild missing indexes |
+| `POST` | `/api/retrieve` | Vector search + LLM answer |
+| `POST` | `/api/chat` | Streaming chat (SSE) |
+| `GET` | `/api/chat/health` | Live provider health diagnostic |
+| `POST` | `/api/chat/reload` | Hot-reload LLM provider |
+| `POST` | `/api/issues/map` | GitHub issue → implementation plan |
+| `POST` | `/api/architecture/build` | Build dependency graph |
+| `GET` | `/api/architecture/{owner}/{repo}` | Architecture summary |
+| `GET` | `/api/architecture/{owner}/{repo}/graph` | React Flow graph |
+| `POST` | `/api/reading-order` | Onboarding reading order |
+| `POST` | `/api/impact-analysis` | Change impact prediction |
+| `GET` | `/api/graph/{owner}/{repo}/full` | Full interactive graph |
+| `GET` | `/api/graph/{owner}/{repo}/neighbors/{path}` | Node neighborhood |
+| `GET` | `/api/graph/{owner}/{repo}/trace/{path}` | BFS trace |
+| `GET` | `/api/graph/{owner}/{repo}/search` | Node search |
+| `GET` | `/api/symbols/{owner}/{repo}/file/{path}` | File symbols |
+| `GET` | `/api/symbols/{owner}/{repo}/definition/{name}` | Symbol definition |
+| `GET` | `/api/symbols/{owner}/{repo}/references/{name}` | Symbol references |
+| `POST` | `/api/call-graph/build` | Build call graph (SSE) |
+| `GET` | `/api/call-graph/{owner}/{repo}` | React Flow call graph |
+| `GET` | `/api/call-graph/{owner}/{repo}/stats` | Call graph statistics |
+| `GET` | `/api/call-graph/{owner}/{repo}/callers/{fn}` | Callers of a function |
+| `GET` | `/api/call-graph/{owner}/{repo}/callees/{fn}` | Callees of a function |
+| `GET` | `/api/call-graph/{owner}/{repo}/hierarchy/{fn}` | Call hierarchy tree |
+| `GET` | `/api/call-graph/{owner}/{repo}/blast-radius/{fn}` | Function blast radius |
+| `GET` | `/api/call-graph/{owner}/{repo}/neighbors/{fn}` | Call graph neighbors |
+| `GET` | `/api/call-graph/{owner}/{repo}/trace/{fn}` | Call graph BFS trace |
+| `POST` | `/api/api-surface/build` | Build API surface (SSE) |
+| `GET` | `/api/api-surface/{owner}/{repo}` | Full API surface report |
+| `GET` | `/api/api-surface/{owner}/{repo}/stats` | API surface statistics |
+| `GET` | `/api/api-surface/{owner}/{repo}/public` | Public symbols |
+| `GET` | `/api/api-surface/{owner}/{repo}/internal` | Internal symbols |
+| `GET` | `/api/api-surface/{owner}/{repo}/deprecated` | Deprecated symbols |
+| `GET` | `/api/api-surface/{owner}/{repo}/breaking` | Breaking changes |
+| `GET` | `/api/api-surface/{owner}/{repo}/{symbol}` | Single symbol details |
+| `POST` | `/api/churn/analyze` | Mine git history (SSE) |
+| `GET` | `/api/churn/{owner}/{repo}` | Churn summary |
+| `GET` | `/api/churn/{owner}/{repo}/hotspots` | Top hotspot files |
+| `GET` | `/api/churn/{owner}/{repo}/file/{path}` | Single file churn |
+| `GET` | `/api/churn/{owner}/{repo}/timeline` | Weekly activity timeline |
+| `POST` | `/api/pr/analyze` | PR risk and blast radius |
+| `GET` | `/api/pr/health` | PR intelligence diagnostics |
+| `POST` | `/api/architecture/drift` | Architecture drift detection |
+| `POST` | `/api/dead-code/analyze` | Dead code sweep |
+| `POST` | `/api/v1/report/{owner}/{repo}/build` | Build intelligence report |
+| `GET` | `/api/v1/report/{owner}/{repo}/summary` | Report health summary |
+| `GET` | `/api/v1/report/{owner}/{repo}/download` | Download HTML/PDF/Markdown |
+
+---
+
+## Skeletal Stubs
+
+Two architectural stubs exist in the codebase. Their routers are registered but contain no endpoints:
+
+| Module | Status | MVP Handling |
+|---|---|---|
+| `backend/routers/stability.py` | Placeholder — no endpoints | `RepositoryContext.module_stability` loads persisted data but no router yet |
+| `backend/routers/dependency_smells.py` | Placeholder — no endpoints | `RepositoryContext.dependency_smells` loads persisted data but no router yet |
+
+Two agent stubs exist that raise `NotImplementedError`:
+
+| Module | Status | Current Handling |
+|---|---|---|
+| `agents/analyzer.py` — `RepositoryAnalyzer` | Stub | Ingestion logic inlined in `backend/routers/repositories.py` |
+| `agents/explainer.py` — `ArchitectureExplainer` | Stub | Reading order handled by `services/reading_order_service.py` |
+
+Two agents are fully functional:
+
+| Module | Status |
+|---|---|
+| `agents/issue_mapper.py` — `IssueMapper` | Production, 2-LLM-call pipeline |
+| `agents/evaluator.py` — `EvaluationAgent` | Production, citation verification |

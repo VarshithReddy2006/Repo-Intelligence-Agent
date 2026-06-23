@@ -47,6 +47,27 @@ export const SkeletonGauge: React.FC = () => (
   </div>
 );
 
+/** Placeholder for a graph canvas while React Flow loads. */
+export const SkeletonGraph: React.FC<{ className?: string }> = ({ className = '' }) => (
+  <div
+    className={`card w-full h-96 flex items-center justify-center ${className}`}
+    aria-hidden="true"
+  >
+    <div className="flex flex-col items-center gap-4">
+      <Skeleton size="h-3 w-40" />
+      <div className="flex gap-4">
+        <Skeleton size="h-10 w-10" rounded="full" />
+        <Skeleton size="h-10 w-10" rounded="full" />
+        <Skeleton size="h-10 w-10" rounded="full" />
+      </div>
+      <div className="flex gap-2">
+        <Skeleton size="h-0.5 w-16" />
+        <Skeleton size="h-0.5 w-16" />
+      </div>
+    </div>
+  </div>
+);
+
 /** Status wrapper — provides an SR-only "Loading…" message. */
 export const SkeletonGroup: React.FC<React.PropsWithChildren<{ label?: string }>> = ({
   children, label = 'Loading content',

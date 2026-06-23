@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: repo-intelligence-agent:dev
+    volumes:
+      - ./backend:/app/backend
+      - ./core:/app/core
+      - ./services:/app/services
+      - ./models:/app/models
+      - ./storage:/app/storage
+      - ./agents:/app/agents
+      - ./memory:/app/memory
+      - ./data:/app/data
+    ports:
+      - "8001:8001"
+    environment:
+      - APP_ENV=development
+      - LOG_FORMAT=human
+      - LOG_LEVEL=DEBUG
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+    command: python -m backend.main
+
+  frontend:
+    image: node:20-alpine
+    working_dir: /app/frontend
+    volumes:
+      - ./frontend:/app/frontend
+    ports:
+      - "4321:4321"
+    environment:
+      - PUBLIC_API_URL=http://localhost:8001
+    command: sh -c "npm install && npm run dev -- --host"

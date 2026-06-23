@@ -142,9 +142,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ repoName }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const suggestedQuestions = [
-    'How are the agent schemas structured?',
-    'Where is the FastAPI router initialized?',
-    'Which files do I edit to add a new service?',
+    'What are the main entry points of this codebase?',
+    'Are there any circular dependencies?',
+    'Which files are most risky to change?',
+    'How do I onboard to this codebase?',
   ];
 
   // ── Priority 3: async fallback — only runs in standalone mode when prop was empty ──
@@ -179,12 +180,35 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ repoName }) => {
     if (repoName && repoName !== activeRepo) {
       setActiveRepo(repoName);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repoName]);
+  }, [repoName, activeRepo]);
+
+  // ── Sync global active-repo events (for standalone /chat page cross-island updates) ──
+  useEffect(() => {
+    const handleRepoChanged = (e: Event) => {
+      const customEvent = e as CustomEvent<string>;
+      if (customEvent.detail && customEvent.detail !== activeRepo) {
+        setActiveRepo(customEvent.detail);
+      }
+    };
+    const handleRepoCleared = () => {
+      setActiveRepo('');
+      setNoRepoError(true);
+    };
+
+    window.addEventListener('active-repo-changed', handleRepoChanged);
+    window.addEventListener('active-repo-cleared', handleRepoCleared);
+    return () => {
+      window.removeEventListener('active-repo-changed', handleRepoChanged);
+      window.removeEventListener('active-repo-cleared', handleRepoCleared);
+    };
+  }, [activeRepo]);
 
   // ── Reset greeting whenever the active repo changes ──
   useEffect(() => {
-    if (!activeRepo) return;
+    if (!activeRepo) {
+      setMessages([]);
+      return;
+    }
     setNoRepoError(false);
     setMessages([
       {
@@ -473,25 +497,39 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ repoName }) => {
               e.preventDefault();
               handleSend(input);
             }}
-            className="flex gap-2"
+            className="flex gap-2 items-end"
           >
-            <input
-              type="text"
+            <textarea
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              rows={1}
+              onChange={(e) => {
+                setInput(e.target.value);
+                // Auto-grow
+                e.target.style.height = 'auto';
+                e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px';
+              }}
+              onKeyDown={(e) => {
+                // Cmd/Ctrl+Enter or plain Enter without Shift submits
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend(input);
+                }
+              }}
               disabled={isStreaming || !activeRepo}
               placeholder={
                 activeRepo
-                  ? `Ask a question about ${activeRepo}...`
+                  ? `Ask a question about ${activeRepo}… (Enter to send)`
                   : 'Waiting for repository...'
               }
-              className="flex-grow bg-canvas border border-border rounded px-3 py-2 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary font-sans text-text placeholder:text-text-muted/50"
+              aria-label="Chat message"
+              className="flex-grow bg-canvas border border-border rounded px-3 py-2 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary font-sans text-text placeholder:text-text-muted/50 resize-none overflow-hidden leading-relaxed"
+              style={{ minHeight: '38px' }}
             />
             <button
               type="submit"
               disabled={isStreaming || !input.trim() || !activeRepo}
               aria-label="Send message"
-              className="bg-primary hover:bg-primary-hover text-primary-foreground font-medium px-3.5 py-2 rounded flex items-center gap-1.5 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:shadow-ring"
+              className="bg-primary hover:bg-primary-hover text-primary-foreground font-medium px-3.5 py-2 rounded flex items-center gap-1.5 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:shadow-ring shrink-0"
             >
               <Send className="h-4 w-4" aria-hidden="true" />
             </button>

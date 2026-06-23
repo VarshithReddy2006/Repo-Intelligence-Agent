@@ -40,21 +40,52 @@ def test_issue_mapper_init() -> None:
     assert hasattr(mapper, "map_issue")
 
 
+import json
+
+class MockLLMProvider:
+    def __init__(self, should_fail=False, response_json=None):
+        self.should_fail = should_fail
+        self.response_json = response_json or {
+            "citations_valid": True,
+            "hallucination_detected": False,
+            "confidence_score": 0.95,
+            "feedback": "Mock evaluation successful",
+            "unsupported_claims": [],
+            "unknown_files": [],
+            "used_chunks_indices": [0],
+            "chunk_citations": [
+                {"file_path": "test.py", "chunk_id": "0", "reason": "found match"}
+            ]
+        }
+
+    async def generate(self, prompt, system_instruction=None, response_mime_type=None):
+        if self.should_fail:
+            raise RuntimeError("mock provider failure")
+        return json.dumps(self.response_json)
+
+    async def stream(self, prompt, system_instruction=None):
+        pass
+
+
 def test_evaluation_agent_init() -> None:
-    """Verifies EvaluationAgent can be instantiated and evaluates responses."""
-    evaluator = EvaluationAgent()
+    """Verifies EvaluationAgent can be instantiated and evaluates responses with a mock provider."""
+    mock_provider = MockLLMProvider()
+    evaluator = EvaluationAgent(provider=mock_provider)
     assert evaluator is not None
 
     res = evaluator.evaluate_response("What is X?", "X is 10.", ["X is 10 in config."])
     from models.schemas import EvaluationResult
     assert isinstance(res, EvaluationResult)
-    assert res.confidence_score >= 0.0
+    assert res.confidence_score == 0.95
     assert res.retrieved_chunks == 1
+    assert res.citations_valid is True
+    assert res.hallucination_detected is False
 
 
-def test_evaluation_fallback_when_client_not_initialized() -> None:
-    """If Gemini client is not initialized, evaluator must mark citations invalid + hallucination detected."""
-    evaluator = EvaluationAgent(client=None)
+def test_evaluation_fallback_when_provider_fails() -> None:
+    """If provider generation throws an error, evaluator must use fallback metrics."""
+    mock_provider = MockLLMProvider(should_fail=True)
+    evaluator = EvaluationAgent(provider=mock_provider)
     res = evaluator.evaluate_response(
         "Where is GraphQL implemented?",
         "GraphQL is implemented in src/graphql_engine.py",
@@ -66,15 +97,9 @@ def test_evaluation_fallback_when_client_not_initialized() -> None:
 
 
 def test_evaluation_fallback_when_judge_throws() -> None:
-    """If judge call fails, evaluator must use the safe fallback (no optimistic validity)."""
-    class _DummyModels:
-        def generate_content(self, *args, **kwargs):
-            raise RuntimeError("judge call failed")
-
-    class _DummyClient:
-        models = _DummyModels()
-
-    evaluator = EvaluationAgent(client=_DummyClient())  # client exists -> go to judge -> except -> fallback
+    """If the LLM client or evaluator fails for any reason during evaluation, use safe fallback."""
+    evaluator = EvaluationAgent(provider=None)
+    evaluator._provider = None  # force provider to be None to trigger attribute error fallback
     res = evaluator.evaluate_response(
         "Any question",
         "Any response",

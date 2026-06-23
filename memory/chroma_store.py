@@ -66,6 +66,44 @@ class ChromaStore:
             metadatas=cleaned_metadata
         )
 
+    def add_code_chunks_bulk(
+        self,
+        ids: List[str],
+        documents: List[str],
+        embeddings: List[List[float]],
+        metadatas: List[Dict[str, Any]],
+    ) -> None:
+        """Adds code chunks in bulk with their precomputed embeddings and metadata to ChromaDB.
+
+        Args:
+            ids: List of unique chunk IDs.
+            documents: List of text/code blocks.
+            embeddings: Parallel list of float-vector embeddings.
+            metadatas: Parallel list of dictionaries containing chunk details.
+        """
+        if not ids:
+            return
+
+        cleaned_metadata = []
+        for meta in metadatas:
+            cleaned = {}
+            for k, v in meta.items():
+                if isinstance(v, (str, int, float, bool)):
+                    cleaned[k] = v
+                else:
+                    cleaned[k] = str(v)
+            cleaned_metadata.append(cleaned)
+
+        # Batch additions (Chroma recommends keeping batches under 2000 items)
+        batch_size = 2000
+        for i in range(0, len(ids), batch_size):
+            self.collection.add(
+                ids=ids[i:i + batch_size],
+                documents=documents[i:i + batch_size],
+                embeddings=embeddings[i:i + batch_size],
+                metadatas=cleaned_metadata[i:i + batch_size],
+            )
+
     def search_similar(
         self,
         query_embedding: List[float],

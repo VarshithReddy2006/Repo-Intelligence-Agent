@@ -7,7 +7,9 @@ import ReactFlow, {
   useNodesState,
   useEdgesState,
   MarkerType,
+  ReactFlowProvider,
 } from 'reactflow';
+import { PanControls } from './graph/PanControls';
 import dagre from 'dagre';
 import { Search, Info, X } from 'lucide-react';
 import 'reactflow/dist/style.css';
@@ -62,7 +64,7 @@ const getLayoutedElements = (nodes: any[], edges: any[], direction = 'TB') => {
   return { nodes: layoutedNodes, edges };
 };
 
-export const ArchitectureGraph: React.FC<GraphProps> = ({ repoName }) => {
+const ArchitectureGraphInner: React.FC<GraphProps> = ({ repoName }) => {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -91,15 +93,15 @@ export const ArchitectureGraph: React.FC<GraphProps> = ({ repoName }) => {
 
       // Map raw nodes into React Flow nodes with classes
       const rawNodes = data.nodes.map((n: NodeData) => {
-        let styleClass = 'bg-zinc-900 border border-zinc-700 text-zinc-300 rounded px-3 py-2 text-center text-xs font-mono truncate shadow cursor-pointer hover:border-zinc-500 transition-all';
+        let styleClass = '!bg-zinc-900 !border !border-zinc-700 !text-zinc-300 rounded px-3 py-2 text-center text-xs font-mono truncate shadow cursor-pointer hover:!border-zinc-500 transition-all';
         if (n.category === 'entry_point') {
-          styleClass = 'bg-emerald-500/10 border-2 border-emerald-500 text-emerald-400 rounded px-3 py-2 text-center text-xs font-mono font-semibold truncate shadow-lg shadow-emerald-500/5 cursor-pointer hover:bg-emerald-500/20 transition-all';
+          styleClass = '!bg-emerald-950/60 !border-2 !border-emerald-500 !text-emerald-400 rounded px-3 py-2 text-center text-xs font-mono font-semibold truncate shadow-lg shadow-emerald-500/5 cursor-pointer hover:!bg-emerald-900/40 transition-all';
         } else if (n.category === 'core_module') {
-          styleClass = 'bg-blue-500/10 border-2 border-blue-500 text-blue-400 rounded px-3 py-2 text-center text-xs font-mono font-semibold truncate shadow-lg shadow-blue-500/5 cursor-pointer hover:bg-blue-500/20 transition-all';
+          styleClass = '!bg-blue-950/60 !border-2 !border-blue-500 !text-blue-400 rounded px-3 py-2 text-center text-xs font-mono font-semibold truncate shadow-lg shadow-blue-500/5 cursor-pointer hover:!bg-blue-900/40 transition-all';
         } else if (n.category === 'high_coupling') {
-          styleClass = 'bg-orange-500/10 border border-orange-500 text-orange-400 rounded px-3 py-2 text-center text-xs font-mono truncate shadow cursor-pointer hover:bg-orange-500/20 transition-all';
+          styleClass = '!bg-orange-950/60 !border !border-orange-500 !text-orange-400 rounded px-3 py-2 text-center text-xs font-mono truncate shadow cursor-pointer hover:!bg-orange-900/40 transition-all';
         } else if (n.category === 'directory') {
-          styleClass = 'bg-purple-500/10 border border-purple-500 text-purple-400 rounded px-3 py-2 text-center text-xs font-mono truncate shadow font-semibold cursor-pointer hover:bg-purple-500/20 transition-all';
+          styleClass = '!bg-purple-950/60 !border !border-purple-500 !text-purple-400 rounded px-3 py-2 text-center text-xs font-mono truncate shadow font-semibold cursor-pointer hover:!bg-purple-900/40 transition-all';
         }
         return {
           id: n.id,
@@ -109,20 +111,39 @@ export const ArchitectureGraph: React.FC<GraphProps> = ({ repoName }) => {
         };
       });
 
+      // Create a map of node id -> category
+      const categoryMap = new Map<string, string>();
+      data.nodes.forEach((n: NodeData) => categoryMap.set(n.id, n.category));
+
       // Map raw edges into React Flow edges
-      const rawEdges = data.edges.map((e: EdgeData) => ({
-        id: `${e.source}->${e.target}`,
-        source: e.source,
-        target: e.target,
-        animated: e.relationship === 'imports',
-        style: { stroke: '#4b5563', strokeWidth: 1.5 },
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          width: 12,
-          height: 12,
-          color: '#4b5563',
-        },
-      }));
+      const rawEdges = data.edges.map((e: EdgeData) => {
+        const srcCategory = categoryMap.get(e.source) ?? 'regular';
+        let strokeColor = '#4b5563'; // default gray
+        
+        if (srcCategory === 'entry_point') {
+          strokeColor = '#10b981'; // emerald
+        } else if (srcCategory === 'core_module') {
+          strokeColor = '#3b82f6'; // blue
+        } else if (srcCategory === 'high_coupling') {
+          strokeColor = '#f97316'; // orange
+        } else if (srcCategory === 'directory') {
+          strokeColor = '#a855f7'; // purple
+        }
+
+        return {
+          id: `${e.source}->${e.target}`,
+          source: e.source,
+          target: e.target,
+          animated: e.relationship === 'imports',
+          style: { stroke: strokeColor, strokeWidth: 1.5 },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            width: 12,
+            height: 12,
+            color: strokeColor,
+          },
+        };
+      });
 
       // Apply Dagre auto-layout
       const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
@@ -238,6 +259,7 @@ export const ArchitectureGraph: React.FC<GraphProps> = ({ repoName }) => {
             maxZoom={2}
           >
             <Controls showInteractive={false} />
+            <PanControls />
             <MiniMap
               nodeColor={(node) => {
                 const raw = node.data?.raw;
@@ -316,5 +338,13 @@ export const ArchitectureGraph: React.FC<GraphProps> = ({ repoName }) => {
         )}
       </div>
     </div>
+  );
+};
+
+export const ArchitectureGraph: React.FC<GraphProps> = (props) => {
+  return (
+    <ReactFlowProvider>
+      <ArchitectureGraphInner {...props} />
+    </ReactFlowProvider>
   );
 };

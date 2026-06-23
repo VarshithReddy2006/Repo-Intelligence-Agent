@@ -46,6 +46,39 @@ export const IssueMapper: React.FC<IssueMapperProps> = ({ repoName }) => {
   const [plan, setPlan] = useState<Plan | null>(null);
   const [completedSteps, setCompletedSteps] = useState<Record<number, boolean>>({});
 
+  // Sync selectedRepo with repoName prop changes and clear stale plan data on repository change
+  useEffect(() => {
+    if (repoName) {
+      setSelectedRepo(repoName);
+      setPlan(null);
+      setCompletedSteps({});
+    }
+  }, [repoName]);
+
+  // Sync global active-repo events (for standalone /issues page cross-island updates)
+  useEffect(() => {
+    const handleRepoChanged = (e: Event) => {
+      const customEvent = e as CustomEvent<string>;
+      if (customEvent.detail && customEvent.detail !== selectedRepo) {
+        setSelectedRepo(customEvent.detail);
+        setPlan(null);
+        setCompletedSteps({});
+      }
+    };
+    const handleRepoCleared = () => {
+      setSelectedRepo('');
+      setPlan(null);
+      setCompletedSteps({});
+    };
+
+    window.addEventListener('active-repo-changed', handleRepoChanged);
+    window.addEventListener('active-repo-cleared', handleRepoCleared);
+    return () => {
+      window.removeEventListener('active-repo-changed', handleRepoChanged);
+      window.removeEventListener('active-repo-cleared', handleRepoCleared);
+    };
+  }, [selectedRepo]);
+
   // Fetch recent repositories if no repoName is locked
   useEffect(() => {
     if (!repoName) {

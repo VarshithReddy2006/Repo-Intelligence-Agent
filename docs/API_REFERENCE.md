@@ -1,42 +1,78 @@
-# API Reference Specification
+# API Reference
 
-All endpoints are hosted at: `http://127.0.0.1:8001`
+All endpoints are hosted at `http://127.0.0.1:8001`. Every route is also available under the `/api/v1/` versioned prefix.
 
 ---
 
-## 🧭 Navigation
+## Navigation
 
 - [System Status & Utility](#system-status--utility)
 - [Repository Processing](#repository-processing)
 - [Semantic Querying](#semantic-querying)
+- [Repository Chat (v2)](#repository-chat-v2)
 - [Architecture Intelligence](#architecture-intelligence)
-- [Interactive Graph Intelligence (Phase 2)](#interactive-graph-intelligence-phase-2)
-- [Symbol Intelligence (Phase 2)](#symbol-intelligence-phase-2)
-- [PR & Architecture Drift Intelligence (Phase 2)](#pr--architecture-drift-intelligence-phase-2)
-- [Dead Code Intelligence (Phase 2)](#dead-code-intelligence-phase-2)
+- [Interactive Graph Intelligence](#interactive-graph-intelligence)
+- [Symbol Intelligence](#symbol-intelligence)
+- [Call Graph Intelligence](#call-graph-intelligence)
+- [API Surface Intelligence](#api-surface-intelligence)
+- [Git History & Churn](#git-history--churn)
+- [PR & Architecture Drift Intelligence](#pr--architecture-drift-intelligence)
+- [Dead Code Intelligence](#dead-code-intelligence)
+- [Repository Intelligence Report](#repository-intelligence-report)
 
 ---
 
 ## System Status & Utility
 
 ### GET /health
-Retrieve the operational status of the API services and configured LLM providers.
 
-#### Request Example
-```bash
-curl http://127.0.0.1:8001/health
-```
+Returns the static configuration health — active LLM provider, model, embedding provider, and vector DB. This endpoint makes no external calls and is suitable for load balancer health probes.
 
 #### Response (200 OK)
 ```json
 {
   "backend": "online",
-  "llm_provider": "deepseek",
-  "llm_model": "deepseek-ai/deepseek-v4-flash",
-  "embedding_provider": "bge-small-en-v1.5",
+  "llm_provider": "gemini",
+  "llm_model": "gemini-2.5-flash",
+  "embedding_provider": "BAAI/bge-small-en-v1.5",
   "vector_db": "chromadb",
   "status": "healthy"
 }
+```
+
+---
+
+### GET /metrics
+
+Returns application metrics in Prometheus text format. Exempt from rate limiting. Available at both `/metrics` and `/api/v1/metrics`.
+
+#### Request Example
+```bash
+curl http://127.0.0.1:8001/metrics
+```
+
+#### Response (200 OK — `text/plain; version=0.0.4`)
+```
+# HELP http_requests_total Total number of HTTP requests.
+# TYPE http_requests_total counter
+http_requests_total{method="GET",path="/health",status="200"} 12.0
+
+# HELP active_requests_count Total number of active requests.
+# TYPE active_requests_count gauge
+active_requests_count 0.0
+
+# HELP build_duration_seconds Build pipeline durations in seconds.
+# TYPE build_duration_seconds summary
+build_duration_seconds_sum{repository="fastapi/fastapi"} 45.123
+build_duration_seconds_count{repository="fastapi/fastapi"} 1
+
+# HELP cache_hits_total Total number of analysis cache hits.
+# TYPE cache_hits_total counter
+cache_hits_total{cache_key="symbols"} 3.0
+
+# HELP cache_size Total number of entries currently in the cache.
+# TYPE cache_size gauge
+cache_size 12.0
 ```
 
 ---
@@ -242,95 +278,16 @@ Query the vector space index directly for a repository using BGE embeddings and 
 ---
 
 ### POST /api/chat (SSE Stream)
-Interactive, conversational multi-turn chat over the repository codebase context, streaming back word tokens.
 
-#### Request Schema (ChatRequest)
-- `repo` (string, required): Repository identifier (owner/repo).
-- `message` (string, required): User message.
-- `history` (list, optional): Conversation history turns containing roles and text content.
-
-```json
-{
-  "repo": "Ankita15k/GitNest",
-  "message": "Explain how Socket.io notifies users.",
-  "history": [
-    {"role": "user", "content": "How are WebSockets set up?"},
-    {"role": "assistant", "content": "WebSockets are initialized in socket.js..."}
-  ]
-}
-```
-
-#### Request Example
-```bash
-curl -N -X POST http://127.0.0.1:8001/api/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "repo": "Ankita15k/GitNest",
-    "message": "Explain how Socket.io notifies users.",
-    "history": []
-  }'
-```
-
-#### SSE Stream Output
-```
-data: {"text": "Socket"}
-data: {"text": ".io "}
-data: {"text": "notifications "}
-data: {"text": "are "}
-data: {"text": "pushed "}
-data: {"text": "to "}
-data: {"text": "clients "}
-data: {"text": "using "}
-data: {"text": "io.emit()."}
-data: {"sources": ["backend/src/socket/notificationHandler.js"], "confidence": 92, "fallback_mode": false, "status": "done"}
-```
+See [Repository Chat (v2) → POST /api/chat](#post-apichat) for the full request/response specification including `session_id`, SSE event format, and streaming behavior.
 
 ---
 
 ### POST /api/issues/map
-Analyze a GitHub issue and map it to relevant source code modules, generating a detailed implementation plan.
 
-#### Request Schema (IssueMapRequest)
-- `repo` (string, required): Repository identifier (owner/repo).
-- `issue` (string, optional): Combined issue text details.
-- `title` (string, optional): GitHub issue title.
-- `description` (string, optional): GitHub issue description body.
+See [Repository Chat (v2) → POST /api/issues/map](#post-apiissuesmap) for the full request/response specification.
 
-```json
-{
-  "repo": "Ankita15k/GitNest",
-  "title": "Fix token validation timeout",
-  "description": "User tokens expire instantly when hitting the API from mobile clients."
-}
-```
-
-#### Response (200 OK - IssueMapResponse)
-```json
-{
-  "issue_summary": "Fix token validation timeout",
-  "issue_type": "bug",
-  "relevant_files": [
-    "backend/src/middleware/authMiddleware.js"
-  ],
-  "affected_components": [
-    "Authentication",
-    "Services"
-  ],
-  "implementation_plan": [
-    {
-      "step_number": 1,
-      "description": "Modify the jwt verify expiration range logic inside authMiddleware.js to tolerate mobile clock drift.",
-      "files_to_modify": ["backend/src/middleware/authMiddleware.js"]
-    }
-  ],
-  "complexity": "low",
-  "confidence": 88,
-  "verified": true,
-  "sources": [
-    "backend/src/middleware/authMiddleware.js"
-  ]
-}
-```
+---
 
 ---
 
@@ -501,7 +458,179 @@ Predict downstream affected modules and components resulting from a proposed cha
 ---
 ---
 
-## Interactive Graph Intelligence (Phase 2)
+## Repository Chat (v2)
+
+### GET /api/chat/health
+
+Live provider health diagnostic. Runs a health check against all configured LLM providers. Use for operational monitoring — not load balancer probes (has 200–400 ms latency due to live API calls).
+
+#### Request Example
+```bash
+curl http://127.0.0.1:8001/api/chat/health
+```
+
+#### Response (200 OK)
+```json
+{
+  "status": "ok",
+  "provider": "gemini",
+  "api_key_present": true,
+  "authenticated": true,
+  "healthy": true,
+  "latency_ms": 234.1,
+  "error_type": null,
+  "error_message": null,
+  "recommendation": null,
+  "circuit_states": [
+    {"name": "gemini", "circuit_state": "CLOSED", "failure_count": 0}
+  ],
+  "all_providers": {
+    "gemini": {
+      "provider": "gemini",
+      "model": "gemini-2.5-flash",
+      "healthy": true,
+      "authenticated": true,
+      "latency_ms": 234.1,
+      "error_type": null,
+      "error_message": null,
+      "recommendation": null
+    }
+  },
+  "timestamp": 1750000000.0
+}
+```
+
+`status` values: `ok` (all configured providers healthy), `degraded` (at least one healthy), `unhealthy` (none healthy), `error` (health check failed).
+
+#### Status Codes
+| Code | Meaning |
+|------|---------|
+| 200 | Health check ran — inspect `status` field for result |
+| 500 | Health check itself failed unexpectedly |
+
+---
+
+### POST /api/chat/reload
+
+Hot-reload the LLM provider without restarting the server. Call this after updating `GEMINI_API_KEY` or `DEEPSEEK_API_KEY` in `.env`. Resets the `ProviderFactory` cache, `ProviderManager`, and all circuit breakers, then verifies the new provider with a test call.
+
+#### Request Example
+```bash
+curl -X POST http://127.0.0.1:8001/api/chat/reload
+```
+
+#### Response (200 OK)
+```json
+{
+  "status": "ok",
+  "message": "LLM provider reloaded successfully. Chat is ready.",
+  "test_response": "ready"
+}
+```
+
+#### Error Response (500)
+```json
+{
+  "status": "error",
+  "detail": "Provider loaded but test call failed: 401 UNAUTHENTICATED"
+}
+```
+
+---
+
+### POST /api/chat
+
+Interactive streaming chat over a repository's codebase context. Streams token-by-token via SSE.
+
+The v2 pipeline runs: conversation memory → intent detection → intent routing → weighted retrieval (top-15 reranked to top-5) → context assembly → LLM streaming → memory update.
+
+#### Request Schema (ChatRequest)
+- `repo` (string, required): Repository identifier (`owner/repo`)
+- `message` (string, required): User message
+- `history` (list, optional): Conversation history turns
+- `session_id` (string, optional): Session identifier for conversation memory. Defaults to `"default"`
+
+```json
+{
+  "repo": "fastapi/fastapi",
+  "message": "How does dependency injection work?",
+  "history": [
+    {"role": "user", "content": "What is the entry point?"},
+    {"role": "assistant", "content": "The entry point is fastapi/applications.py..."}
+  ],
+  "session_id": "user-abc-session-1"
+}
+```
+
+#### SSE Stream Output
+```
+data: {"text": "FastAPI"}
+data: {"text": "'s "}
+data: {"text": "dependency "}
+data: {"text": "injection "}
+data: {"text": "uses "}
+data: {"text": "the "}
+data: {"text": "Depends() "}
+data: {"text": "system..."}
+data: {"sources": ["fastapi/dependencies/utils.py", "fastapi/routing.py"], "confidence": 91, "fallback_mode": false, "status": "done"}
+```
+
+The final SSE event always includes `"status": "done"`.
+
+#### Status Codes
+| Code | Meaning |
+|------|---------|
+| 200 | SSE stream opened |
+| 400 | `repo` field is empty |
+| 422 | Request body validation failed |
+
+---
+
+### POST /api/issues/map
+
+Map a GitHub issue to relevant source files and generate a grounded implementation plan. Uses exactly 2 LLM calls: one to parse the issue and rank files, one to generate the implementation plan. Results are cached by `sha256(issue_text)`.
+
+#### Request Schema (IssueMapRequest)
+- `repo` (string, required): Repository identifier (`owner/repo`)
+- `title` (string, optional): GitHub issue title
+- `description` (string, optional): GitHub issue body
+- `issue` (string, optional): Combined issue text (alternative to title + description)
+
+```json
+{
+  "repo": "fastapi/fastapi",
+  "title": "Dependency injection fails with async generators",
+  "description": "When using yield-based dependencies with async context managers, cleanup is not called."
+}
+```
+
+#### Response (200 OK)
+```json
+{
+  "issue_summary": "Async generator dependencies do not trigger cleanup",
+  "issue_type": "bug",
+  "relevant_files": [
+    "fastapi/dependencies/utils.py",
+    "fastapi/concurrency.py"
+  ],
+  "affected_components": ["Services", "API Layer"],
+  "implementation_plan": [
+    {
+      "step_number": 1,
+      "description": "In fastapi/dependencies/utils.py, locate solve_dependencies() and ensure async generator cleanup is awaited.",
+      "files_to_modify": ["fastapi/dependencies/utils.py"]
+    }
+  ],
+  "complexity": "medium",
+  "confidence": 84,
+  "verified": true,
+  "sources": ["fastapi/dependencies/utils.py", "fastapi/concurrency.py"]
+}
+```
+
+---
+
+## Interactive Graph Intelligence
 
 ### GET /api/graph/{owner}/{repo}/full
 Retrieve the full dependency graph for visualization in the interactive layout.
@@ -615,7 +744,7 @@ curl http://127.0.0.1:8001/api/graph/VarshithReddy2006/Repo-Intelligence-Agent/s
 
 ---
 
-## Symbol Intelligence (Phase 2)
+## Symbol Intelligence
 
 ### GET /api/symbols/{owner}/{repo}/file/{file_path:path}
 Retrieve all AST symbols (classes, functions, methods) defined in a file.
@@ -710,7 +839,338 @@ curl http://127.0.0.1:8001/api/symbols/VarshithReddy2006/Repo-Intelligence-Agent
 
 ---
 
-## PR & Architecture Drift Intelligence (Phase 2)
+## Call Graph Intelligence
+
+### POST /api/call-graph/build
+
+Build the function-level call graph for a repository. Streams SSE progress. Requires the repository to have been analyzed (`POST /api/analyze`) and the symbol index to exist (`POST /api/architecture/build`).
+
+#### Request Schema
+- `repo` (string, required): Repository identifier (`owner/repo`)
+
+```json
+{"repo": "fastapi/fastapi"}
+```
+
+#### SSE Stream Events
+```
+data: {"status": "progress", "message": "Parsing function calls..."}
+data: {"status": "result", "data": {"total_functions": 142, "total_edges": 389}}
+data: {"status": "done"}
+```
+
+---
+
+### GET /api/call-graph/{owner}/{repo}
+
+Return the call graph as React Flow JSON for visualization.
+
+#### Query Parameters
+- `q` (string, optional): Filter by function name substring
+- `max_nodes` (int, optional): Maximum nodes to return. Range: 1–1000. Default: 300
+
+#### Request Example
+```bash
+curl "http://127.0.0.1:8001/api/call-graph/fastapi/fastapi?q=router&max_nodes=50"
+```
+
+#### Response (200 OK)
+```json
+{
+  "nodes": [
+    {"id": "fastapi.routing:APIRouter.add_api_route", "label": "add_api_route", "file": "fastapi/routing.py"}
+  ],
+  "edges": [
+    {"source": "fastapi.routing:APIRouter.add_api_route", "target": "fastapi.routing:APIRoute.__init__"}
+  ],
+  "node_count": 1,
+  "edge_count": 1
+}
+```
+
+---
+
+### GET /api/call-graph/{owner}/{repo}/callers/{function_id}
+
+Return all functions that directly call the given function.
+
+#### Request Example
+```bash
+curl http://127.0.0.1:8001/api/call-graph/fastapi/fastapi/callers/fastapi.routing:APIRouter.add_api_route
+```
+
+#### Response (200 OK)
+```json
+{
+  "function_id": "fastapi.routing:APIRouter.add_api_route",
+  "callers": [
+    {"id": "fastapi.routing:APIRouter.get", "name": "get", "file": "fastapi/routing.py", "line": 412}
+  ]
+}
+```
+
+---
+
+### GET /api/call-graph/{owner}/{repo}/callees/{function_id}
+
+Return all functions directly called by the given function.
+
+---
+
+### GET /api/call-graph/{owner}/{repo}/hierarchy/{function_id}
+
+Return the call hierarchy tree for a function (callers tree or callees tree).
+
+#### Query Parameters
+- `direction` (string, optional): `down` (callees) or `up` (callers). Default: `down`
+- `depth` (int, optional): BFS depth limit. Range: 1–12. Default: 6
+
+---
+
+### GET /api/call-graph/{owner}/{repo}/blast-radius/{function_id}
+
+Return the function-level blast radius — all functions reachable from this one, with risk scoring.
+
+---
+
+### GET /api/call-graph/{owner}/{repo}/stats
+
+Return aggregate call graph statistics (total functions, total edges, most-called functions, most-calling functions).
+
+---
+
+### GET /api/call-graph/{owner}/{repo}/neighbors/{function_id}
+
+Return immediate callers and callees of a function as React Flow JSON.
+
+---
+
+### GET /api/call-graph/{owner}/{repo}/trace/{function_id}
+
+BFS trace from a function as React Flow JSON.
+
+#### Query Parameters
+- `direction` (string, optional): `forward`, `backward`, or `both`. Default: `both`
+- `depth` (int, optional): BFS depth limit. Range: 1–12. Default: 6
+
+---
+
+## API Surface Intelligence
+
+### POST /api/api-surface/build
+
+Build the API surface index — classifies every exported symbol as public, internal, or deprecated, and computes Martin's instability metrics. Streams SSE progress. Requires analyzed repository and symbol index.
+
+#### Request Schema
+- `repo` (string, required): Repository identifier (`owner/repo`)
+
+```json
+{"repo": "fastapi/fastapi"}
+```
+
+#### SSE Stream Events
+```
+data: {"status": "progress", "message": "Classifying symbols..."}
+data: {"status": "result", "data": {"total_symbols": 142, "public": 42, "internal": 98, "deprecated": 2}}
+data: {"status": "done"}
+```
+
+---
+
+### GET /api/api-surface/{owner}/{repo}
+
+Return the full API surface report including all symbols, stability metrics, and visibility ratio.
+
+#### Request Example
+```bash
+curl http://127.0.0.1:8001/api/api-surface/fastapi/fastapi
+```
+
+---
+
+### GET /api/api-surface/{owner}/{repo}/stats
+
+Return aggregate API surface statistics.
+
+#### Response (200 OK)
+```json
+{
+  "total_symbols": 142,
+  "public_count": 42,
+  "internal_count": 98,
+  "deprecated_count": 2,
+  "visibility_ratio": 0.296
+}
+```
+
+---
+
+### GET /api/api-surface/{owner}/{repo}/public
+
+Return all public symbols. Supports optional `q` search and `kind` filter query parameters, and a `limit` (default 100, max 1000).
+
+---
+
+### GET /api/api-surface/{owner}/{repo}/internal
+
+Return all internal symbols. Supports `limit` query parameter.
+
+---
+
+### GET /api/api-surface/{owner}/{repo}/deprecated
+
+Return all deprecated symbols.
+
+---
+
+### GET /api/api-surface/{owner}/{repo}/breaking
+
+Detect breaking changes between two API surfaces, or return orphaned public APIs if `compare_repo` is omitted.
+
+#### Query Parameters
+- `compare_repo` (string, optional): Baseline repository identifier (`owner/repo`) to diff against
+
+#### Response (200 OK — with compare_repo)
+```json
+{
+  "breaking_changes": [
+    {
+      "symbol": "authenticate_user",
+      "type": "function",
+      "change_type": "removed",
+      "file_path": "services/auth_service.py"
+    }
+  ],
+  "count": 1
+}
+```
+
+#### Response (200 OK — without compare_repo)
+```json
+{
+  "orphans": [
+    {
+      "name": "legacy_helper",
+      "type": "function",
+      "file_path": "services/legacy_helper.py",
+      "visibility": "public"
+    }
+  ],
+  "count": 1
+}
+```
+
+---
+
+### GET /api/api-surface/{owner}/{repo}/{symbol_name}
+
+Return classification details for a single symbol by name.
+
+---
+
+## Git History & Churn
+
+### POST /api/churn/analyze
+
+Mine git commit history and compute per-file churn scores. Streams SSE progress.
+
+#### Request Schema
+- `repo` (string, required): Repository identifier (`owner/repo`)
+- `since_days` (int, optional): Days of history to mine. Range: 7–3650. Default: 365
+
+```json
+{
+  "repo": "fastapi/fastapi",
+  "since_days": 365
+}
+```
+
+#### SSE Stream Events
+```
+data: {"status": "progress", "message": "Processing 1200 commits..."}
+data: {"status": "result", "data": {"total_commits": 1200, "files_analyzed": 89}}
+data: {"status": "done"}
+```
+
+---
+
+### GET /api/churn/{owner}/{repo}
+
+Return the full churn summary. Requires `POST /api/churn/analyze` to have been run first.
+
+#### Query Parameters
+- `since_days` (int, optional): Must match the value used during analysis. Default: 365
+
+#### Response (200 OK)
+```json
+{
+  "repo": "fastapi/fastapi",
+  "since_days": 365,
+  "total_commits": 1200,
+  "files_analyzed": 89,
+  "top_churned_files": [
+    {"file_path": "fastapi/routing.py", "commit_count": 87, "churn_score": 0.94}
+  ],
+  "timeline": [...]
+}
+```
+
+---
+
+### GET /api/churn/{owner}/{repo}/hotspots
+
+Return the top-N hotspot files (high churn × high graph centrality).
+
+#### Query Parameters
+- `since_days` (int, optional): Default: 365
+- `top_n` (int, optional): Range: 1–100. Default: 25
+
+#### Response (200 OK)
+```json
+{
+  "hotspots": [
+    {
+      "file_path": "fastapi/routing.py",
+      "churn_score": 0.94,
+      "centrality_score": 0.87,
+      "hotspot_score": 0.91,
+      "commit_count": 87,
+      "risk_level": "HIGH"
+    }
+  ]
+}
+```
+
+---
+
+### GET /api/churn/{owner}/{repo}/file/{file_path}
+
+Return churn data for a single file.
+
+#### Request Example
+```bash
+curl http://127.0.0.1:8001/api/churn/fastapi/fastapi/file/fastapi/routing.py
+```
+
+---
+
+### GET /api/churn/{owner}/{repo}/timeline
+
+Return the weekly commit activity timeline.
+
+#### Response (200 OK)
+```json
+{
+  "timeline": [
+    {"week": "2026-01-06", "commit_count": 12},
+    {"week": "2026-01-13", "commit_count": 8}
+  ]
+}
+```
+
+---
+
+## PR & Architecture Drift Intelligence
 
 ### POST /api/pr/analyze
 Perform risk assessment, changed files extraction, symbol diffs, and blast radius propagation for a Pull Request.
@@ -887,7 +1347,7 @@ Detect architectural drift, cycle additions, and coupling shifts introduced by a
 
 ---
 
-## Dead Code Intelligence (Phase 2)
+## Dead Code Intelligence
 
 ### POST /api/dead-code/analyze
 Traces reachability from application entry points to sweep unreachable files, orphaned modules, and dead dependency chains.
@@ -945,3 +1405,104 @@ Traces reachability from application entry points to sweep unreachable files, or
   "analyzed_at": "2026-06-20T14:14:00Z"
 }
 ```
+
+---
+
+## Repository Intelligence Report
+
+### POST /api/v1/report/{owner}/{repo}/build
+Triggers the full scoring, rating, and serialization pipeline for a repository. Compiles raw analyses (circular dependencies, stability index, dead code, change risks) and persists the result to SQLite before returning the model.
+
+#### Response (200 OK)
+```json
+{
+  "scores": {
+    "overall": 87.5,
+    "grade": "B",
+    "breakdown": {
+      "stability": 92.0,
+      "api_distance": 85.0,
+      "hygiene": 95.0,
+      "churn": 80.0,
+      "onboarding": 88.0
+    }
+  },
+  "architecture": {
+    "circular_dependencies": [
+      ["services/a.py", "services/b.py", "services/a.py"]
+    ],
+    "coupling_hotspots": ["services/pr_intelligence_service.py"],
+    "design_smells": [
+      {
+        "type": "HIGH_COUPLING",
+        "file_path": "services/pr_intelligence_service.py",
+        "description": "File has high in-degree / out-degree ratio."
+      }
+    ]
+  },
+  "api_surface": {
+    "total_symbols": 142,
+    "exported_symbols": 42,
+    "visibility_ratio": 0.295,
+    "instability_metrics": [
+      {
+        "module": "services/github_service",
+        "efferent_coupling": 2,
+        "afferent_coupling": 8,
+        "instability": 0.20
+      }
+    ]
+  },
+  "hygiene": {
+    "dead_functions": 12,
+    "unreachable_files_count": 2,
+    "registry": [
+      {
+        "symbol": "legacy_cleanup",
+        "file_path": "services/legacy_helper.py",
+        "line": 42
+      }
+    ]
+  },
+  "onboarding": {
+    "entry_points": ["backend/api.py", "backend/cli.py"],
+    "reading_path": [
+      "models/report.py",
+      "services/report/composer.py",
+      "backend/routers/report.py"
+    ]
+  },
+  "metadata": {
+    "repo_name": "VarshithReddy2006/Repo-Intelligence-Agent",
+    "commit_hash": "a8f4c2e",
+    "generated_at": "2026-06-23T04:00:00Z"
+  }
+}
+```
+
+---
+
+### GET /api/v1/report/{owner}/{repo}/summary
+Retrieves the overall health rating and score summary from the cache without running a full re-build.
+
+#### Response (200 OK)
+```json
+{
+  "repo_name": "VarshithReddy2006/Repo-Intelligence-Agent",
+  "score": 87.5,
+  "grade": "B",
+  "analyzed_at": "2026-06-23T04:00:00Z"
+}
+```
+
+---
+
+### GET /api/v1/report/{owner}/{repo}/download
+Downloads the formatted report in the requested file type.
+
+#### Query Parameters
+- `format` (string, optional): One of `html` (default), `pdf`, or `markdown`.
+
+#### Response (200 OK)
+- **Binary Stream** with appropriate MIME type (`text/html` or `text/markdown`) and `Content-Disposition` attachment header.
+

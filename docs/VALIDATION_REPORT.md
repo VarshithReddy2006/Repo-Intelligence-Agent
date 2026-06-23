@@ -102,10 +102,10 @@ Response latencies were compiled across all active FastAPI endpoints binding to 
 
 ---
 
-## 🧪 Unit Test Coverage & Health
+## Unit Test Coverage & Health
 
-The backend test suite is composed of **95+ unit and integration tests** verifying structural extraction, vector retrieval, caching logic, delta patching, cycle checks, dead code reachability, and API route mapping.
+The backend test suite is composed of **535 unit and integration tests** verifying structural extraction, vector retrieval, caching logic, delta patching, cycle checks, dead code reachability, API surface classification, call graph traversal, git history mining, report generation, provider health checks, authentication hardening, incremental builds, and API route mapping.
 
-- **Total Collected Tests:** 95+ items
-- **Overall Code Coverage:** ~85% across all core classes (`TreeSitterService`, `GraphService`, `SymbolService`, `PRIntelligenceService`, `ArchitectureDriftService`, `DeadCodeService`, `ChromaStore`).
-- **Test Integrity:** Mock adapters isolate remote API network boundaries during testing, ensuring local test execution does not consume NVIDIA NIM tokens or require active GitHub PAT connections.
+- **Total Collected Tests:** 535 items
+- **Overall Code Coverage:** ~85% across all core classes
+- **Test Integrity:** Mock adapters isolate remote API network boundaries during testing, ensuring local test execution does not consume LLM API quota or require active GitHub PAT connections.

@@ -9,6 +9,7 @@ import ReactFlow, {
   type Node,
   type Edge,
 } from 'reactflow';
+import { PanControls } from './PanControls';
 import dagre from 'dagre';
 import 'reactflow/dist/style.css';
 import { CATEGORY_COLORS } from './types';
@@ -62,23 +63,23 @@ function nodeClassName(
     'rounded px-3 py-2 text-center text-xs font-mono truncate shadow cursor-pointer transition-all';
 
   if (isFocus)
-    return `${base} bg-white/10 border-2 border-white text-white shadow-lg shadow-white/10 hover:bg-white/20`;
+    return `${base} !bg-white/20 !border-2 !border-white !text-white shadow-lg shadow-white/10 hover:!bg-white/30`;
 
   if (highlighted) {
-    return `${base} bg-amber-500/10 border-2 border-amber-400 text-amber-300 shadow-lg shadow-amber-500/10 hover:bg-amber-500/20`;
+    return `${base} !bg-amber-950/60 !border-2 !border-amber-400 !text-amber-300 shadow-lg shadow-amber-500/10 hover:!bg-amber-900/40`;
   }
 
   switch (category) {
     case 'entry_point':
-      return `${base} bg-emerald-500/10 border-2 border-emerald-500 text-emerald-400 font-semibold shadow-emerald-500/5 hover:bg-emerald-500/20`;
+      return `${base} !bg-emerald-950/60 !border-2 !border-emerald-500 !text-emerald-400 font-semibold shadow-emerald-500/5 hover:!bg-emerald-900/40`;
     case 'core_module':
-      return `${base} bg-blue-500/10 border-2 border-blue-500 text-blue-400 font-semibold shadow-blue-500/5 hover:bg-blue-500/20`;
+      return `${base} !bg-blue-950/60 !border-2 !border-blue-500 !text-blue-400 font-semibold shadow-blue-500/5 hover:!bg-blue-900/40`;
     case 'high_coupling':
-      return `${base} bg-orange-500/10 border border-orange-500 text-orange-400 hover:bg-orange-500/20`;
+      return `${base} !bg-orange-950/60 !border !border-orange-500 !text-orange-400 hover:!bg-orange-900/40`;
     case 'directory':
-      return `${base} bg-purple-500/10 border border-purple-500 text-purple-400 font-semibold hover:bg-purple-500/20`;
+      return `${base} !bg-purple-950/60 !border !border-purple-500 !text-purple-400 font-semibold hover:!bg-purple-900/40`;
     default:
-      return `${base} bg-zinc-900 border border-zinc-700 text-zinc-300 hover:border-zinc-500`;
+      return `${base} !bg-zinc-900 !border !border-zinc-700 !text-zinc-300 hover:!border-zinc-500`;
   }
 }
 
@@ -96,20 +97,35 @@ export function toReactFlowNodes(apiNodes: GraphNode[]): Node[] {
   }));
 }
 
-export function toReactFlowEdges(apiEdges: GraphEdge[]): Edge[] {
-  return apiEdges.map((e) => ({
-    id: `${e.source}→${e.target}`,
-    source: e.source,
-    target: e.target,
-    animated: e.relationship === 'imports',
-    style: { stroke: '#4b5563', strokeWidth: 1.5 },
-    markerEnd: {
-      type: MarkerType.ArrowClosed,
-      width: 12,
-      height: 12,
-      color: '#4b5563',
-    },
-  }));
+export function toReactFlowEdges(apiEdges: GraphEdge[], categoryMap: Map<string, string>): Edge[] {
+  return apiEdges.map((e) => {
+    const srcCategory = categoryMap.get(e.source) ?? 'regular';
+    let strokeColor = '#4b5563'; // default gray
+    
+    if (srcCategory === 'entry_point') {
+      strokeColor = '#10b981'; // emerald
+    } else if (srcCategory === 'core_module') {
+      strokeColor = '#3b82f6'; // blue
+    } else if (srcCategory === 'high_coupling') {
+      strokeColor = '#f97316'; // orange
+    } else if (srcCategory === 'directory') {
+      strokeColor = '#a855f7'; // purple
+    }
+
+    return {
+      id: `${e.source}→${e.target}`,
+      source: e.source,
+      target: e.target,
+      animated: e.relationship === 'imports',
+      style: { stroke: strokeColor, strokeWidth: 1.5 },
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        width: 12,
+        height: 12,
+        color: strokeColor,
+      },
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -144,7 +160,11 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
   // Re-layout whenever the API data changes — keep setState inside an effect.
   useEffect(() => {
     const rfNodes = toReactFlowNodes(apiNodes);
-    const rfEdges = toReactFlowEdges(apiEdges);
+    
+    const categoryMap = new Map<string, string>();
+    apiNodes.forEach((n) => categoryMap.set(n.id, n.category));
+    
+    const rfEdges = toReactFlowEdges(apiEdges, categoryMap);
     const { nodes: laid, edges: laidEdges } = applyDagreLayout(rfNodes, rfEdges, 'TB');
     setNodes(laid);
     setEdges(laidEdges);
@@ -187,6 +207,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
       elementsSelectable
     >
       <Controls showInteractive={false} />
+      <PanControls />
       <MiniMap
         nodeColor={(node) => {
           const raw: GraphNode | undefined = node.data?.raw;

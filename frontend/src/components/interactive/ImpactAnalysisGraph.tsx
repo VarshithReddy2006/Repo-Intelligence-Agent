@@ -6,7 +6,9 @@ import ReactFlow, {
   useNodesState,
   useEdgesState,
   MarkerType,
+  ReactFlowProvider,
 } from 'reactflow';
+import { PanControls } from './graph/PanControls';
 import dagre from 'dagre';
 import { 
   Info, 
@@ -85,7 +87,7 @@ const getLayoutedElements = (nodes: any[], edges: any[], direction = 'LR') => {
   return { nodes: layoutedNodes, edges };
 };
 
-export const ImpactAnalysisGraph: React.FC<GraphProps> = ({ repoName, impactData, onReset }) => {
+const ImpactAnalysisGraphInner: React.FC<GraphProps> = ({ repoName, impactData, onReset }) => {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNode, setSelectedNode] = useState<SelectedNodeData | null>(null);
@@ -367,6 +369,7 @@ export const ImpactAnalysisGraph: React.FC<GraphProps> = ({ repoName, impactData
               maxZoom={2}
             >
               <Controls showInteractive={false} />
+              <PanControls />
               <MiniMap
                 nodeColor={(node) => {
                   const cat = node.data?.category;
@@ -478,5 +481,13 @@ export const ImpactAnalysisGraph: React.FC<GraphProps> = ({ repoName, impactData
         </div>
       </div>
     </div>
+  );
+};
+
+export const ImpactAnalysisGraph: React.FC<GraphProps> = (props) => {
+  return (
+    <ReactFlowProvider>
+      <ImpactAnalysisGraphInner {...props} />
+    </ReactFlowProvider>
   );
 };

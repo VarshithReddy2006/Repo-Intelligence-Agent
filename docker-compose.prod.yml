@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: repo-intelligence-agent:latest
+    ports:
+      - "8001:8001"
+    environment:
+      - APP_ENV=production
+      - LOG_FORMAT=json
+      - LOG_LEVEL=INFO
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+    volumes:
+      - repo-intel-data:/app/data
+      - repo-intel-cloned:/root/.repo_intelligence/cloned_repos
+
+volumes:
+  repo-intel-data:
+  repo-intel-cloned:

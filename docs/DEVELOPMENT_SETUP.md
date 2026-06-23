@@ -1,126 +1,174 @@
-# 🛠️ Development Setup & Contributor Guide
+# Development Setup & Contributor Guide
 
-Welcome to the **Repo Intelligence Agent** contributor guide! This document outlines the steps required to configure your local development environment, start backend and frontend services, run the test suites, and adhere to our development workflows.
-
----
-
-## 📋 Prerequisites
-
-Before setting up the project, ensure you have the following installed:
-
-- **Python:** Version 3.10, 3.11, or 3.12. (Active unit tests are validated against Python 3.12).
-- **Node.js:** Version 18 or newer (LTS recommended).
-- **Git:** Command-line utility for source control operations.
-- **NVIDIA NIM API Key:** Required for DeepSeek V4 Flash inference. You can acquire a free-tier key at [build.nvidia.com](https://build.nvidia.com).
-- **Disk Space:** At least 2 GB of free disk space is required to store local Hugging Face model cache structures (specifically for `BAAI/bge-small-en-v1.5` embeddings).
+This document covers local environment setup, running backend and frontend services, and testing.
 
 ---
 
-## 🔧 Backend Ingestion & API Setup
+## Prerequisites
 
-### 1. Clone the Project
-Clone the repository and enter the project directory:
+- **Python**: 3.10, 3.11, or 3.12 (validated against 3.12)
+- **Node.js**: 18 or newer (LTS recommended)
+- **Git**: Required for cloning analyzed repositories
+- **LLM API key**: Either a Google AI Studio key (`GEMINI_API_KEY`) or an NVIDIA NIM key (`DEEPSEEK_API_KEY`). Gemini is the default provider.
+- **Disk space**: At least 2 GB for the `BAAI/bge-small-en-v1.5` embedding model cache
+
+---
+
+## Backend Setup
+
+### 1. Clone the project
+
 ```bash
-git clone https://github.com/your-username/Repo-Intelligence-Agent.git
+git clone https://github.com/VarshithReddy2006/Repo-Intelligence-Agent.git
 cd Repo-Intelligence-Agent
 ```
 
-### 2. Configure Python Virtual Environment
-Isolate Python dependencies to prevent version collisions.
+### 2. Create a virtual environment
 
-**On Windows (PowerShell):**
+**Windows (PowerShell):**
 ```powershell
 python -m venv .venv
 .venv\Scripts\activate
 ```
 
-**On macOS / Linux:**
+**macOS / Linux:**
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 ```
 
-### 3. Install Dependencies
-Install all backend packages:
+### 3. Install dependencies
+
 ```bash
-pip install -r requirements.txt
+pip install -e .
 ```
 
-### 4. Configure Environmental Variables
-Copy the environmental template into an active `.env` configuration:
+This installs the package in editable mode and registers the `repo-intel` CLI script.
+
+### 4. Configure environment variables
 
 ```bash
 cp .env.example .env
 ```
 
-Open the `.env` file and insert your API key and settings:
+Open `.env` and fill in your credentials. Minimum required:
+
 ```env
-DEEPSEEK_API_KEY=nvapi-your-nvidia-nim-api-key-here
-GITHUB_TOKEN=ghp_your-github-personal-access-token-here # Optional: raises clone rate limits
-CHROMA_DB_PATH=data/chroma_db
-LLM_PROVIDER=deepseek
-DEEPSEEK_MODEL=deepseek-ai/deepseek-v4-flash
-DEEPSEEK_BASE_URL=https://integrate.api.nvidia.com/v1
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=your_google_ai_studio_api_key
+
+# Or use DeepSeek instead:
+# LLM_PROVIDER=deepseek
+# DEEPSEEK_API_KEY=your_nvidia_nim_api_key
+
+GITHUB_TOKEN=your_github_pat   # Recommended; raises clone rate limit
+
+# Important: set this outside the project tree to avoid uvicorn reload loops
+CLONED_REPOS_PATH=C:/repo_intelligence_storage/cloned_repos
 ```
 
-### 5. Launch the Backend Server
-Start the Uvicorn development server. The project defaults to port **8001** to prevent conflicts with standard developer systems:
+See [Configuration](../README.md#configuration) in the README for the full variable reference.
+
+### 5. Start the backend server
+
 ```bash
-# Recommended: Starts uvicorn with watch filters enabled in backend/main.py
 python backend/main.py
-
-# Alternative: direct uvicorn execution specifying port 8001
-python -m uvicorn backend.api:app --host 127.0.0.1 --port 8001 --reload
 ```
-- The interactive OpenAPI documentation will be served at [http://127.0.0.1:8001/docs](http://127.0.0.1:8001/docs).
-- The raw JSON schema is available at [http://127.0.0.1:8001/openapi.json](http://127.0.0.1:8001/openapi.json).
+
+This starts uvicorn on port **8001** with hot-reload in development mode. The reload watcher is filtered to `backend/`, `services/`, `agents/`, `memory/`, and `models/` — it excludes `data/`, `__pycache__/`, and `tests/` to prevent reload loops.
+
+- Interactive API docs: `http://localhost:8001/docs`
+- OpenAPI schema: `http://localhost:8001/openapi.json`
+- Health check: `http://localhost:8001/health`
 
 ---
 
-## 🎨 Astro Dashboard Setup
+## Frontend Setup
 
-The user interface is an Astro 4 static-site framework embedding interactive React client components.
+The frontend is an Astro 4 application with React components.
 
-### 1. Navigate and Install Packages
-Navigate to the frontend directory and install dependencies:
+### 1. Install packages
+
 ```bash
 cd frontend
 npm install
 ```
 
-### 2. Configure Frontend Environment
-Ensure the frontend matches backend routing by checking `frontend/.env` (it defaults to `PUBLIC_API_URL=http://127.0.0.1:8001`).
+### 2. Start the dev server
 
-### 3. Run Astro Development Server
-Start the development server:
 ```bash
 npm run dev
 ```
-- Open [http://localhost:4321](http://localhost:4321) in your browser to view the interface.
+
+Open `http://localhost:4321` in your browser.
+
+The frontend defaults to `http://localhost:8001` as the API base URL. Check `frontend/.env` if you need to change this (`PUBLIC_API_URL=http://localhost:8001`).
 
 ---
 
-## 🧪 Testing Guidelines
+## Running Tests
 
-We use `pytest` for backend unit testing. All tests are located inside the `tests/` directory.
-
-### Running the Test Suite
-Activate your virtual environment and run the test suite:
 ```bash
 pytest tests/ -v
 ```
 
-> [!CAUTION]
-> Avoid running raw `pytest` in the root folder without a target path. Doing so causes pytest to traverse `data/cloned_repos/` (which contains cloned codebases like FastAPI), resulting in import errors and test collection failures. Always run `pytest tests/`.
+> Always target `pytest tests/` explicitly. Running `pytest` from the project root without a path causes it to traverse `data/` and collect import errors from cloned repositories.
+
+```bash
+# With coverage
+pytest tests/ --cov=. --cov-report=term-missing
+
+# Single test file
+pytest tests/test_chat.py -v
+```
+
+All 535 tests must pass before any PR is merged. Tests mock LLM calls and GitHub API calls — no API quota is consumed.
 
 ---
 
-## 💅 Styling & Formatting Standards
+## Linting and Formatting
 
-- **Backend Linting:** We use `Ruff` for linting and code formatting. Run it from your virtual environment before submitting changes:
-  ```bash
-  ruff check .
-  ruff format .
-  ```
-- **Frontend CSS:** The UI uses Vanilla CSS structured inside Astro templates. Tailwind CSS configurations (`tailwind.config.mjs`) are loaded but custom responsive rules are written manually to maintain control over visual transitions.
-- **Documentation:** Maintain markdown files with clean lists, relative links, and valid Mermaid diagram syntax.
+```bash
+# Check and auto-fix
+ruff check --fix .
+
+# Format
+ruff format .
+
+# Check without fixing (CI mode)
+ruff check .
+ruff format --check .
+```
+
+---
+
+## Troubleshooting Setup
+
+**BGE model download hangs on first start**
+
+Pre-download the model manually:
+```bash
+python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-small-en-v1.5')"
+```
+
+**ChromaDB dimension mismatch error**
+
+Delete the vector store and re-analyze:
+```powershell
+# Windows
+Remove-Item -Recurse -Force data/chroma_db
+```
+```bash
+# macOS / Linux
+rm -rf data/chroma_db
+```
+
+**Uvicorn keeps reloading during analysis**
+
+Set `CLONED_REPOS_PATH` to a path outside the project directory. Without this, WatchFiles detects new files being written to `data/` and triggers a reload during analysis.
+
+**Provider validation fails at startup**
+
+Check the startup log for `LLM_PROVIDER_HEALTH healthy=false`. The error message includes the `error_type` (e.g., `invalid_credential_type`, `missing_credential`) and a `recommendation` field. The most common cause is using an OAuth token instead of a Google AI Studio Developer API key.
+
+See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for more issues.

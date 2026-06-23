@@ -1,0 +1,264 @@
+{
+  "name": "repo-intelligence-agent",
+  "displayName": "Repo Intelligence Agent",
+  "description": "Bring repository intelligence directly into VS Code — symbol hover, CodeLens, interactive graphs, chat, and more.",
+  "version": "0.1.0",
+  "publisher": "repo-intelligence",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Visualization",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "architecture",
+    "dependency graph",
+    "call graph",
+    "code intelligence",
+    "chat"
+  ],
+  "icon": "resources/icon.png",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Repo Intelligence Agent",
+      "properties": {
+        "repoIntelligence.backendUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:8001",
+          "description": "URL of the running Repo Intelligence Agent backend."
+        },
+        "repoIntelligence.apiToken": {
+          "type": "string",
+          "default": "",
+          "description": "Optional API token for authenticating with the backend."
+        },
+        "repoIntelligence.activeRepository": {
+          "type": "string",
+          "default": "",
+          "description": "Active repository identifier (owner/repo)."
+        },
+        "repoIntelligence.autoRefresh": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically refresh analysis data on file save."
+        },
+        "repoIntelligence.requestTimeoutMs": {
+          "type": "number",
+          "default": 15000,
+          "description": "HTTP request timeout in milliseconds."
+        },
+        "repoIntelligence.graphLayout": {
+          "type": "string",
+          "enum": [
+            "dagre",
+            "force",
+            "radial"
+          ],
+          "default": "dagre",
+          "description": "Default layout algorithm for interactive graphs."
+        },
+        "repoIntelligence.theme": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "dark",
+            "light"
+          ],
+          "default": "auto",
+          "description": "Color theme for webview panels."
+        },
+        "repoIntelligence.codeLens.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable CodeLens annotations above functions and classes."
+        },
+        "repoIntelligence.hover.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable symbol intelligence hover cards."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "repoIntelligence.analyzeRepository",
+        "title": "Repo Intelligence: Analyze Repository",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "repoIntelligence.refreshAnalysis",
+        "title": "Repo Intelligence: Refresh Analysis",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "repoIntelligence.setActiveRepository",
+        "title": "Repo Intelligence: Set Active Repository",
+        "icon": "$(repo)"
+      },
+      {
+        "command": "repoIntelligence.showDependencyGraph",
+        "title": "Repo Intelligence: Show Dependency Graph",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "repoIntelligence.showCallGraph",
+        "title": "Repo Intelligence: Show Call Graph",
+        "icon": "$(call-outgoing)"
+      },
+      {
+        "command": "repoIntelligence.showArchitectureHealth",
+        "title": "Repo Intelligence: Show Architecture Health",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "repoIntelligence.showModuleStability",
+        "title": "Repo Intelligence: Show Module Stability",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "repoIntelligence.showAPISurface",
+        "title": "Repo Intelligence: Show API Surface",
+        "icon": "$(symbol-interface)"
+      },
+      {
+        "command": "repoIntelligence.showRepositoryChat",
+        "title": "Repo Intelligence: Open Repository Chat",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "repoIntelligence.showReadingPath",
+        "title": "Repo Intelligence: Show Reading Path",
+        "icon": "$(book)"
+      },
+      {
+        "command": "repoIntelligence.openDashboard",
+        "title": "Repo Intelligence: Open Dashboard",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "repoIntelligence.showCallers",
+        "title": "Show Callers"
+      },
+      {
+        "command": "repoIntelligence.showCallees",
+        "title": "Show Callees"
+      },
+      {
+        "command": "repoIntelligence.showBlastRadius",
+        "title": "Show Blast Radius"
+      },
+      {
+        "command": "repoIntelligence.showImpactAnalysis",
+        "title": "Show Impact Analysis"
+      },
+      {
+        "command": "repoIntelligence.showReadingPathForFile",
+        "title": "Show Reading Path (this file)"
+      },
+      {
+        "command": "repoIntelligence.connectBackend",
+        "title": "Repo Intelligence: Connect to Backend",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "repoIntelligence.explorerRefresh",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "repoIntelligence",
+          "title": "Repo Intelligence",
+          "icon": "resources/activity-bar-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "repoIntelligence": [
+        {
+          "id": "repoIntelligenceExplorer",
+          "name": "Repository Explorer",
+          "when": "true"
+        },
+        {
+          "id": "repoIntelligenceConnection",
+          "name": "Backend Connection",
+          "when": "true"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "repoIntelligence.explorerRefresh",
+          "when": "view == repoIntelligenceExplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "repoIntelligence.openDashboard",
+          "when": "view == repoIntelligenceExplorer",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "repoIntelligence.showCallers",
+          "when": "false"
+        },
+        {
+          "command": "repoIntelligence.showCallees",
+          "when": "false"
+        },
+        {
+          "command": "repoIntelligence.showBlastRadius",
+          "when": "false"
+        },
+        {
+          "command": "repoIntelligence.showImpactAnalysis",
+          "when": "false"
+        },
+        {
+          "command": "repoIntelligence.showReadingPathForFile",
+          "when": "false"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package",
+    "test": "npm run compile && npx mocha --require module-alias/register out/test/api.test.js out/test/commands.test.js out/test/graph.test.js out/test/providers.test.js out/test/settings.test.js out/test/chat.test.js",
+    "lint": "eslint src --ext .ts",
+    "pretest": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "@vscode/test-electron": "^2.3.9",
+    "@vscode/vsce": "^2.24.0",
+    "eslint": "^8.56.0",
+    "glob": "^13.0.6",
+    "mocha": "^11.7.6",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "eventsource": "^2.0.2",
+    "module-alias": "^2.2.3"
+  },
+  "_moduleAliases": {
+    "vscode": "./out/test/mocks/vscode.js"
+  }
+}

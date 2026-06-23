@@ -112,6 +112,18 @@ export const PRIntelligence: React.FC<PRIntelligenceProps> = ({ repoName }) => {
   const [analysisResult, setAnalysisResult] = useState<PRAnalysisResult | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
 
+  // Sync activeRepo with repoName prop changes and clear stale results
+  useEffect(() => {
+    const nextRepo = resolveRepo(repoName);
+    setActiveRepo(nextRepo);
+    setAnalysisResult(null);
+    setErrorMsg('');
+    setPrUrlInput('');
+    setOwnerInput('');
+    setRepoInput('');
+    setPrNumberInput('');
+  }, [repoName]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);

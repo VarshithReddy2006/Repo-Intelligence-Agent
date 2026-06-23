@@ -57,8 +57,13 @@ class EvaluationAgent:
             An EvaluationResult model.
         """
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
+            try:
+                loop = asyncio.get_running_loop()
+                is_running = loop.is_running()
+            except RuntimeError:
+                is_running = False
+
+            if is_running:
                 import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor() as pool:
                     future = pool.submit(
@@ -67,9 +72,7 @@ class EvaluationAgent:
                     )
                     return future.result()
             else:
-                return loop.run_until_complete(
-                    self._evaluate_async(prompt, response, source_contexts)
-                )
+                return asyncio.run(self._evaluate_async(prompt, response, source_contexts))
         except Exception as exc:
             logger.error("EvaluationAgent.evaluate_response failed: %s", exc, exc_info=True)
             return _fallback_eval(source_contexts)

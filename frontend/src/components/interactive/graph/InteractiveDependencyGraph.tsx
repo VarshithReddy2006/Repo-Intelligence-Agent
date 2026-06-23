@@ -6,7 +6,7 @@ import React, {
   useMemo,
 } from 'react';
 import { Info, RefreshCw, GitBranch, Network, Layers, RotateCw } from 'lucide-react';
-import { ReactFlowProvider } from 'reactflow';
+import { ReactFlowProvider, useReactFlow } from 'reactflow';
 
 import { apiUrl, extractErrorMessage } from '../../../lib/api';
 import { GraphCanvas } from './GraphCanvas';
@@ -68,9 +68,10 @@ interface InteractiveDependencyGraphProps {
  *   GraphCanvas     — React Flow canvas + Dagre layout
  *   NodeDetailsPanel — right-side drawer
  */
-export const InteractiveDependencyGraph: React.FC<
+const InteractiveDependencyGraphInner: React.FC<
   InteractiveDependencyGraphProps
 > = ({ repoName }) => {
+  const { zoomIn, zoomOut, setViewport, getViewport, setCenter, fitView, getNodes } = useReactFlow();
   // ── Repo split ──────────────────────────────────────────────────────────
   const [owner, repo] = useMemo(() => {
     const parts = repoName.split('/');
@@ -157,7 +158,7 @@ export const InteractiveDependencyGraph: React.FC<
         }
 
         // Auto-fit after data loads
-        setTimeout(() => fitViewRef.current?.(), 80);
+        setTimeout(() => fitView({ padding: 0.15, duration: 300 }), 80);
       } catch (err: any) {
         if (err.name === 'AbortError') return; // stale request cancelled
         setError(extractErrorMessage(err));
@@ -172,6 +173,11 @@ export const InteractiveDependencyGraph: React.FC<
 
   // ── Initial load ─────────────────────────────────────────────────────────
   useEffect(() => {
+    setFocusNode(null);
+    setSelectedNode(null);
+    setSearchQuery('');
+    setMatchCount(null);
+    setMode('full');
     fetchGraph('full', null, '', 'both');
     return () => abortRef.current?.abort();
   }, [fetchGraph]);
@@ -248,6 +254,58 @@ export const InteractiveDependencyGraph: React.FC<
     [focusNode, fetchGraph],
   );
 
+  const handlePanUp = useCallback(() => {
+    const { x, y, zoom } = getViewport();
+    setViewport({ x, y: y + 150, zoom }, { duration: 200 });
+  }, [getViewport, setViewport]);
+
+  const handlePanDown = useCallback(() => {
+    const { x, y, zoom } = getViewport();
+    setViewport({ x, y: y - 150, zoom }, { duration: 200 });
+  }, [getViewport, setViewport]);
+
+  const handlePanLeft = useCallback(() => {
+    const { x, y, zoom } = getViewport();
+    setViewport({ x: x + 150, y, zoom }, { duration: 200 });
+  }, [getViewport, setViewport]);
+
+  const handlePanRight = useCallback(() => {
+    const { x, y, zoom } = getViewport();
+    setViewport({ x: x - 150, y, zoom }, { duration: 200 });
+  }, [getViewport, setViewport]);
+
+  const handleZoomIn = useCallback(() => {
+    zoomIn({ duration: 200 });
+  }, [zoomIn]);
+
+  const handleZoomOut = useCallback(() => {
+    zoomOut({ duration: 200 });
+  }, [zoomOut]);
+
+  const handleCenterGraph = useCallback(() => {
+    const nodes = getNodes();
+    if (nodes.length > 0) {
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minY = Infinity;
+      let maxY = -Infinity;
+      nodes.forEach((node) => {
+        const x = node.position.x;
+        const y = node.position.y;
+        const w = node.width ?? 200;
+        const h = node.height ?? 40;
+        if (x < minX) minX = x;
+        if (x + w > maxX) maxX = x + w;
+        if (y < minY) minY = y;
+        if (y + h > maxY) maxY = y + h;
+      });
+      const centerX = minX + (maxX - minX) / 2;
+      const centerY = minY + (maxY - minY) / 2;
+      const { zoom } = getViewport();
+      setCenter(centerX, centerY, { zoom, duration: 200 });
+    }
+  }, [getNodes, getViewport, setCenter]);
+
   const handleReset = useCallback(() => {
     setMode('full');
     setFocusNode(null);
@@ -255,11 +313,14 @@ export const InteractiveDependencyGraph: React.FC<
     setSearchQuery('');
     setMatchCount(null);
     fetchGraph('full', null, '', 'both');
-  }, [fetchGraph]);
+    setTimeout(() => {
+      fitView({ padding: 0.15, duration: 200 });
+    }, 100);
+  }, [fetchGraph, fitView]);
 
   const handleFitView = useCallback(() => {
-    fitViewRef.current?.();
-  }, []);
+    fitView({ padding: 0.15, duration: 200 });
+  }, [fitView]);
 
   // ── Node selection ────────────────────────────────────────────────────────
   const handleNodeSelect = useCallback((node: GraphNode | null) => {
@@ -330,6 +391,13 @@ export const InteractiveDependencyGraph: React.FC<
         onTraceBackward={() => handleTraceBackward()}
         onTraceBoth={() => handleTraceBoth()}
         onNeighbors={handleExpand}
+        onPanUp={handlePanUp}
+        onPanDown={handlePanDown}
+        onPanLeft={handlePanLeft}
+        onPanRight={handlePanRight}
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onCenterGraph={handleCenterGraph}
       />
 
       {/* ── Main canvas area ─────────────────────────────────────────── */}
@@ -377,14 +445,12 @@ export const InteractiveDependencyGraph: React.FC<
 
         {/* React Flow canvas — always mounted so hooks stay stable */}
         <div className="flex-grow h-full bg-canvas/10">
-          <ReactFlowProvider>
-            <GraphCanvas
-              apiNodes={apiNodes}
-              apiEdges={apiEdges}
-              onNodeSelect={handleNodeSelect}
-              fitViewRef={fitViewRef}
-            />
-          </ReactFlowProvider>
+          <GraphCanvas
+            apiNodes={apiNodes}
+            apiEdges={apiEdges}
+            onNodeSelect={handleNodeSelect}
+            fitViewRef={fitViewRef}
+          />
         </div>
 
         {/* Node details panel */}
@@ -404,6 +470,16 @@ export const InteractiveDependencyGraph: React.FC<
         )}
       </div>
     </div>
+  );
+};
+
+export const InteractiveDependencyGraph: React.FC<
+  InteractiveDependencyGraphProps
+> = (props) => {
+  return (
+    <ReactFlowProvider>
+      <InteractiveDependencyGraphInner {...props} />
+    </ReactFlowProvider>
   );
 };
 

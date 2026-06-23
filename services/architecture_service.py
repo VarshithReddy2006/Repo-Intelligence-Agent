@@ -14,7 +14,7 @@ import json
 import logging
 import os
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 import networkx as nx
 
@@ -22,6 +22,8 @@ from services.tree_sitter_service import TreeSitterService
 from services.graph_service import GraphService
 from services.entry_point_service import EntryPointService
 from models.architecture import ArchitectureSummary as ArchSummary
+from storage.snapshot_store import SnapshotStore
+from core.cache import AnalysisCache
 
 logger = logging.getLogger(__name__)
 
@@ -46,10 +48,20 @@ class ArchitectureService:
     Results are written to disk and can be retrieved without rebuilding.
     """
 
+    @property
+    def schema_version(self) -> int:
+        return _SUMMARY_SCHEMA_VERSION
+
+    @classmethod
+    def get_schema_version(cls) -> int:
+        return _SUMMARY_SCHEMA_VERSION
+
     def __init__(
         self,
         arch_dir: str = _ARCH_DIR,
         graphs_dir: Optional[str] = None,
+        snapshot_store: Optional[SnapshotStore] = None,
+        analysis_cache: Optional[AnalysisCache] = None,
     ) -> None:
         """Initialise the service.
 
@@ -57,9 +69,25 @@ class ArchitectureService:
             arch_dir:   Directory where architecture JSON summaries are saved.
             graphs_dir: Directory where graph pickle files are saved.
                         Defaults to GraphService's default when None.
+            snapshot_store: Shared snapshot store instance.
+            analysis_cache: Shared analysis cache instance.
         """
         self.arch_dir = arch_dir
         os.makedirs(self.arch_dir, exist_ok=True)
+
+        if snapshot_store is None:
+            if arch_dir != _ARCH_DIR:
+                parent_dir = os.path.dirname(arch_dir)
+                dir_name = os.path.basename(arch_dir)
+                from storage.snapshot_store import JsonSnapshotStore
+                self.snapshot_store = JsonSnapshotStore(base_dir=parent_dir, key_map={"architecture": dir_name})
+            else:
+                from backend.dependencies import snapshot_store as default_store
+                self.snapshot_store = default_store
+        else:
+            self.snapshot_store = snapshot_store
+
+        self.analysis_cache = analysis_cache or AnalysisCache()
 
         self.tree_sitter = TreeSitterService()
         self.graph_service = GraphService(**({"graphs_dir": graphs_dir} if graphs_dir else {}))
@@ -78,58 +106,39 @@ class ArchitectureService:
     ) -> Dict[str, Any]:
         """Run the full architecture build pipeline for a repository.
 
-        Provide either *repo_path* (path to cloned directory on disk) or
-        *files* (pre-extracted [{path, content}] list).  At least one must
-        be given.
-
-        Args:
-            repo_name:      Repository identifier (owner/repo).
-            repo_path:      Local path to the cloned repository.
-            files:          Pre-extracted file list.
-            force_rebuild:  If True, rebuild even if a persisted graph exists.
-
-        Returns:
-            A dictionary with:
-                status            – "success"
-                repo              – repo_name
-                files_parsed      – number of files successfully parsed
-                dependencies_found– total graph edges
-                entry_points      – list of detected entry point paths
-                architecture      – ArchitectureSummary dict
+        Provides backward compatibility by delegating to build_full.
         """
+        return self.build_full(repo_name, repo_path=repo_path, files=files)
+
+    def build_full(
+        self,
+        repo_name: str,
+        repo_path: Optional[str] = None,
+        files: Optional[List[Dict[str, str]]] = None,
+    ) -> Dict[str, Any]:
+        """Run the full architecture build pipeline and save parsed_files."""
         if repo_path is None and files is None:
             raise ValueError("Provide either repo_path or files.")
 
-        logger.info("Starting architecture build for %s", repo_name)
+        logger.info("Starting full architecture build for %s", repo_name)
 
-        # ----------------------------------------------------------
-        # Step 1: Parse files
-        # ----------------------------------------------------------
         parsed = self.tree_sitter.parse_repository(
             repo_path=repo_path or "",
             files=files,
         )
         logger.info("Parsed %d supported source files", len(parsed))
 
-        # Guard: if zero files were parsed, the graph will be empty and all
-        # downstream features (Reading Path, Impact Analysis, Architecture Graph)
-        # will fail.  Log at ERROR level so it's immediately visible in server
-        # logs.  We do NOT raise here — the empty graph is still saved so that
-        # the API endpoint can return a descriptive 404 rather than crashing.
         if len(parsed) == 0:
             logger.error(
-                "[PIPELINE:%s] architecture_service.build produced ZERO parsed files. "
-                "repo_path='%s' files_provided=%s. "
-                "The dependency graph will be empty. "
-                "Check CLONED_REPOS_PATH env var and that source files are reachable.",
+                "[PIPELINE:%s] architecture_service.build_full produced ZERO parsed files.",
                 repo_name,
-                repo_path or "(none)",
-                files is not None,
             )
 
-        # ----------------------------------------------------------
-        # Step 2: Detect entry points
-        # ----------------------------------------------------------
+        # Cache parsed files list
+        parsed_files_payload = {"parsed": parsed, "_schema_version": 1}
+        self.snapshot_store.save(repo_name, "parsed_files", parsed_files_payload)
+        self.analysis_cache.set(repo_name, "parsed_files", parsed_files_payload, 1)
+
         all_paths = (
             [f["path"] for f in files]
             if files
@@ -137,39 +146,117 @@ class ArchitectureService:
         )
         ep_result = self.entry_point_service.detect(all_paths, parsed)
         entry_points: List[str] = ep_result["entry_points"]
-        logger.info("Detected %d entry points: %s", len(entry_points), entry_points)
 
-        # ----------------------------------------------------------
-        # Step 3: Build file dependency graph
-        # ----------------------------------------------------------
         graph = self.graph_service.build_file_graph(parsed)
-
-        # ----------------------------------------------------------
-        # Step 4: Compute architecture metrics (local, no LLM)
-        # ----------------------------------------------------------
         summary = self._compute_summary(
             graph=graph,
             entry_points=entry_points,
             total_files=len(all_paths),
         )
 
-        # ----------------------------------------------------------
-        # Step 5: Persist
-        # ----------------------------------------------------------
         self.graph_service.save_graph(graph, repo_name)
         self._save_summary(repo_name, summary)
-
-        logger.info(
-            "Architecture build complete for %s — %d files parsed, %d deps found",
-            repo_name,
-            len(parsed),
-            graph.number_of_edges(),
-        )
 
         return {
             "status": "success",
             "repo": repo_name,
             "files_parsed": len(parsed),
+            "dependencies_found": graph.number_of_edges(),
+            "entry_points": entry_points,
+            "architecture": summary,
+        }
+
+    def build_partial(
+        self,
+        repo_name: str,
+        changed_files: Set[str],
+        repo_path: Optional[str] = None,
+        files: Optional[List[Dict[str, str]]] = None,
+    ) -> Dict[str, Any]:
+        """Incrementally update parsed files and rebuild the dependency graph."""
+        old_parsed_data = self.analysis_cache.get(repo_name, "parsed_files", 1)
+        if old_parsed_data is None:
+            old_parsed_data = self.snapshot_store.load(repo_name, "parsed_files")
+            if old_parsed_data is not None:
+                self.analysis_cache.set(repo_name, "parsed_files", old_parsed_data, 1)
+
+        if old_parsed_data is None:
+            logger.info("No existing parsed_files cache found for %s, running full build.", repo_name)
+            return self.build_full(repo_name, repo_path=repo_path, files=files)
+
+        if repo_path is None and files is None:
+            raise ValueError("Provide either repo_path or files.")
+
+        logger.info("Starting partial architecture build for %s", repo_name)
+
+        # 1. Filter out parsed metadata for modified/deleted files
+        old_parsed_list = old_parsed_data.get("parsed", [])
+        retained_parsed = [
+            p for p in old_parsed_list
+            if p.get("file_path") not in changed_files
+        ]
+
+        # 2. Parse only the added/modified files
+        new_parsed = []
+        if files is not None:
+            for f in files:
+                path = f.get("path", "")
+                if path in changed_files:
+                    res = self.tree_sitter.parse_file(path, f.get("content", ""))
+                    if res:
+                        new_parsed.append(res)
+        else:
+            for path in changed_files:
+                full_path = os.path.join(repo_path, path)
+                if os.path.exists(full_path):
+                    try:
+                        with open(full_path, "r", encoding="utf-8", errors="ignore") as fh:
+                            content = fh.read()
+                        res = self.tree_sitter.parse_file(path, content)
+                        if res:
+                            new_parsed.append(res)
+                    except Exception as exc:
+                        logger.debug("Failed to read %s: %s", full_path, exc)
+
+        # 3. Merge and save the updated parsed_files list
+        merged_parsed = retained_parsed + new_parsed
+        merged_payload = {"parsed": merged_parsed, "_schema_version": 1}
+        self.snapshot_store.save(repo_name, "parsed_files", merged_payload)
+        self.analysis_cache.set(repo_name, "parsed_files", merged_payload, 1)
+
+        # 4. Detect entry points using the merged parsed files
+        all_paths = (
+            [f["path"] for f in files]
+            if files
+            else self._walk_repo_paths(repo_path)
+        )
+        ep_result = self.entry_point_service.detect(all_paths, merged_parsed)
+        entry_points: List[str] = ep_result["entry_points"]
+
+        # 5. Rebuild the graph and compute summary
+        graph = self.graph_service.build_file_graph(merged_parsed)
+        summary = self._compute_summary(
+            graph=graph,
+            entry_points=entry_points,
+            total_files=len(all_paths),
+        )
+
+        # 6. Save graph and summary
+        self.graph_service.save_graph(graph, repo_name)
+        self._save_summary(repo_name, summary)
+
+        logger.info(
+            "Incremental architecture build complete for %s — %d retained, %d new from %d changed files",
+            repo_name,
+            len(retained_parsed),
+            len(new_parsed),
+            len(changed_files),
+        )
+
+        return {
+            "status": "success",
+            "repo": repo_name,
+            "files_parsed": len(merged_parsed),
             "dependencies_found": graph.number_of_edges(),
             "entry_points": entry_points,
             "architecture": summary,
@@ -184,14 +271,34 @@ class ArchitectureService:
         Returns:
             An ArchitectureSummary Pydantic model, or None if not found.
         """
-        data = self._load_summary(repo_name)
+        cached = self.analysis_cache.get(repo_name, "architecture", _SUMMARY_SCHEMA_VERSION)
+        if cached is not None:
+            return cached
+
+        data = self.snapshot_store.load(repo_name, "architecture")
         if data is None:
             return None
-        return ArchSummary(**data)
+
+        stored_version = data.get("_schema_version", 0)
+        if stored_version < _SUMMARY_SCHEMA_VERSION:
+            logger.warning(
+                "Discarding stale architecture summary for %s (schema v%d < current v%d)",
+                repo_name, stored_version, _SUMMARY_SCHEMA_VERSION
+            )
+            return None
+
+        try:
+            filtered = {k: v for k, v in data.items() if not k.startswith("_")}
+            summary = ArchSummary(**filtered)
+            self.analysis_cache.set(repo_name, "architecture", summary, _SUMMARY_SCHEMA_VERSION)
+            return summary
+        except Exception as exc:
+            logger.error("Failed to deserialise architecture summary: %s", exc)
+            return None
 
     def summary_exists(self, repo_name: str) -> bool:
         """Return True if a persisted architecture summary exists."""
-        return os.path.exists(self._summary_path(repo_name))
+        return self.snapshot_store.exists(repo_name, "architecture")
 
     # ------------------------------------------------------------------
     # Architecture metric computation
@@ -255,43 +362,16 @@ class ArchitectureService:
     # ------------------------------------------------------------------
 
     def _summary_path(self, repo_name: str) -> str:
-        safe = repo_name.replace("/", "_")
-        return os.path.join(self.arch_dir, f"{safe}.json")
+        return self.snapshot_store._get_path(repo_name, "architecture")
 
     def _save_summary(self, repo_name: str, summary: Dict[str, Any]) -> None:
-        path = self._summary_path(repo_name)
-        # Annotate with schema version and build timestamp for staleness detection
         versioned = dict(summary)
         versioned["_schema_version"] = _SUMMARY_SCHEMA_VERSION
         versioned["_built_at"] = int(time.time())
-        with open(path, "w", encoding="utf-8") as fh:
-            json.dump(versioned, fh, indent=2)
-        logger.info("Architecture summary saved to %s", path)
+        self.snapshot_store.save(repo_name, "architecture", versioned)
 
     def _load_summary(self, repo_name: str) -> Optional[Dict[str, Any]]:
-        path = self._summary_path(repo_name)
-        if not os.path.exists(path):
-            return None
-        try:
-            with open(path, "r", encoding="utf-8") as fh:
-                data = json.load(fh)
-            # Reject summaries written by older schema versions — they may
-            # contain zero-dependency artefacts from pre-implementation runs.
-            stored_version = data.get("_schema_version", 0)
-            if stored_version < _SUMMARY_SCHEMA_VERSION:
-                logger.warning(
-                    "Discarding stale architecture summary for %s "
-                    "(schema v%d < current v%d)",
-                    repo_name,
-                    stored_version,
-                    _SUMMARY_SCHEMA_VERSION,
-                )
-                return None
-            # Strip internal metadata fields before returning to callers
-            return {k: v for k, v in data.items() if not k.startswith("_")}
-        except Exception as exc:
-            logger.error("Failed to load architecture summary from %s: %s", path, exc)
-            return None
+        return self.snapshot_store.load(repo_name, "architecture")
 
     # ------------------------------------------------------------------
     # Misc helpers

@@ -16,6 +16,7 @@ from models.dead_code import (
 from services.github_service import GitHubService
 from services.graph_service import GraphService
 from services.architecture_service import ArchitectureService
+from core.repository_context import RepositoryContext
 
 logger = logging.getLogger(__name__)
 
@@ -225,9 +226,22 @@ class DeadCodeService:
         except Exception as exc:
             logger.warning("Failed to save score to %s: %s", self.scores_file_path, exc)
 
-    def analyze_dead_code(self, owner: str, repo: str) -> DeadCodeResult:
+    def analyze(self, repo_name: str) -> DeadCodeResult:
+        """Wrapper method for compatibility with ReportComposer and test mocks."""
+        owner, repo = repo_name.split("/", 1)
+        return self.analyze_dead_code(owner, repo)
+
+    def analyze_dead_code(
+        self,
+        owner: str,
+        repo: str,
+        context: Optional[RepositoryContext] = None,
+    ) -> DeadCodeResult:
         """Orchestrates reachability dead code calculations."""
         repo_fullName = f"{owner}/{repo}"
+
+        if context is None:
+            context = RepositoryContext(repo_fullName)
 
         if not self.graph_service.graph_exists(repo_fullName):
             raise ValueError(
@@ -242,7 +256,9 @@ class DeadCodeService:
                 "Run repository architecture build first."
             )
 
-        G = self.graph_service.load_graph(repo_fullName)
+        G = context.dependency_graph
+        if G is None:
+            G = self.graph_service.load_graph(repo_fullName)
         if G is None:
             G = nx.DiGraph()
 

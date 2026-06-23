@@ -1,0 +1,112 @@
+import React, { useEffect, useRef } from 'react';
+
+type DonutTone = 'success' | 'warn' | 'danger' | 'primary' | 'info';
+
+interface SVGDonutProps {
+  /** 0–100 score value */
+  value: number;
+  /** Outer diameter in px (default: 128) */
+  size?: number;
+  /** Ring thickness in px (default: 10) */
+  strokeWidth?: number;
+  tone?: DonutTone;
+  /** Label rendered in the centre */
+  label?: React.ReactNode;
+  className?: string;
+}
+
+const toneStroke: Record<DonutTone, string> = {
+  success: 'var(--success)',
+  warn:    'var(--warn)',
+  danger:  'var(--danger)',
+  primary: 'var(--primary)',
+  info:    'var(--info)',
+};
+
+/**
+ * SVG-based circular progress ring that animates stroke-dashoffset on mount.
+ * Correctly encodes the score value as a filled arc — unlike the CSS-border trick.
+ *
+ * Apply class `.svg-donut-ring` for reduced-motion opt-out.
+ */
+export const SVGDonut: React.FC<SVGDonutProps> = ({
+  value,
+  size = 128,
+  strokeWidth = 10,
+  tone = 'primary',
+  label,
+  className = '',
+}) => {
+  const circleRef = useRef<SVGCircleElement>(null);
+  const clampedValue = Math.min(100, Math.max(0, value));
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const targetDash = (clampedValue / 100) * circumference;
+  const gapDash = circumference - targetDash;
+  const centre = size / 2;
+
+  const prefersReduced =
+    typeof window !== 'undefined'
+      ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      : false;
+
+  useEffect(() => {
+    const el = circleRef.current;
+    if (!el || prefersReduced) return;
+
+    // Start from 0
+    el.style.strokeDashoffset = String(circumference);
+    el.style.transition = 'none';
+
+    // Force a reflow so the initial state is painted before animating
+    void el.getBoundingClientRect();
+
+    el.style.transition = `stroke-dashoffset 800ms var(--ease-spring, cubic-bezier(0.16,1,0.3,1))`;
+    el.style.strokeDashoffset = String(gapDash > 0 ? circumference - targetDash : 0);
+  }, [value, circumference, targetDash, gapDash, prefersReduced]);
+
+  return (
+    <div className={`relative inline-flex items-center justify-center ${className}`} style={{ width: size, height: size }}>
+      <svg
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        role="img"
+        aria-label={`${clampedValue} out of 100`}
+        className="rotate-[-90deg]"
+      >
+        {/* Track ring */}
+        <circle
+          cx={centre}
+          cy={centre}
+          r={radius}
+          fill="none"
+          stroke="var(--border)"
+          strokeWidth={strokeWidth}
+        />
+        {/* Progress ring */}
+        <circle
+          ref={circleRef}
+          cx={centre}
+          cy={centre}
+          r={radius}
+          fill="none"
+          stroke={toneStroke[tone]}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeDasharray={`${targetDash} ${circumference - targetDash}`}
+          strokeDashoffset={prefersReduced ? 0 : circumference}
+          className="svg-donut-ring"
+        />
+      </svg>
+      {/* Centre label */}
+      {label && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          {label}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default SVGDonut;

@@ -7,18 +7,19 @@ import uvicorn
 # (including data/, .venv/, __pycache__/) and triggers a reload whenever a
 # cloned repo writes a file — killing in-flight analysis requests.
 _RELOAD_DIRS = ["backend", "services", "agents", "memory", "models"]
+_RELOAD_EXCLUDES = ["data/*", "data/**", "data/cloned_repos/**", "data/vector_store/**", "data/graphs/**", "__pycache__/**", ".cache/**", "*.log", "tests/**"]
 
 
 def main():
     """Starts the FastAPI backend application."""
-    host = os.environ.get("API_SERVER_HOST", "127.0.0.1")
-    port = int(os.environ.get("API_SERVER_PORT", "8001"))
+    from backend.settings import settings
     uvicorn.run(
         "backend.api:app",
-        host=host,
-        port=port,
-        reload=True,
+        host=settings.host,
+        port=settings.port,
+        reload=settings.app_env == "development",
         reload_dirs=_RELOAD_DIRS,
+        reload_excludes=_RELOAD_EXCLUDES,
     )
 
 

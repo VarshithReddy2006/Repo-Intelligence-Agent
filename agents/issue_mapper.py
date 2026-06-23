@@ -16,6 +16,7 @@ import json
 import hashlib
 import logging
 import os
+import threading
 from typing import List, Dict, Any, Optional
 
 from services.embedding_service import EmbeddingService
@@ -98,10 +99,11 @@ class IssueMapper:
         provider: Optional[BaseLLMProvider] = None,
     ) -> None:
         self._provider = provider or ProviderFactory.get_provider()
-
         self.embedding_service = embedding_service or EmbeddingService()
+
+        from backend.settings import settings
         self.chroma_store = chroma_store or ChromaStore(
-            persist_directory=os.environ.get("CHROMA_DB_PATH", "data/chroma_db")
+            persist_directory=settings.chroma_db_path
         )
         self.arch_context_service = arch_context_service or ArchContextService()
         self.issue_retrieval_service = issue_retrieval_service or IssueRetrievalService(
@@ -431,8 +433,6 @@ class IssueMapper:
         arch_block = arch_ctx.to_prompt_block()
 
         # ── LLM Call 2: generate plan ─────────────────────────────────
-        # Brief pause so Call 2 doesn't land in the same NIM rate-limit window as Call 1
-        import time; time.sleep(2)
         try:
             plan_data = _run_async(
                 self._generate_plan_async(
