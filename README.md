@@ -1,5 +1,3 @@
----
-
 <div align="center">
 
 <img src="docs/assets/banner.png" alt="Repo Intelligence Agent — Engineering Intelligence Platform" width="100%" />
