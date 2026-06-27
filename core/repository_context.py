@@ -8,7 +8,6 @@ from typing import Any, Dict, Optional
 import networkx as nx
 
 from models.api_surface import APISurface
-from models.call_graph import CallGraphSummary
 from models.churn import ChurnSummary
 from models.symbol import SymbolIndex
 from core.cache import AnalysisCache
@@ -113,17 +112,13 @@ class RepositoryContext:
         key = "graphs"
         subkey = "dependency"
         schema_version = 1
-        cached = self._cache.get(
-            self._repo_name, key, schema_version, subkey=subkey
-        )
+        cached = self._cache.get(self._repo_name, key, schema_version, subkey=subkey)
         if cached is not None:
             return cached
 
         graph = self._graph_service.load_graph(self._repo_name)
         if graph is not None:
-            self._cache.set(
-                self._repo_name, key, graph, schema_version, subkey=subkey
-            )
+            self._cache.set(self._repo_name, key, graph, schema_version, subkey=subkey)
         return graph
 
     @property
@@ -132,17 +127,13 @@ class RepositoryContext:
         key = "graphs"
         subkey = "call"
         schema_version = 1
-        cached = self._cache.get(
-            self._repo_name, key, schema_version, subkey=subkey
-        )
+        cached = self._cache.get(self._repo_name, key, schema_version, subkey=subkey)
         if cached is not None:
             return cached
 
         graph = self._graph_service.load_graph(f"{self._repo_name}_call_graph")
         if graph is not None:
-            self._cache.set(
-                self._repo_name, key, graph, schema_version, subkey=subkey
-            )
+            self._cache.set(self._repo_name, key, graph, schema_version, subkey=subkey)
         return graph
 
     def get_git_history(self, since_days: int = 30) -> Optional[ChurnSummary]:
@@ -150,9 +141,7 @@ class RepositoryContext:
         key = "churn"
         subkey = f"{since_days}d"
         schema_version = 1
-        cached = self._cache.get(
-            self._repo_name, key, schema_version, subkey=subkey
-        )
+        cached = self._cache.get(self._repo_name, key, schema_version, subkey=subkey)
         if cached is not None:
             return cached
 

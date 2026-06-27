@@ -1,9 +1,13 @@
 """Router exposing report endpoints versioned under /api/v1/report."""
 
 from fastapi import APIRouter, HTTPException, Query, Response
-from fastapi.responses import HTMLResponse, StreamingResponse
 
-from backend.dependencies import report_composer, html_renderer, markdown_renderer, pdf_renderer
+from backend.dependencies import (
+    report_composer,
+    html_renderer,
+    markdown_renderer,
+    pdf_renderer,
+)
 from models.report import ReportDataModel
 from storage.migrations import get_db_connection
 
@@ -20,7 +24,9 @@ def build_report(owner: str, repo: str) -> ReportDataModel:
     except ValueError as exc:
         raise HTTPException(status_code=412, detail=str(exc))
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to build report: {str(exc)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to build report: {str(exc)}"
+        )
 
 
 @router.get("/{owner}/{repo}/summary")
@@ -38,7 +44,7 @@ def get_report_summary(owner: str, repo: str):
             ORDER BY generated_at DESC 
             LIMIT 1
             """,
-            (repo_name,)
+            (repo_name,),
         )
         row = cursor.fetchone()
         if row is None:
@@ -55,7 +61,7 @@ def get_report_summary(owner: str, repo: str):
                 raise HTTPException(status_code=404, detail=str(exc))
             except Exception as exc:
                 raise HTTPException(status_code=500, detail=str(exc))
-        
+
         return {
             "repo_name": repo_name,
             "score": row[0],
@@ -68,15 +74,13 @@ def get_report_summary(owner: str, repo: str):
 
 @router.get("/{owner}/{repo}/download")
 def download_report(
-    owner: str,
-    repo: str,
-    format: str = Query("html", pattern="^(html|pdf|markdown)$")
+    owner: str, repo: str, format: str = Query("html", pattern="^(html|pdf|markdown)$")
 ):
     """Downloads the compiled health report in HTML, PDF (print-friendly HTML), or Markdown format."""
     repo_name = f"{owner}/{repo}"
     try:
         report = report_composer.compose_report(repo_name)
-        
+
         if format == "markdown":
             content_bytes = markdown_renderer.render(report)
             filename = f"{owner}_{repo}_report.md"
@@ -89,12 +93,12 @@ def download_report(
             content_bytes = html_renderer.render(report)
             filename = f"{owner}_{repo}_report.html"
             media_type = "text/html"
-            
-        headers = {
-            "Content-Disposition": f'attachment; filename="{filename}"'
-        }
+
+        headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
         return Response(content=content_bytes, media_type=media_type, headers=headers)
     except ValueError as exc:
         raise HTTPException(status_code=412, detail=str(exc))
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to generate download: {str(exc)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to generate download: {str(exc)}"
+        )

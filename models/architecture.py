@@ -5,7 +5,7 @@ intelligence pipeline.  They are kept separate from models/schemas.py to
 avoid touching existing schemas and to keep the architecture domain isolated.
 """
 
-from typing import List, Optional
+from typing import List
 from pydantic import BaseModel, Field
 
 

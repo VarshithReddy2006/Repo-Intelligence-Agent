@@ -35,12 +35,16 @@ class CallNode(BaseModel):
 
     node_id: str = Field(..., description="Unique node ID: file_path::qualified_name")
     name: str = Field(..., description="Plain symbol name.")
-    qualified: str = Field(..., description="Dot-qualified name (Class.method or function).")
+    qualified: str = Field(
+        ..., description="Dot-qualified name (Class.method or function)."
+    )
     file_path: str = Field(..., description="Relative file path.")
     line_number: int = Field(1, ge=1, description="1-indexed definition line.")
     language: str = Field("unknown", description="Source language.")
     symbol_type: str = Field("function", description="function | method | class")
-    parent_class: Optional[str] = Field(None, description="Enclosing class name for methods.")
+    parent_class: Optional[str] = Field(
+        None, description="Enclosing class name for methods."
+    )
     is_entry: bool = Field(False, description="True if no callers (call-graph root).")
     is_recursive: bool = Field(False, description="True if directly recursive.")
     fan_in: int = Field(0, ge=0, description="Number of distinct callers.")
@@ -61,7 +65,9 @@ class CallEdge(BaseModel):
     caller_id: str = Field(..., description="node_id of the caller.")
     callee_id: str = Field(..., description="node_id of the callee.")
     call_line: int = Field(0, ge=0, description="Line of the call expression.")
-    ambiguous: bool = Field(False, description="True for heuristic/uncertain resolutions.")
+    ambiguous: bool = Field(
+        False, description="True for heuristic/uncertain resolutions."
+    )
 
 
 class BlastRadiusResult(BaseModel):

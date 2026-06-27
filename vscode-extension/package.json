@@ -237,6 +237,7 @@
     "watch": "tsc -watch -p ./",
     "package": "vsce package",
     "test": "npm run compile && npx mocha --require module-alias/register out/test/api.test.js out/test/commands.test.js out/test/graph.test.js out/test/providers.test.js out/test/settings.test.js out/test/chat.test.js",
+    "test:integration": "npm run compile && npx mocha --require module-alias/register out/test/chat.integration.test.js",
     "lint": "eslint src --ext .ts",
     "pretest": "npm run compile"
   },

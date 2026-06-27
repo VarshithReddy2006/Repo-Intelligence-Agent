@@ -8,6 +8,7 @@ Drives one PR through three steps:
 Inputs come from environment variables set by `action.yml`. No analysis logic
 lives here — the backend owns the existing PRIntelligenceService pipeline.
 """
+
 from __future__ import annotations
 
 import logging
@@ -43,6 +44,7 @@ logger = logging.getLogger("repo-intelligence-action")
 
 # -- env / output helpers --------------------------------------------------
 
+
 def _required(name: str) -> str:
     val = os.environ.get(name, "").strip()
     if not val:
@@ -70,6 +72,7 @@ def _emit_output(key: str, value: str) -> None:
 
 # -- analysis client -------------------------------------------------------
 
+
 def fetch_pr_analysis(
     api_url: str,
     owner: str,
@@ -95,6 +98,7 @@ def fetch_pr_analysis(
 
 
 # -- github helpers --------------------------------------------------------
+
 
 class GitHub:
     """Minimal GitHub REST helper for the Action's three calls."""
@@ -178,6 +182,7 @@ class GitHub:
 
 # -- main ------------------------------------------------------------------
 
+
 def main() -> int:
     github_token = _required("INPUT_GITHUB_TOKEN")
     api_url = _required("INPUT_API_URL")
@@ -189,9 +194,7 @@ def main() -> int:
     check_name = _optional("INPUT_CHECK_NAME", "Repository Intelligence")
     github_api_url = _optional("GITHUB_API_URL", "https://api.github.com")
 
-    logger.info(
-        "Analyzing %s/%s PR #%d at %s", owner, repo, pr_number, head_sha[:7]
-    )
+    logger.info("Analyzing %s/%s PR #%d at %s", owner, repo, pr_number, head_sha[:7])
     started = time.perf_counter()
     try:
         result = fetch_pr_analysis(api_url, owner, repo, pr_number, api_token)

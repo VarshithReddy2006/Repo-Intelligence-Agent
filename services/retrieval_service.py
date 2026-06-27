@@ -12,7 +12,7 @@ Internal logic is now in services/chat/retrieval_pipeline.py.
 
 import asyncio
 import logging
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any, Optional
 
 from services.embedding_service import EmbeddingService
 from services.arch_context_service import ArchContextService
@@ -51,6 +51,7 @@ class RetrievalService:
         if self._pipeline is not None:
             return self._pipeline
         from services.chat.retrieval_pipeline import RetrievalPipeline
+
         self._pipeline = RetrievalPipeline(
             embedding_service=self.embedding_service,
             chroma_store=self.chroma_store,
@@ -75,6 +76,7 @@ class RetrievalService:
 
             if is_running:
                 import concurrent.futures
+
                 with concurrent.futures.ThreadPoolExecutor() as pool:
                     future = pool.submit(
                         asyncio.run,

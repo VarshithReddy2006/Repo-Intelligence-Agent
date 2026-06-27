@@ -216,8 +216,10 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
           if (raw.highlighted) return '#f59e0b';
           return CATEGORY_COLORS[raw.category] ?? '#71717a';
         }}
-        maskColor="rgba(9,9,11,0.7)"
-        style={{ backgroundColor: '#09090b', border: '1px solid #27272a' }}
+        maskColor="rgba(15, 23, 42, 0.75)"
+        className="!bg-slate-950/95 !border-slate-800/80 !rounded-xl !shadow-float overflow-hidden"
+        nodeStrokeWidth={0}
+        nodeBorderRadius={5}
       />
       <Background color="#27272a" gap={16} />
     </ReactFlow>

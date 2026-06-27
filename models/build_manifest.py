@@ -72,7 +72,9 @@ class BuildManifest(BaseModel):
         if "schema_version" in data and "schema_versions" not in data:
             val = data["schema_version"]
             data["schema_versions"] = {"global": val}
-        elif "schema_versions" in data and not isinstance(data["schema_versions"], dict):
+        elif "schema_versions" in data and not isinstance(
+            data["schema_versions"], dict
+        ):
             data["schema_versions"] = {"global": data["schema_versions"]}
 
         # Migrate embedding_schema <-> embedding_schema_version

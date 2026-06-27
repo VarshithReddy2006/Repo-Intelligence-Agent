@@ -24,7 +24,7 @@ Called by:
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional, Set
+from typing import List, Optional, Set
 
 from models.api_surface import ApiKind, ApiStatus, ClassifiedSymbol, Visibility
 from models.symbol import Symbol
@@ -76,8 +76,8 @@ _EXPRESS_ROUTE = re.compile(
 )
 
 # Private name patterns by language
-_PYTHON_PRIVATE_PREFIX = re.compile(r"^__[^_]")          # __name (dunder)
-_PYTHON_INTERNAL_PREFIX = re.compile(r"^_[^_]")          # _name (single underscore)
+_PYTHON_PRIVATE_PREFIX = re.compile(r"^__[^_]")  # __name (dunder)
+_PYTHON_INTERNAL_PREFIX = re.compile(r"^_[^_]")  # _name (single underscore)
 
 
 class SymbolClassifier:
@@ -95,7 +95,7 @@ class SymbolClassifier:
         symbol: Symbol,
         file_content: str,
         parsed_exports: Optional[List[str]] = None,  # from TreeSitterService output
-        all_list: Optional[Set[str]] = None,          # Python __all__ set
+        all_list: Optional[Set[str]] = None,  # Python __all__ set
         entry_point_files: Optional[Set[str]] = None,
         call_graph_fan_in: int = 0,
     ) -> ClassifiedSymbol:
@@ -141,18 +141,20 @@ class SymbolClassifier:
         )
 
         # ── Visibility + ApiKind classification ─────────────────────────
-        visibility, api_kind, confidence, reason = SymbolClassifier._classify_visibility(
-            symbol=symbol,
-            name=name,
-            lang=lang,
-            sym_type=sym_type,
-            file_path=file_path,
-            parent_class=parent_class,
-            decorators=decorators,
-            parsed_exports=parsed_exports,
-            all_list=all_list,
-            entry_point_files=entry_point_files or set(),
-            file_content=file_content,
+        visibility, api_kind, confidence, reason = (
+            SymbolClassifier._classify_visibility(
+                symbol=symbol,
+                name=name,
+                lang=lang,
+                sym_type=sym_type,
+                file_path=file_path,
+                parent_class=parent_class,
+                decorators=decorators,
+                parsed_exports=parsed_exports,
+                all_list=all_list,
+                entry_point_files=entry_point_files or set(),
+                file_content=file_content,
+            )
         )
 
         # Merge status reason if present
@@ -161,8 +163,11 @@ class SymbolClassifier:
             full_reason = f"{reason}; {status_reason}"
 
         # Orphan detection: public but nobody calls it
-        is_orphan = (visibility == Visibility.PUBLIC and call_graph_fan_in == 0
-                     and sym_type in ("function", "method", "class"))
+        is_orphan = (
+            visibility == Visibility.PUBLIC
+            and call_graph_fan_in == 0
+            and sym_type in ("function", "method", "class")
+        )
 
         return ClassifiedSymbol(
             name=name,
@@ -264,9 +269,12 @@ class SymbolClassifier:
         if lang in ("javascript", "typescript", "tsx") and parsed_exports is not None:
             if name in parsed_exports:
                 kind = (
-                    ApiKind.PUBLIC_CLASS if sym_type == "class"
-                    else ApiKind.INTERFACE if sym_type == "interface"
-                    else ApiKind.ENUM_TYPE if sym_type == "enum"
+                    ApiKind.PUBLIC_CLASS
+                    if sym_type == "class"
+                    else ApiKind.INTERFACE
+                    if sym_type == "interface"
+                    else ApiKind.ENUM_TYPE
+                    if sym_type == "enum"
                     else ApiKind.EXPORTED
                 )
                 return (
@@ -279,7 +287,11 @@ class SymbolClassifier:
         # ── 7. Python __all__ list ─────────────────────────────────────
         if lang == "python" and all_list is not None:
             if name in all_list:
-                kind = ApiKind.PUBLIC_CLASS if sym_type == "class" else ApiKind.PUBLIC_FUNCTION
+                kind = (
+                    ApiKind.PUBLIC_CLASS
+                    if sym_type == "class"
+                    else ApiKind.PUBLIC_FUNCTION
+                )
                 return (
                     Visibility.PUBLIC,
                     kind,
@@ -318,8 +330,18 @@ class SymbolClassifier:
         norm = file_path.replace("\\", "/").lower()
 
         # Test / spec files → internal
-        if any(d in norm for d in ("/test", "/tests", "/spec", "/specs",
-                                    "__test__", ".test.", ".spec.")):
+        if any(
+            d in norm
+            for d in (
+                "/test",
+                "/tests",
+                "/spec",
+                "/specs",
+                "__test__",
+                ".test.",
+                ".spec.",
+            )
+        ):
             return (
                 Visibility.INTERNAL,
                 ApiKind.INTERNAL_HELPER,
@@ -328,8 +350,17 @@ class SymbolClassifier:
             )
 
         # Private directories
-        if any(d in norm for d in ("/_internal/", "/internal/", "/private/",
-                                    "/_private/", "/_helpers/", "/helpers/")):
+        if any(
+            d in norm
+            for d in (
+                "/_internal/",
+                "/internal/",
+                "/private/",
+                "/_private/",
+                "/_helpers/",
+                "/helpers/",
+            )
+        ):
             return (
                 Visibility.PRIVATE,
                 ApiKind.INTERNAL_HELPER,
@@ -338,8 +369,17 @@ class SymbolClassifier:
             )
 
         # Public API directories
-        if any(d in norm for d in ("/api/", "/routes/", "/endpoints/",
-                                    "/controllers/", "/views/", "/handlers/")):
+        if any(
+            d in norm
+            for d in (
+                "/api/",
+                "/routes/",
+                "/endpoints/",
+                "/controllers/",
+                "/views/",
+                "/handlers/",
+            )
+        ):
             kind = ApiKind.ROUTE if sym_type == "function" else ApiKind.PUBLIC_CLASS
             return (
                 Visibility.PUBLIC,
@@ -358,8 +398,14 @@ class SymbolClassifier:
             )
 
         # ── 12. Python class / function at module level → PUBLIC (inferred) ─
-        if lang == "python" and sym_type in ("function", "class") and parent_class is None:
-            kind = ApiKind.PUBLIC_CLASS if sym_type == "class" else ApiKind.PUBLIC_FUNCTION
+        if (
+            lang == "python"
+            and sym_type in ("function", "class")
+            and parent_class is None
+        ):
+            kind = (
+                ApiKind.PUBLIC_CLASS if sym_type == "class" else ApiKind.PUBLIC_FUNCTION
+            )
             return (
                 Visibility.PUBLIC,
                 kind,
@@ -403,10 +449,18 @@ class SymbolClassifier:
         dec_text = " ".join(decorators)
 
         if _DEPRECATED_MARKERS.search(snippet) or _DEPRECATED_MARKERS.search(dec_text):
-            return (ApiStatus.DEPRECATED, "Deprecation marker detected near definition.")
+            return (
+                ApiStatus.DEPRECATED,
+                "Deprecation marker detected near definition.",
+            )
 
-        if _EXPERIMENTAL_MARKERS.search(snippet) or _EXPERIMENTAL_MARKERS.search(dec_text):
-            return (ApiStatus.EXPERIMENTAL, "Experimental marker detected near definition.")
+        if _EXPERIMENTAL_MARKERS.search(snippet) or _EXPERIMENTAL_MARKERS.search(
+            dec_text
+        ):
+            return (
+                ApiStatus.EXPERIMENTAL,
+                "Experimental marker detected near definition.",
+            )
 
         return (ApiStatus.STABLE, "")
 
@@ -439,27 +493,34 @@ class SymbolClassifier:
     )
 
     @classmethod
-    def _estimate_param_count(cls, file_content: str, line_number: int, lang: str) -> int:
+    def _estimate_param_count(
+        cls, file_content: str, line_number: int, lang: str
+    ) -> int:
         """Count formal parameters in the function definition on or near line_number."""
         lines = file_content.splitlines()
         # Look at 3 lines starting from the definition
         start = max(0, line_number - 1)
-        snippet = "\n".join(lines[start: start + 3])
+        snippet = "\n".join(lines[start : start + 3])
 
         pattern = cls._PY_PARAM_RE if lang == "python" else cls._JS_PARAM_RE
         m = pattern.search(snippet)
         if not m:
             return 0
 
-        param_str = m.group(1) or (m.group(2) if m.lastindex and m.lastindex >= 2 else "")
+        param_str = m.group(1) or (
+            m.group(2) if m.lastindex and m.lastindex >= 2 else ""
+        )
         if not param_str or not param_str.strip():
             return 0
 
         # Remove type annotations and defaults, count commas
-        raw = re.sub(r"=[^,)]+", "", param_str)   # remove defaults
-        raw = re.sub(r":\s*[^,)]+", "", raw)       # remove type hints
-        params = [p.strip() for p in raw.split(",")
-                  if p.strip() and p.strip() not in ("self", "cls", "*", "**")]
+        raw = re.sub(r"=[^,)]+", "", param_str)  # remove defaults
+        raw = re.sub(r":\s*[^,)]+", "", raw)  # remove type hints
+        params = [
+            p.strip()
+            for p in raw.split(",")
+            if p.strip() and p.strip() not in ("self", "cls", "*", "**")
+        ]
         return len(params)
 
     # ------------------------------------------------------------------

@@ -20,7 +20,7 @@ import threading
 import time
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,8 @@ _MAX_FILES = 10
 @dataclass
 class ConversationTurn:
     """A single question-answer pair in a conversation."""
-    role: str            # "user" or "assistant"
+
+    role: str  # "user" or "assistant"
     content: str
     timestamp: float = field(default_factory=time.time)
 
@@ -57,6 +58,7 @@ class ConversationSession:
         last_intent:      The IntentType of the last classified turn.
         last_active:      Unix timestamp of the last activity.
     """
+
     session_id: str
     repo_name: str
     turns: List[ConversationTurn] = field(default_factory=list)
@@ -111,14 +113,23 @@ class ConversationSession:
         # Replace isolated "it", "this", "that", "them" with last entity
         if self.last_entities:
             last = self.last_entities[0]
-            pronouns = [" it ", " it?", " it.", " it,",
-                        " this?", " that?", " them ", " them?"]
+            pronouns = [
+                " it ",
+                " it?",
+                " it.",
+                " it,",
+                " this?",
+                " that?",
+                " them ",
+                " them?",
+            ]
             for p in pronouns:
                 if p in f" {q_lower} ":
                     question = question.replace(p.strip(), last, 1)
                     logger.debug(
                         "ConversationMemory: resolved pronoun '%s' → '%s'",
-                        p.strip(), last,
+                        p.strip(),
+                        last,
                     )
                     break
 
@@ -130,10 +141,7 @@ class ConversationSession:
 
     def get_history_for_llm(self) -> List[Dict]:
         """Return turns formatted for LLM provider history."""
-        return [
-            {"role": t.role, "content": t.content}
-            for t in self.turns
-        ]
+        return [{"role": t.role, "content": t.content} for t in self.turns]
 
     @property
     def is_expired(self) -> bool:
@@ -178,9 +186,7 @@ class ConversationMemoryStore:
                     session_id=session_id,
                     repo_name=repo_name,
                 )
-                logger.debug(
-                    "ConversationMemory: new session key=%s", key
-                )
+                logger.debug("ConversationMemory: new session key=%s", key)
             return self._sessions[key]
 
     def clear_session(self, repo_name: str, session_id: str = "default") -> None:

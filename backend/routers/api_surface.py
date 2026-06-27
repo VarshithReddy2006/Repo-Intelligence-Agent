@@ -37,6 +37,7 @@ router = APIRouter(prefix="/api/api-surface", tags=["API Surface"])
 # Request models
 # ---------------------------------------------------------------------------
 
+
 class APISurfaceBuildRequest(BaseModel):
     repo: str = Field(..., description="Repository identifier (owner/repo)")
 
@@ -44,6 +45,7 @@ class APISurfaceBuildRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
 
 @router.post("/build")
 async def build_api_surface(request: APISurfaceBuildRequest):
@@ -68,8 +70,8 @@ async def build_api_surface(request: APISurfaceBuildRequest):
 
     async def event_generator():
         try:
-            local_path = (
-                ANALYSIS_STORE[repo_name]["analysis"].metadata.get("local_path", "")
+            local_path = ANALYSIS_STORE[repo_name]["analysis"].metadata.get(
+                "local_path", ""
             )
             files = await asyncio.to_thread(
                 github_service.extract_source_files, local_path
@@ -95,7 +97,9 @@ async def build_api_surface(request: APISurfaceBuildRequest):
         except Exception as exc:
             logger.error(
                 "API surface build SSE error for %s: %s",
-                repo_name, exc, exc_info=True,
+                repo_name,
+                exc,
+                exc_info=True,
             )
             yield f"data: {json.dumps({'status': 'error', 'message': str(exc)})}\n\n"
             yield f"data: {json.dumps({'status': 'done'})}\n\n"

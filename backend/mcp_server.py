@@ -1,22 +1,23 @@
 """Model Context Protocol (MCP) Stdio Server.
 
-Exposes the Repo Intelligence Agent's analysis engines (symbols, call graphs, 
+Exposes the Repo Intelligence Agent's analysis engines (symbols, call graphs,
 dependency graphs, dead code, PR analysis, and retrieval) as standard MCP tools.
 """
 
 import json
-import os
 import sys
 import traceback
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 # Redirect all root logging to stderr. Stdout MUST be preserved exclusively for JSON-RPC.
 logger = logging.getLogger()
 for handler in list(logger.handlers):
     logger.removeHandler(handler)
 stderr_handler = logging.StreamHandler(sys.stderr)
-stderr_handler.setFormatter(logging.Formatter("[MCP Log] %(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+stderr_handler.setFormatter(
+    logging.Formatter("[MCP Log] %(asctime)s - %(name)s - %(levelname)s - %(message)s")
+)
 logger.addHandler(stderr_handler)
 logger.setLevel(logging.INFO)
 
@@ -28,7 +29,7 @@ TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {},
-        }
+        },
     },
     {
         "name": "get_repository_summary",
@@ -37,10 +38,10 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "owner": {"type": "string", "description": "Owner/organization name"},
-                "repo": {"type": "string", "description": "Repository name"}
+                "repo": {"type": "string", "description": "Repository name"},
             },
-            "required": ["owner", "repo"]
-        }
+            "required": ["owner", "repo"],
+        },
     },
     {
         "name": "get_file_symbols",
@@ -50,10 +51,13 @@ TOOLS = [
             "properties": {
                 "owner": {"type": "string", "description": "Repository owner"},
                 "repo": {"type": "string", "description": "Repository name"},
-                "file_path": {"type": "string", "description": "Relative file path (e.g. core/cache.py)"}
+                "file_path": {
+                    "type": "string",
+                    "description": "Relative file path (e.g. core/cache.py)",
+                },
             },
-            "required": ["owner", "repo", "file_path"]
-        }
+            "required": ["owner", "repo", "file_path"],
+        },
     },
     {
         "name": "get_symbol_definition",
@@ -63,10 +67,13 @@ TOOLS = [
             "properties": {
                 "owner": {"type": "string", "description": "Repository owner"},
                 "repo": {"type": "string", "description": "Repository name"},
-                "symbol_name": {"type": "string", "description": "Name of the class, function, or method"}
+                "symbol_name": {
+                    "type": "string",
+                    "description": "Name of the class, function, or method",
+                },
             },
-            "required": ["owner", "repo", "symbol_name"]
-        }
+            "required": ["owner", "repo", "symbol_name"],
+        },
     },
     {
         "name": "get_symbol_references",
@@ -76,10 +83,10 @@ TOOLS = [
             "properties": {
                 "owner": {"type": "string", "description": "Repository owner"},
                 "repo": {"type": "string", "description": "Repository name"},
-                "symbol_name": {"type": "string", "description": "Name of the symbol"}
+                "symbol_name": {"type": "string", "description": "Name of the symbol"},
             },
-            "required": ["owner", "repo", "symbol_name"]
-        }
+            "required": ["owner", "repo", "symbol_name"],
+        },
     },
     {
         "name": "get_call_graph",
@@ -88,10 +95,10 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "owner": {"type": "string", "description": "Repository owner"},
-                "repo": {"type": "string", "description": "Repository name"}
+                "repo": {"type": "string", "description": "Repository name"},
             },
-            "required": ["owner", "repo"]
-        }
+            "required": ["owner", "repo"],
+        },
     },
     {
         "name": "get_dead_code",
@@ -100,10 +107,10 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "owner": {"type": "string", "description": "Repository owner"},
-                "repo": {"type": "string", "description": "Repository name"}
+                "repo": {"type": "string", "description": "Repository name"},
             },
-            "required": ["owner", "repo"]
-        }
+            "required": ["owner", "repo"],
+        },
     },
     {
         "name": "query_codebase",
@@ -113,11 +120,14 @@ TOOLS = [
             "properties": {
                 "owner": {"type": "string", "description": "Repository owner"},
                 "repo": {"type": "string", "description": "Repository name"},
-                "query": {"type": "string", "description": "Question or query text about the code"}
+                "query": {
+                    "type": "string",
+                    "description": "Question or query text about the code",
+                },
             },
-            "required": ["owner", "repo", "query"]
-        }
-    }
+            "required": ["owner", "repo", "query"],
+        },
+    },
 ]
 
 
@@ -137,7 +147,7 @@ def run_mcp_server() -> None:
         symbol_service,
         call_graph_service,
         dead_code_service,
-        retrieval_service
+        retrieval_service,
     )
 
     while True:
@@ -145,7 +155,7 @@ def run_mcp_server() -> None:
             line = sys.stdin.readline()
             if not line:
                 break
-            
+
             request = json.loads(line.strip())
             req_id = request.get("id")
             method = request.get("method")
@@ -153,87 +163,93 @@ def run_mcp_server() -> None:
 
             # 1. Initialization handshake
             if method == "initialize":
-                send_response({
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "result": {
-                        "protocolVersion": "2024-11-05",
-                        "capabilities": {
-                            "tools": {}
+                send_response(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "result": {
+                            "protocolVersion": "2024-11-05",
+                            "capabilities": {"tools": {}},
+                            "serverInfo": {
+                                "name": "repo-intelligence-mcp",
+                                "version": "1.0.0",
+                            },
                         },
-                        "serverInfo": {
-                            "name": "repo-intelligence-mcp",
-                            "version": "1.0.0"
-                        }
                     }
-                })
+                )
 
             # 2. List tools
             elif method == "tools/list":
-                send_response({
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "result": {
-                        "tools": TOOLS
-                    }
-                })
+                send_response(
+                    {"jsonrpc": "2.0", "id": req_id, "result": {"tools": TOOLS}}
+                )
 
             # 3. Call tool
             elif method == "tools/call":
                 tool_name = params.get("name")
                 arguments = params.get("arguments", {})
-                
+
                 result_content = []
                 try:
                     tool_result = execute_tool(
-                        tool_name, arguments, ANALYSIS_STORE, symbol_service,
-                        call_graph_service, dead_code_service, retrieval_service
+                        tool_name,
+                        arguments,
+                        ANALYSIS_STORE,
+                        symbol_service,
+                        call_graph_service,
+                        dead_code_service,
+                        retrieval_service,
                     )
-                    result_content.append({
-                        "type": "text",
-                        "text": json.dumps(tool_result, indent=2)
-                    })
-                    send_response({
-                        "jsonrpc": "2.0",
-                        "id": req_id,
-                        "result": {
-                            "content": result_content
+                    result_content.append(
+                        {"type": "text", "text": json.dumps(tool_result, indent=2)}
+                    )
+                    send_response(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": req_id,
+                            "result": {"content": result_content},
                         }
-                    })
+                    )
                 except Exception as tool_err:
                     logger.error(f"Tool {tool_name} failed: {tool_err}")
-                    send_response({
-                        "jsonrpc": "2.0",
-                        "id": req_id,
-                        "error": {
-                            "code": -32603,
-                            "message": f"Tool execution failed: {str(tool_err)}",
-                            "data": traceback.format_exc()
+                    send_response(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": req_id,
+                            "error": {
+                                "code": -32603,
+                                "message": f"Tool execution failed: {str(tool_err)}",
+                                "data": traceback.format_exc(),
+                            },
                         }
-                    })
+                    )
 
             # 4. Unknown/unsupported JSON-RPC method
             else:
                 if req_id is not None:
-                    send_response({
-                        "jsonrpc": "2.0",
-                        "id": req_id,
-                        "error": {
-                            "code": -32601,
-                            "message": f"Method {method} not found."
+                    send_response(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": req_id,
+                            "error": {
+                                "code": -32601,
+                                "message": f"Method {method} not found.",
+                            },
                         }
-                    })
+                    )
         except Exception as exc:
             logger.error(f"Error handling MCP request: {exc}")
             # If request could not be parsed, send generic error
-            send_response({
-                "jsonrpc": "2.0",
-                "error": {
-                    "code": -32700,
-                    "message": "Parse error",
-                    "data": str(exc)
+            send_response(
+                {
+                    "jsonrpc": "2.0",
+                    "error": {
+                        "code": -32700,
+                        "message": "Parse error",
+                        "data": str(exc),
+                    },
                 }
-            })
+            )
 
 
 def execute_tool(
@@ -243,7 +259,7 @@ def execute_tool(
     symbols: Any,
     call_graph: Any,
     dead_code: Any,
-    retrieval: Any
+    retrieval: Any,
 ) -> Any:
     """Invokes the corresponding backend service and returns serializable data."""
     if name == "list_repositories":
@@ -255,18 +271,26 @@ def execute_tool(
 
     if name == "get_repository_summary":
         if repo_name not in store:
-            raise ValueError(f"Repository '{repo_name}' is not indexed. Analyze it first.")
+            raise ValueError(
+                f"Repository '{repo_name}' is not indexed. Analyze it first."
+            )
         entry = store[repo_name]
         return {
-            "analysis": entry["analysis"].model_dump() if hasattr(entry["analysis"], "model_dump") else entry["analysis"],
-            "architecture": entry["architecture"].model_dump() if hasattr(entry["architecture"], "model_dump") else entry["architecture"]
+            "analysis": entry["analysis"].model_dump()
+            if hasattr(entry["analysis"], "model_dump")
+            else entry["analysis"],
+            "architecture": entry["architecture"].model_dump()
+            if hasattr(entry["architecture"], "model_dump")
+            else entry["architecture"],
         }
 
     elif name == "get_file_symbols":
         file_path = args.get("file_path", "").strip()
         res = symbols.get_file_symbols(repo_name, file_path)
         if res is None:
-            raise ValueError(f"No symbol index found for file '{file_path}' in repo '{repo_name}'.")
+            raise ValueError(
+                f"No symbol index found for file '{file_path}' in repo '{repo_name}'."
+            )
         return [s.model_dump() for s in res]
 
     elif name == "get_symbol_definition":
@@ -291,15 +315,21 @@ def execute_tool(
         # Check if repo metadata exists
         if repo_name not in store:
             raise ValueError(f"Repository '{repo_name}' is not indexed.")
-        local_path = store[repo_name]["analysis"].metadata.get("local_path", "")
+        store[repo_name]["analysis"].metadata.get("local_path", "")
         # Run dead code sweep
         from services.dead_code_service import DeadCodeService
+
         dc_service = DeadCodeService()
-        from backend.dependencies import github_service, graph_service, architecture_service
+        from backend.dependencies import (
+            github_service,
+            graph_service,
+            architecture_service,
+        )
+
         dc_service.github_service = github_service
         dc_service.graph_service = graph_service
         dc_service.architecture_service = architecture_service
-        
+
         # Build graphs if not existing
         res = dc_service.analyze(repo_name)
         return res.model_dump()
@@ -310,9 +340,12 @@ def execute_tool(
         res = retrieval.retrieve_and_evaluate(repo_name, query)
         return {
             "answer": res.get("answer", ""),
-            "sources": [s.model_dump() if hasattr(s, "model_dump") else s for s in res.get("sources", [])],
+            "sources": [
+                s.model_dump() if hasattr(s, "model_dump") else s
+                for s in res.get("sources", [])
+            ],
             "confidence": res.get("confidence", 0.0),
-            "verified": res.get("verified", False)
+            "verified": res.get("verified", False),
         }
 
     else:

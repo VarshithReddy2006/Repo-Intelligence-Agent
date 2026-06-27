@@ -6,9 +6,8 @@ The report summarises timings, stage breakdowns, and recommendations.
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import List
 
 
 @dataclass
@@ -24,6 +23,7 @@ class ChatPerformanceReport:
 
     Generated from a completed PipelineTrace.
     """
+
     repo_name: str
     question_length: int
     stages: List[StageTiming] = field(default_factory=list)
@@ -50,7 +50,9 @@ class ChatPerformanceReport:
             "  Stage Breakdown:",
         ]
         for s in self.stages:
-            lines.append(f"    {s.name:<25} {s.elapsed_ms:>8.1f} ms  ({s.pct_of_total:>5.1f}%)")
+            lines.append(
+                f"    {s.name:<25} {s.elapsed_ms:>8.1f} ms  ({s.pct_of_total:>5.1f}%)"
+            )
         lines.append(f"    {'TOTAL':<25} {self.total_ms:>8.1f} ms")
         return lines
 
@@ -61,13 +63,13 @@ class ChatPerformanceReport:
 def build_report_from_trace(trace) -> ChatPerformanceReport:
     """Build a ChatPerformanceReport from a completed PipelineTrace."""
     stages = [
-        StageTiming("Intent Detection",         0.5),    # sub-ms, negligible
-        StageTiming("Intent Router",             trace.router_elapsed_ms),
-        StageTiming("Embedding",                 trace.embed_ms),
-        StageTiming("Vector Search",             trace.search_ms),
-        StageTiming("Reranking",                 trace.rerank_ms),
-        StageTiming("Context Building",          0.5),    # sub-ms
-        StageTiming("LLM / Streaming",           trace.llm_latency_ms),
+        StageTiming("Intent Detection", 0.5),  # sub-ms, negligible
+        StageTiming("Intent Router", trace.router_elapsed_ms),
+        StageTiming("Embedding", trace.embed_ms),
+        StageTiming("Vector Search", trace.search_ms),
+        StageTiming("Reranking", trace.rerank_ms),
+        StageTiming("Context Building", 0.5),  # sub-ms
+        StageTiming("LLM / Streaming", trace.llm_latency_ms),
     ]
 
     total = trace.total_ms or sum(s.elapsed_ms for s in stages)

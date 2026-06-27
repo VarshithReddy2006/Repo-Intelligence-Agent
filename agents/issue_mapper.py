@@ -16,7 +16,6 @@ import json
 import hashlib
 import logging
 import os
-import threading
 from typing import List, Dict, Any, Optional
 
 from services.embedding_service import EmbeddingService
@@ -73,6 +72,7 @@ def _run_async(coro):
         loop = asyncio.get_event_loop()
         if loop.is_running():
             import concurrent.futures
+
             with concurrent.futures.ThreadPoolExecutor() as pool:
                 return pool.submit(asyncio.run, coro).result()
         else:
@@ -93,7 +93,7 @@ class IssueMapper:
         self,
         embedding_service: Optional[EmbeddingService] = None,
         chroma_store: Optional[ChromaStore] = None,
-        client: Any = None,                    # ignored — legacy Gemini arg
+        client: Any = None,  # ignored — legacy Gemini arg
         arch_context_service: Optional[ArchContextService] = None,
         issue_retrieval_service: Optional[IssueRetrievalService] = None,
         provider: Optional[BaseLLMProvider] = None,
@@ -102,6 +102,7 @@ class IssueMapper:
         self.embedding_service = embedding_service or EmbeddingService()
 
         from backend.settings import settings
+
         self.chroma_store = chroma_store or ChromaStore(
             persist_directory=settings.chroma_db_path
         )
@@ -137,10 +138,10 @@ class IssueMapper:
             meta = c.get("metadata", {})
             path = meta.get("file_path", "unknown")
             content = c.get("content", "")
-            candidate_lines.append(
-                f"[{idx}] {path}\n{content[:800]}"
-            )
-        candidates_str = "\n\n---\n\n".join(candidate_lines) if candidate_lines else "No candidates."
+            candidate_lines.append(f"[{idx}] {path}\n{content[:800]}")
+        candidates_str = (
+            "\n\n---\n\n".join(candidate_lines) if candidate_lines else "No candidates."
+        )
 
         system_instr = (
             "You are an expert software engineer. You will receive a GitHub issue and a set of "
@@ -151,12 +152,12 @@ class IssueMapper:
             "Base file ranking ONLY on the provided snippets — do not invent file paths.\n"
             "Return a single JSON object matching this schema exactly:\n"
             "{\n"
-            "  \"summary\": \"concise one-line description of the issue\",\n"
-            "  \"issue_type\": \"bug\",\n"
-            "  \"keywords\": [\"keyword1\", \"keyword2\"],\n"
-            "  \"affected_domains\": [\"auth\", \"frontend\"],\n"
-            "  \"files\": [\n"
-            "    {\"path\": \"exact/path/from/snippets\", \"score\": 0.95}\n"
+            '  "summary": "concise one-line description of the issue",\n'
+            '  "issue_type": "bug",\n'
+            '  "keywords": ["keyword1", "keyword2"],\n'
+            '  "affected_domains": ["auth", "frontend"],\n'
+            '  "files": [\n'
+            '    {"path": "exact/path/from/snippets", "score": 0.95}\n'
             "  ]\n"
             "}"
         )
@@ -212,13 +213,19 @@ class IssueMapper:
                 context_lines.append(f"--- {path} ---\n{content[:600]}")
 
         context_block = (
-            "\nRetrieved codebase context:\n"
-            "=======================================================\n"
-            + "\n\n".join(context_lines)
-            + "\n=======================================================\n"
-        ) if context_lines else ""
+            (
+                "\nRetrieved codebase context:\n"
+                "=======================================================\n"
+                + "\n\n".join(context_lines)
+                + "\n=======================================================\n"
+            )
+            if context_lines
+            else ""
+        )
 
-        file_paths_str = ", ".join(relevant_files) if relevant_files else "none identified"
+        file_paths_str = (
+            ", ".join(relevant_files) if relevant_files else "none identified"
+        )
 
         system_instr = (
             "You are a Repo Intelligence Agent. Generate a detailed, repository-specific "
@@ -231,17 +238,17 @@ class IssueMapper:
             "- Estimate complexity as 'low', 'medium', or 'high'.\n"
             "Return a JSON object matching this schema exactly:\n"
             "{\n"
-            "  \"affected_components\": [\"Services\"],\n"
-            "  \"complexity\": \"medium\",\n"
-            "  \"steps\": [\n"
+            '  "affected_components": ["Services"],\n'
+            '  "complexity": "medium",\n'
+            '  "steps": [\n'
             "    {\n"
-            "      \"step_number\": 1,\n"
-            "      \"description\": \"Detailed, specific description referencing actual code\",\n"
-            "      \"files_to_modify\": [\"exact/file/path\"]\n"
+            '      "step_number": 1,\n'
+            '      "description": "Detailed, specific description referencing actual code",\n'
+            '      "files_to_modify": ["exact/file/path"]\n'
             "    }\n"
             "  ],\n"
-            "  \"risk_areas\": [\"describe risks\"],\n"
-            "  \"dependencies\": []\n"
+            '  "risk_areas": ["describe risks"],\n'
+            '  "dependencies": []\n'
             "}"
         )
 
@@ -276,7 +283,9 @@ class IssueMapper:
             score = 1.0 / (1.0 + dist)
             if path:
                 file_scores[path] = max(file_scores.get(path, 0.0), score)
-        sorted_files = sorted(file_scores.items(), key=lambda x: x[1], reverse=True)[:top_n]
+        sorted_files = sorted(file_scores.items(), key=lambda x: x[1], reverse=True)[
+            :top_n
+        ]
         return [{"path": p, "score": round(s, 3)} for p, s in sorted_files]
 
     @staticmethod
@@ -286,13 +295,88 @@ class IssueMapper:
         Maps path segments to the standard component vocabulary without an LLM call.
         """
         _RULES: List[tuple] = [
-            ({"auth", "login", "signup", "oauth", "token", "password", "session", "jwt"}, "Authentication"),
-            ({"controller", "router", "route", "endpoint", "api", "handler", "middleware"}, "API Layer"),
-            ({"model", "schema", "entity", "migration", "prisma", "sequelize", "mongoose"}, "Models"),
-            ({"service", "repository", "dao", "store", "manager", "util", "helper", "lib"}, "Services"),
-            ({"database", "db", "sqlite", "postgres", "mysql", "mongo", "redis", "chroma"}, "Database"),
-            ({"frontend", "component", "page", "view", "ui", "react", "jsx", "tsx", "css",
-              "style", "layout", "hook", "store", "context"}, "Frontend"),
+            (
+                {
+                    "auth",
+                    "login",
+                    "signup",
+                    "oauth",
+                    "token",
+                    "password",
+                    "session",
+                    "jwt",
+                },
+                "Authentication",
+            ),
+            (
+                {
+                    "controller",
+                    "router",
+                    "route",
+                    "endpoint",
+                    "api",
+                    "handler",
+                    "middleware",
+                },
+                "API Layer",
+            ),
+            (
+                {
+                    "model",
+                    "schema",
+                    "entity",
+                    "migration",
+                    "prisma",
+                    "sequelize",
+                    "mongoose",
+                },
+                "Models",
+            ),
+            (
+                {
+                    "service",
+                    "repository",
+                    "dao",
+                    "store",
+                    "manager",
+                    "util",
+                    "helper",
+                    "lib",
+                },
+                "Services",
+            ),
+            (
+                {
+                    "database",
+                    "db",
+                    "sqlite",
+                    "postgres",
+                    "mysql",
+                    "mongo",
+                    "redis",
+                    "chroma",
+                },
+                "Database",
+            ),
+            (
+                {
+                    "frontend",
+                    "component",
+                    "page",
+                    "view",
+                    "ui",
+                    "react",
+                    "jsx",
+                    "tsx",
+                    "css",
+                    "style",
+                    "layout",
+                    "hook",
+                    "store",
+                    "context",
+                },
+                "Frontend",
+            ),
         ]
         found: set = set()
         for path in file_paths:
@@ -330,10 +414,21 @@ class IssueMapper:
             hint = ""
             for line in snippet.splitlines():
                 stripped = line.strip()
-                if stripped and any(kw in stripped for kw in (
-                    "function", "const ", "class ", "def ", "export",
-                    "async ", "router.", "app.", "module.", "describe(",
-                )):
+                if stripped and any(
+                    kw in stripped
+                    for kw in (
+                        "function",
+                        "const ",
+                        "class ",
+                        "def ",
+                        "export",
+                        "async ",
+                        "router.",
+                        "app.",
+                        "module.",
+                        "describe(",
+                    )
+                ):
                     hint = stripped[:120]
                     break
 
@@ -349,18 +444,22 @@ class IssueMapper:
                     f"Apply targeted fix and add input validation for edge cases."
                 )
 
-            steps.append({
-                "step_number": i + 1,
-                "description": description,
-                "files_to_modify": [file_path],
-            })
+            steps.append(
+                {
+                    "step_number": i + 1,
+                    "description": description,
+                    "files_to_modify": [file_path],
+                }
+            )
 
         if not steps:
-            steps = [{
-                "step_number": 1,
-                "description": f"Investigate and resolve: {issue_summary}",
-                "files_to_modify": [],
-            }]
+            steps = [
+                {
+                    "step_number": 1,
+                    "description": f"Investigate and resolve: {issue_summary}",
+                    "files_to_modify": [],
+                }
+            ]
         return steps
 
     # ------------------------------------------------------------------
@@ -387,7 +486,9 @@ class IssueMapper:
             logger.error("Retrieval failed: %s", exc)
             chunks = []
 
-        logger.info("[IssueMapper] Retrieved %d chunks for '%s'", len(chunks), issue_title)
+        logger.info(
+            "[IssueMapper] Retrieved %d chunks for '%s'", len(chunks), issue_title
+        )
 
         # ── LLM Call 1: parse + rank ──────────────────────────────────
         issue_hash = hashlib.sha256(issue_text.strip().encode()).hexdigest()
@@ -419,9 +520,7 @@ class IssueMapper:
                     "files": self._rank_by_distance(chunks),
                 }
 
-        scored_files = [
-            f for f in parsed_and_ranked.get("files", []) if f.get("path")
-        ]
+        scored_files = [f for f in parsed_and_ranked.get("files", []) if f.get("path")]
         # If LLM returned no files, fall back to distance ranking
         if not scored_files:
             scored_files = self._rank_by_distance(chunks)
@@ -452,7 +551,9 @@ class IssueMapper:
                 "affected_components": inferred_components,
                 "complexity": "medium",
                 "steps": self._build_fallback_steps(relevant_files, chunks, summary),
-                "risk_areas": ["Plan generated from retrieval context — verify before applying"],
+                "risk_areas": [
+                    "Plan generated from retrieval context — verify before applying"
+                ],
                 "dependencies": [],
             }
 
@@ -460,11 +561,13 @@ class IssueMapper:
         confidence = _distance_confidence(chunks)
         verified = len(chunks) > 0 and bool(relevant_files)
 
-        sources = sorted({
-            c.get("metadata", {}).get("file_path", "")
-            for c in chunks
-            if c.get("metadata", {}).get("file_path")
-        })
+        sources = sorted(
+            {
+                c.get("metadata", {}).get("file_path", "")
+                for c in chunks
+                if c.get("metadata", {}).get("file_path")
+            }
+        )
 
         return {
             "issue_summary": parsed_and_ranked.get("summary", ""),

@@ -1,5 +1,4 @@
 import os
-import sqlite3
 import pytest
 from backend.settings import settings
 from storage.migrations import run_migrations, get_db_connection, get_applied_versions
@@ -37,7 +36,9 @@ def test_run_migrations_initializes_db():
 
         # Query repositories table to ensure it was created
         cursor = conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='repositories'")
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='repositories'"
+        )
         assert cursor.fetchone() is not None
     finally:
         conn.close()
@@ -52,9 +53,12 @@ def test_migrations_are_idempotent():
 
     # Count how many migration files exist
     from storage.migrations import MIGRATIONS_DIR
+
     expected_count = 0
     if os.path.exists(MIGRATIONS_DIR):
-        expected_count = len([f for f in os.listdir(MIGRATIONS_DIR) if f.endswith(".sql")])
+        expected_count = len(
+            [f for f in os.listdir(MIGRATIONS_DIR) if f.endswith(".sql")]
+        )
 
     conn = get_db_connection()
     try:
@@ -64,4 +68,3 @@ def test_migrations_are_idempotent():
             assert i in applied
     finally:
         conn.close()
-

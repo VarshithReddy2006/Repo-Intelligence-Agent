@@ -11,13 +11,13 @@ export const PanControls: React.FC = () => {
   }, [getViewport, setViewport]);
 
   return (
-    <div className="absolute bottom-4 left-16 z-10 flex flex-col items-center gap-0.5 nodrag nopan">
+    <div className="absolute bottom-4 left-16 z-10 flex flex-col items-center gap-1 nodrag nopan select-none">
       {/* Up Button */}
-      <div className="bg-white border border-zinc-200 rounded shadow-sm">
+      <div className="bg-surface-2 border border-border rounded-lg shadow-float">
         <button
           type="button"
           onClick={() => handlePan(0, 150)}
-          className="w-7 h-7 flex items-center justify-center hover:bg-zinc-50 text-zinc-700 hover:text-zinc-950 transition-colors rounded focus:outline-none"
+          className="w-7.5 h-7.5 flex items-center justify-center hover:bg-canvas text-text-muted hover:text-text transition-colors rounded-lg focus:outline-none"
           title="Pan Up"
         >
           <ArrowUp className="h-4 w-4" />
@@ -25,11 +25,11 @@ export const PanControls: React.FC = () => {
       </div>
 
       {/* Row 2: Left, Down, Right */}
-      <div className="flex bg-white border border-zinc-200 rounded shadow-sm divide-x divide-zinc-200">
+      <div className="flex bg-surface-2 border border-border rounded-lg shadow-float divide-x divide-border">
         <button
           type="button"
           onClick={() => handlePan(150, 0)}
-          className="w-7 h-7 flex items-center justify-center hover:bg-zinc-50 text-zinc-700 hover:text-zinc-950 transition-colors rounded-l focus:outline-none"
+          className="w-7.5 h-7.5 flex items-center justify-center hover:bg-canvas text-text-muted hover:text-text transition-colors rounded-l-lg focus:outline-none"
           title="Pan Left"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -37,7 +37,7 @@ export const PanControls: React.FC = () => {
         <button
           type="button"
           onClick={() => handlePan(0, -150)}
-          className="w-7 h-7 flex items-center justify-center hover:bg-zinc-50 text-zinc-700 hover:text-zinc-950 transition-colors focus:outline-none"
+          className="w-7.5 h-7.5 flex items-center justify-center hover:bg-canvas text-text-muted hover:text-text transition-colors focus:outline-none"
           title="Pan Down"
         >
           <ArrowDown className="h-4 w-4" />
@@ -45,7 +45,7 @@ export const PanControls: React.FC = () => {
         <button
           type="button"
           onClick={() => handlePan(-150, 0)}
-          className="w-7 h-7 flex items-center justify-center hover:bg-zinc-50 text-zinc-700 hover:text-zinc-950 transition-colors rounded-r focus:outline-none"
+          className="w-7.5 h-7.5 flex items-center justify-center hover:bg-canvas text-text-muted hover:text-text transition-colors rounded-r-lg focus:outline-none"
           title="Pan Right"
         >
           <ArrowRight className="h-4 w-4" />

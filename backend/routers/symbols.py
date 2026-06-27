@@ -49,7 +49,10 @@ async def get_symbols_for_file(owner: str, repo: str, file_path: str):
     except Exception as exc:
         logger.error(
             "get_symbols_for_file failed for %s/%s: %s",
-            repo_name, file_path, exc, exc_info=True,
+            repo_name,
+            file_path,
+            exc,
+            exc_info=True,
         )
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -89,7 +92,10 @@ async def get_symbol_definition(owner: str, repo: str, symbol_name: str):
     except Exception as exc:
         logger.error(
             "get_symbol_definition failed for %s/%s: %s",
-            repo_name, symbol_name, exc, exc_info=True,
+            repo_name,
+            symbol_name,
+            exc,
+            exc_info=True,
         )
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -129,6 +135,9 @@ async def get_symbol_references(owner: str, repo: str, symbol_name: str):
     except Exception as exc:
         logger.error(
             "get_symbol_references failed for %s/%s: %s",
-            repo_name, symbol_name, exc, exc_info=True,
+            repo_name,
+            symbol_name,
+            exc,
+            exc_info=True,
         )
         raise HTTPException(status_code=500, detail=str(exc))

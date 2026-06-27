@@ -157,5 +157,3 @@ __all__ = [
     "OnboardingReportSection",
     "ReportDataModel",
 ]
-
-

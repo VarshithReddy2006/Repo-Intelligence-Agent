@@ -79,7 +79,10 @@ async def graph_neighbors(owner: str, repo: str, node_path: str):
     except Exception as exc:
         logger.error(
             "graph_neighbors failed for %s / %s: %s",
-            repo_name, node_path, exc, exc_info=True,
+            repo_name,
+            node_path,
+            exc,
+            exc_info=True,
         )
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -89,9 +92,7 @@ async def graph_trace(
     owner: str,
     repo: str,
     node_path: str,
-    direction: str = Query(
-        "both", description="forward | backward | both"
-    ),
+    direction: str = Query("both", description="forward | backward | both"),
     depth: int = Query(6, ge=1, le=12, description="BFS depth limit"),
 ):
     """Trace all reachable dependencies from a node via BFS.
@@ -123,7 +124,10 @@ async def graph_trace(
     except Exception as exc:
         logger.error(
             "graph_trace failed for %s / %s: %s",
-            repo_name, node_path, exc, exc_info=True,
+            repo_name,
+            node_path,
+            exc,
+            exc_info=True,
         )
         raise HTTPException(status_code=500, detail=str(exc))
 

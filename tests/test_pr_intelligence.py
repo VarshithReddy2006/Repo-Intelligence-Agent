@@ -2,14 +2,13 @@ import os
 import sys
 import unittest
 from unittest.mock import MagicMock, patch
-import pytest
 from fastapi.testclient import TestClient
 
 # Ensure project root is importable
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from backend.api import app
-from models.pr_intelligence import PRAnalyzeRequest, ChangedFile, SymbolChange
+from models.pr_intelligence import PRAnalyzeRequest, ChangedFile
 from models.symbol import Symbol
 from services.pr_intelligence_service import PRIntelligenceService
 import networkx as nx
@@ -18,13 +17,14 @@ client = TestClient(app)
 
 
 class TestPRIntelligence(unittest.TestCase):
-
     def setUp(self):
         self.service = PRIntelligenceService()
 
     def test_pr_url_parsing_valid(self):
         """Verifies that valid PR URLs are parsed correctly."""
-        req = PRAnalyzeRequest(pr_url="https://github.com/VarshithReddy2006/Repo-Intelligence-Agent/pull/42")
+        req = PRAnalyzeRequest(
+            pr_url="https://github.com/VarshithReddy2006/Repo-Intelligence-Agent/pull/42"
+        )
         self.assertEqual(req.owner, "VarshithReddy2006")
         self.assertEqual(req.repo, "Repo-Intelligence-Agent")
         self.assertEqual(req.pr_number, 42)
@@ -47,7 +47,7 @@ class TestPRIntelligence(unittest.TestCase):
         """Verifies PR size classification boundaries."""
         # XS: file_score = 3, symbol_score = 1.5, line_score = 1 -> score = 5.5
         self.assertEqual(self.service.classify_pr_size(1, 10, 1), "XS")
-        
+
         # S: 21-40. files=5 (15 pts), symbols=10 (15 pts), lines=10 (1 pt) -> 31
         self.assertEqual(self.service.classify_pr_size(5, 10, 10), "S")
 
@@ -87,25 +87,36 @@ class TestPRIntelligence(unittest.TestCase):
 
     def test_risk_scoring_and_explanations(self):
         """Verifies risk score calculation and top risk sorting/filtering."""
-        changed_files = [ChangedFile(filename=f"file{i}.py", status="modified", additions=5, deletions=5, changes=10) for i in range(5)]
-        
+        changed_files = [
+            ChangedFile(
+                filename=f"file{i}.py",
+                status="modified",
+                additions=5,
+                deletions=5,
+                changes=10,
+            )
+            for i in range(5)
+        ]
+
         # files=5 (8 pts), symbols=10 (5 pts), 1 entry point (15 pts), 1 core (10 pts), impact=3/10 (impact_ratio=0.3 -> 4 pts), depth=3 (7 pts), symbol_removal=5
-        score, level, breakdown, top_risks = self.service._compute_risk_and_explanations(
-            changed_files=changed_files,
-            changed_symbols_count=10,
-            changed_entry_points=["file1.py"],
-            changed_core_files=["file2.py"],
-            changed_high_coupling_files=[],
-            impact_radius=3,
-            max_depth=3,
-            removed_symbols_count=2,
-            total_graph_nodes=10
+        score, level, breakdown, top_risks = (
+            self.service._compute_risk_and_explanations(
+                changed_files=changed_files,
+                changed_symbols_count=10,
+                changed_entry_points=["file1.py"],
+                changed_core_files=["file2.py"],
+                changed_high_coupling_files=[],
+                impact_radius=3,
+                max_depth=3,
+                removed_symbols_count=2,
+                total_graph_nodes=10,
+            )
         )
-        
+
         # Expected score: 8 (files) + 5 (symbols) + 10 (core) + 15 (entry) + 4 (impact) + 7 (depth) + 5 (removal) = 54 -> HIGH
         self.assertEqual(score, 54)
         self.assertEqual(level, "HIGH")
-        
+
         # Check top risks: sorted by contribution
         # Entry point (15) > Core module (10) > Changed file count (8) > Dependency depth (7) > Changed symbol count / symbol removal (5)
         self.assertTrue(len(top_risks) <= 5)
@@ -113,18 +124,23 @@ class TestPRIntelligence(unittest.TestCase):
         self.assertEqual(top_risks[1], "Core module modified (file2.py)")
         self.assertEqual(top_risks[2], "Large number of changed files (5)")
         self.assertEqual(top_risks[3], "Deep dependency propagation (depth 3)")
-        self.assertTrue("Public symbol removal detected" in top_risks or "Changed symbol count" in top_risks)
+        self.assertTrue(
+            "Public symbol removal detected" in top_risks
+            or "Changed symbol count" in top_risks
+        )
 
     @patch("services.pr_intelligence_service.GitHubService")
     @patch("services.pr_intelligence_service.GraphService")
     @patch("services.pr_intelligence_service.SymbolService")
     @patch("services.pr_intelligence_service.ArchitectureService")
-    def test_analyze_pull_request_success(self, mock_arch, mock_symbol, mock_graph, mock_github):
+    def test_analyze_pull_request_success(
+        self, mock_arch, mock_symbol, mock_graph, mock_github
+    ):
         """Verifies successful PR analysis pipeline run."""
         # Setup mocks
         mock_graph_instance = mock_graph.return_value
         mock_graph_instance.graph_exists.return_value = True
-        
+
         # Create a mock DiGraph
         g = nx.DiGraph()
         g.add_node("services/architecture_service.py")
@@ -134,11 +150,18 @@ class TestPRIntelligence(unittest.TestCase):
 
         mock_symbol_instance = mock_symbol.return_value
         mock_symbol_instance.index_exists.return_value = True
-        
+
         # Create mock symbol index
         mock_sym_index = MagicMock()
         mock_sym_index.symbols = [
-            Symbol(name="analyze_change", type="method", file_path="services/architecture_service.py", line_number=42, language="python", parent_class="ArchitectureService")
+            Symbol(
+                name="analyze_change",
+                type="method",
+                file_path="services/architecture_service.py",
+                line_number=42,
+                language="python",
+                parent_class="ArchitectureService",
+            )
         ]
         mock_symbol_instance.load.return_value = mock_sym_index
 
@@ -156,10 +179,16 @@ class TestPRIntelligence(unittest.TestCase):
             "html_url": "https://github.com/VarshithReddy2006/Repo-Intelligence-Agent/pull/1",
             "additions": 20,
             "deletions": 5,
-            "head_sha": "abcdef123"
+            "head_sha": "abcdef123",
         }
         mock_github_instance.fetch_pull_request_files.return_value = [
-            {"filename": "services/architecture_service.py", "status": "modified", "additions": 20, "deletions": 5, "changes": 25}
+            {
+                "filename": "services/architecture_service.py",
+                "status": "modified",
+                "additions": 20,
+                "deletions": 5,
+                "changes": 25,
+            }
         ]
 
         # Run analysis
@@ -167,9 +196,11 @@ class TestPRIntelligence(unittest.TestCase):
             github_service=mock_github_instance,
             symbol_service=mock_symbol_instance,
             graph_service=mock_graph_instance,
-            architecture_service=mock_arch_instance
+            architecture_service=mock_arch_instance,
         )
-        res = service.analyze_pull_request("VarshithReddy2006", "Repo-Intelligence-Agent", 1)
+        res = service.analyze_pull_request(
+            "VarshithReddy2006", "Repo-Intelligence-Agent", 1
+        )
 
         self.assertEqual(res.repo, "VarshithReddy2006/Repo-Intelligence-Agent")
         self.assertEqual(res.pr_number, 1)
@@ -183,7 +214,6 @@ class TestPRIntelligence(unittest.TestCase):
 
 
 class TestPRIntelligenceEndpoints(unittest.TestCase):
-
     @patch("backend.api.pr_intelligence_service")
     def test_api_pr_analyze_success(self, mock_pr_service):
         """Verifies endpoint returns correct payload on successful analysis."""
@@ -214,13 +244,13 @@ class TestPRIntelligenceEndpoints(unittest.TestCase):
             "changed_core_files": [],
             "changed_high_coupling_files": [],
             "review_focus_areas": [],
-            "analyzed_at": "2026-06-20T12:00:00Z"
+            "analyzed_at": "2026-06-20T12:00:00Z",
         }
         mock_pr_service.analyze_pull_request.return_value = mock_result
 
         payload = {"pr_url": "https://github.com/owner/repo/pull/42"}
         response = client.post("/api/pr/analyze", json=payload)
-        
+
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["repo"], "owner/repo")
@@ -231,22 +261,26 @@ class TestPRIntelligenceEndpoints(unittest.TestCase):
     @patch("backend.api.pr_intelligence_service")
     def test_api_pr_analyze_not_indexed(self, mock_pr_service):
         """Verifies endpoint returns 404 if repo is not indexed."""
-        mock_pr_service.analyze_pull_request.side_effect = ValueError("No dependency graph found")
+        mock_pr_service.analyze_pull_request.side_effect = ValueError(
+            "No dependency graph found"
+        )
 
         payload = {"pr_url": "https://github.com/owner/repo/pull/42"}
         response = client.post("/api/pr/analyze", json=payload)
-        
+
         self.assertEqual(response.status_code, 404)
         self.assertEqual(response.json()["detail"], "No dependency graph found")
 
     @patch("backend.api.pr_intelligence_service")
     def test_api_pr_analyze_github_error(self, mock_pr_service):
         """Verifies endpoint returns 502 if GitHub API call fails."""
-        mock_pr_service.analyze_pull_request.side_effect = Exception("Rate limit exceeded")
+        mock_pr_service.analyze_pull_request.side_effect = Exception(
+            "Rate limit exceeded"
+        )
 
         payload = {"pr_url": "https://github.com/owner/repo/pull/42"}
         response = client.post("/api/pr/analyze", json=payload)
-        
+
         self.assertEqual(response.status_code, 502)
         self.assertTrue("rate limit" in response.json()["detail"].lower())
 
@@ -255,7 +289,10 @@ class TestPRIntelligenceEndpoints(unittest.TestCase):
     @patch("backend.api.symbol_service")
     def test_api_pr_health(self, mock_symbol, mock_graph, mock_github):
         """Verifies health diagnostics endpoint."""
-        mock_github.get_rate_limit_info.return_value = {"remaining": 4500, "reset": 12345678}
+        mock_github.get_rate_limit_info.return_value = {
+            "remaining": 4500,
+            "reset": 12345678,
+        }
         mock_graph.graph_exists.return_value = True
         mock_symbol.index_exists.return_value = False
 

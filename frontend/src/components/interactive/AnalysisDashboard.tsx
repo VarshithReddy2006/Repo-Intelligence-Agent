@@ -16,7 +16,8 @@ import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
 import { MetricCard } from '../ui/MetricCard';
 import { EmptyState } from '../ui/EmptyState';
-import { SkeletonCard, SkeletonGroup, SkeletonGraph, Skeleton } from '../ui/Skeleton';
+import { SkeletonCard, SkeletonGroup, SkeletonGraph, Skeleton, SkeletonDashboard } from '../ui/Skeleton';
+import { AnimatedNumber } from '../ui/AnimatedNumber';
 import {
   Layers, Box, Code2, BookOpen, Cpu, Info, CheckCircle2, Target, HelpCircle,
   MessageSquareCode, GitPullRequest, GitCompare, Trash2, FileText, DoorOpen,
@@ -143,6 +144,72 @@ export const AnalysisDashboard: React.FC<DashboardProps> = ({ repoParam }) => {
   // Lazy mount: tracks which tabs have been visited (so we only mount on first visit)
   const [mountedTabs, setMountedTabs] = useState<Set<TabId>>(new Set([resolveInitialTab()]));
 
+  const circularDependencies = useMemo(() => {
+    if (!data || !data.architecture || !data.architecture.relationships) return [];
+    const adj: Record<string, string[]> = {};
+    data.architecture.relationships.forEach((r) => {
+      if (!adj[r.source]) adj[r.source] = [];
+      adj[r.source].push(r.target);
+    });
+
+    const cycles: string[][] = [];
+    const visited = new Set<string>();
+    const recStack = new Set<string>();
+    const parent: Record<string, string> = {};
+
+    const dfs = (node: string): void => {
+      visited.add(node);
+      recStack.add(node);
+
+      const neighbors = adj[node] || [];
+      for (const neighbor of neighbors) {
+        if (!visited.has(neighbor)) {
+          parent[neighbor] = node;
+          dfs(neighbor);
+        } else if (recStack.has(neighbor)) {
+          const cycle = [neighbor];
+          let curr = node;
+          while (curr !== neighbor && curr) {
+            cycle.push(curr);
+            curr = parent[curr];
+          }
+          cycle.push(neighbor);
+          cycle.reverse();
+          cycles.push(cycle);
+        }
+      }
+      recStack.delete(node);
+    };
+
+    Object.keys(adj).forEach((node) => {
+      if (!visited.has(node)) dfs(node);
+    });
+    return cycles;
+  }, [data]);
+
+  const entryPoints = useMemo(() => {
+    if (!data || !data.analysis || !data.analysis.structure) return [];
+    const entryFiles: string[] = [];
+    const entryPatterns = [
+      /\bmain\.(py|go|rs|ts|js)$/i,
+      /\bapp\.(py|ts|js)$/i,
+      /\bindex\.(ts|js|tsx|jsx)$/i,
+      /\bapi\.(py|ts|js)$/i,
+      /\bserver\.(ts|js)$/i,
+      /\bmanage\.py$/i
+    ];
+    Object.values(data.analysis.structure).forEach((files) => {
+      files.forEach((f) => {
+        const parts = f.split('/');
+        const fileName = parts[parts.length - 1];
+        if (entryPatterns.some((pat) => pat.test(fileName))) {
+          entryFiles.push(f);
+        }
+      });
+    });
+    return entryFiles.slice(0, 4);
+  }, [data]);
+
   const handleTabChange = (tab: TabId) => {
     setActiveTab(tab);
     setMountedTabs(prev => new Set([...prev, tab]));
@@ -230,29 +297,7 @@ export const AnalysisDashboard: React.FC<DashboardProps> = ({ repoParam }) => {
   if (loading) {
     return (
       <SkeletonGroup label="Loading repository analysis">
-        <div className="space-y-6 py-4 fade-up">
-          <div className="space-y-4">
-            <Skeleton size="h-8 w-1/2" />
-            <Skeleton size="h-4 w-1/3" />
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            {Array.from({ length: 5 }, (_, i) => <SkeletonCard key={i} />)}
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-4 card p-5 space-y-3">
-              <Skeleton size="h-4 w-32" />
-              {Array.from({ length: 8 }, (_, i) => <Skeleton key={i} size="h-3 w-full" />)}
-            </div>
-            <div className="lg:col-span-8 space-y-4">
-              <Skeleton size="h-10 w-full" />
-              <div className="card p-5 space-y-3">
-                <Skeleton size="h-4 w-40" />
-                <Skeleton size="h-3 w-full" />
-                <Skeleton size="h-3 w-5/6" />
-              </div>
-            </div>
-          </div>
-        </div>
+        <SkeletonDashboard />
       </SkeletonGroup>
     );
   }
@@ -260,13 +305,47 @@ export const AnalysisDashboard: React.FC<DashboardProps> = ({ repoParam }) => {
   // ── Hard error state ───────────────────────────────────────────────────────
   if (!data) {
     return (
-      <div className="py-12">
+      <div className="py-12 max-w-lg mx-auto w-full">
         <EmptyState
           tone="danger"
           icon={<AlertCircle className="h-6 w-6" aria-hidden="true" />}
-          title="Could not load repository analysis"
-          description={errorMessage ?? 'Make sure the backend is running and the repository has been analyzed.'}
-          action={<Button variant="ghost" onClick={() => (window.location.href = '/')}>Back to home</Button>}
+          title="Analysis could not be loaded"
+          description={
+            <div className="text-left space-y-3 mt-2 font-sans">
+              <p className="text-xs text-text-muted leading-relaxed">
+                {errorMessage ?? 'The repository analysis is unavailable or failed to process.'}
+              </p>
+              <div className="p-3.5 rounded-lg border border-danger/20 bg-danger/5 space-y-1.5">
+                <span className="text-[10px] font-bold font-mono uppercase tracking-wider text-danger block">
+                  Possible Causes
+                </span>
+                <ul className="list-disc pl-4 text-[11px] text-text-muted/95 space-y-1 leading-relaxed">
+                  <li>Private repository without configuration</li>
+                  <li>Invalid or malformed GitHub repository URL</li>
+                  <li>GitHub API rate limit or quota exceeded</li>
+                  <li>Temporary network failure or backend server is offline</li>
+                </ul>
+              </div>
+            </div>
+          }
+          action={
+            <div className="flex gap-3 justify-center mt-2 select-none">
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="btn-primary px-4 py-2 text-xs"
+              >
+                Retry Loading
+              </button>
+              <button
+                type="button"
+                onClick={() => (window.location.href = '/')}
+                className="btn-ghost px-4 py-2 text-xs"
+              >
+                Back to home
+              </button>
+            </div>
+          }
         />
       </div>
     );
@@ -343,35 +422,35 @@ export const AnalysisDashboard: React.FC<DashboardProps> = ({ repoParam }) => {
             tone="primary"
             icon={<FileText className="h-4 w-4" />}
             label="Files Indexed"
-            value={fileCount.toLocaleString()}
+            value={<AnimatedNumber value={fileCount} />}
             hint={`${Object.keys(analysis.structure).length} directories`}
           />
           <MetricCard
             tone="info"
             icon={<Code2 className="h-4 w-4" />}
             label="Languages"
-            value={languageCount}
+            value={<AnimatedNumber value={languageCount} />}
             hint={analysis.tech_stack.slice(0, 3).join(' · ') || '—'}
           />
           <MetricCard
             tone="success"
             icon={<Network className="h-4 w-4" />}
             label="Components"
-            value={componentCount}
+            value={<AnimatedNumber value={componentCount} />}
             hint={`${architecture.relationships.length} relationships`}
           />
           <MetricCard
             tone="warn"
             icon={<Box className="h-4 w-4" />}
             label="Dependencies"
-            value={dependencyCount}
+            value={<AnimatedNumber value={dependencyCount} />}
             hint="primary manifests"
           />
           <MetricCard
             tone="primary"
             icon={<DoorOpen className="h-4 w-4" />}
             label="Reading Steps"
-            value={readingSteps}
+            value={<AnimatedNumber value={readingSteps} />}
             hint="ranked onboarding flow"
             onClick={() => handleTabChange('reading_path')}
           />
@@ -383,13 +462,25 @@ export const AnalysisDashboard: React.FC<DashboardProps> = ({ repoParam }) => {
         <div className="lg:col-span-4 space-y-4">
           <FileTree structure={analysis.structure} onFileSelect={setSelectedFile} />
           {selectedFile && (
-            <div className="card p-4 space-y-2 fade-up">
+            <div className="card p-4 space-y-3 fade-up">
               <span className="text-primary font-bold uppercase tracking-wider block text-[10px] font-mono">
-                Selected Node
+                Selected Node Context
               </span>
-              <p className="text-text break-all text-xs font-mono">{selectedFile}</p>
+              <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono text-text-muted select-none bg-canvas/30 p-2 rounded-lg border border-border/60">
+                {selectedFile.split('/').map((seg, i, arr) => {
+                  const isLast = i === arr.length - 1;
+                  return (
+                    <React.Fragment key={i}>
+                      <span className={isLast ? 'text-text font-semibold' : 'text-text-muted hover:text-text cursor-pointer transition-colors'} title={arr.slice(0, i + 1).join('/')}>
+                        {seg}
+                      </span>
+                      {!isLast && <span>/</span>}
+                    </React.Fragment>
+                  );
+                })}
+              </div>
               <p className="text-text-muted text-xs font-sans leading-relaxed">
-                Pass this file context to the Issue Mapper or Chat tab to discuss implementation plans.
+                Pass this file context to the Issue Mapper or Chat companion to discuss targeted modifications.
               </p>
             </div>
           )}
@@ -470,6 +561,82 @@ export const AnalysisDashboard: React.FC<DashboardProps> = ({ repoParam }) => {
                               </span>
                             ))}
                           </div>
+                        </div>
+                      </div>
+
+                      {/* Codebase Health & Warnings Grid */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        {/* Complexity Index Card */}
+                        <div className="card p-4 space-y-2.5">
+                          <span className="text-[10px] uppercase font-mono tracking-widest text-text-subtle font-semibold block">
+                            Complexity Index
+                          </span>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-2xl font-extrabold text-text font-mono">
+                              {Math.min(100, (fileCount * 1) + (componentCount * 3) + (dependencyCount * 2))}
+                            </span>
+                            <span className="text-[9px] font-bold text-primary font-mono uppercase">
+                              {fileCount > 100 || componentCount > 12 ? 'High density' : 'Moderate'}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-text-muted leading-relaxed font-sans">
+                            Complexity proxy computed from indexing density and system integration links.
+                          </p>
+                        </div>
+
+                        {/* Circular Dependency Card */}
+                        <div className="card p-4 space-y-2.5">
+                          <span className="text-[10px] uppercase font-mono tracking-widest text-text-subtle font-semibold block">
+                            Architecture Status
+                          </span>
+                          <div className="flex items-center gap-2">
+                            {circularDependencies.length > 0 ? (
+                              <>
+                                <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+                                <span className="text-xs font-bold text-amber-500 font-mono uppercase">
+                                  {circularDependencies.length} cycle(s) found
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                                <span className="text-xs font-bold text-emerald-500 font-mono uppercase">
+                                  Acyclic / Stable
+                                </span>
+                              </>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-text-muted leading-relaxed font-sans">
+                            {circularDependencies.length > 0
+                              ? 'Circular component dependencies detected. Graph analysis indicates circular linkages.'
+                              : 'No circular component relationships detected. Clean system architecture.'}
+                          </p>
+                        </div>
+
+                        {/* Entry Points Card */}
+                        <div className="card p-4 space-y-2.5">
+                          <span className="text-[10px] uppercase font-mono tracking-widest text-text-subtle font-semibold block">
+                            Inferred Entry Points
+                          </span>
+                          {entryPoints.length > 0 ? (
+                            <div className="flex flex-wrap gap-1.5">
+                              {entryPoints.map((ep) => (
+                                <span
+                                  key={ep}
+                                  onClick={() => setSelectedFile(ep)}
+                                  className="text-[9px] font-mono bg-canvas border border-primary/20 hover:border-primary/50 text-primary cursor-pointer px-1.5 py-0.5 rounded truncate max-w-full"
+                                  title={`Click to select: ${ep}`}
+                                >
+                                  {ep.split('/').pop()}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-text-muted font-mono italic">None detected</span>
+                          )}
+                          <p className="text-[10px] text-text-muted leading-relaxed font-sans">
+                            Click a file chip to select the file within the project tree view.
+                          </p>
                         </div>
                       </div>
 

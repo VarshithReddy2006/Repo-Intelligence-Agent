@@ -65,7 +65,10 @@ def sample_report() -> ReportDataModel:
         api_surface=api,
         hygiene=hygiene,
         onboarding=onboarding,
-        refactoring_priorities=["Refactor core/utils.py", "Remove unused core/cache.py::stale_data"],
+        refactoring_priorities=[
+            "Refactor core/utils.py",
+            "Remove unused core/cache.py::stale_data",
+        ],
         ai_summary="This repository is well structured with clean code interfaces.",
     )
 
@@ -73,30 +76,30 @@ def sample_report() -> ReportDataModel:
 def test_html_renderer_generates_valid_output(sample_report):
     renderer = HTMLRenderer()
     html_bytes = renderer.render(sample_report)
-    
+
     assert isinstance(html_bytes, bytes)
     html_str = html_bytes.decode("utf-8")
-    
+
     # Check that core info is rendered
     assert "Repository Intelligence Report" in html_str
     assert "org/test-repo" in html_str
     assert "88.5" in html_str
     assert "Grade: B" in html_str
-    
+
     # Check tabs exist
     assert 'id="overview"' in html_str
     assert 'id="architecture"' in html_str
     assert 'id="api"' in html_str
     assert 'id="hygiene"' in html_str
     assert 'id="walkthrough"' in html_str
-    
+
     # Check variables are injected
     assert "5000" in html_str
     assert "120" in html_str
     assert "core/utils.py" in html_str
     assert "core/logger.py" in html_str
     assert "core/cache.py::stale_data" in html_str
-    
+
     # Check that CSS and javascript are present
     assert "<style>" in html_str
     assert "function switchTab" in html_str
@@ -105,24 +108,24 @@ def test_html_renderer_generates_valid_output(sample_report):
 def test_markdown_renderer_generates_valid_output(sample_report):
     renderer = MarkdownRenderer()
     md_bytes = renderer.render(sample_report)
-    
+
     assert isinstance(md_bytes, bytes)
     md_str = md_bytes.decode("utf-8")
-    
+
     # Check main headings and report name
     assert "# Repository Health Report: org/test-repo" in md_str
     assert "## Health Summary" in md_str
     assert "88.5 / 100" in md_str
     assert "Grade: B" in md_str
     assert "## Refactoring Priorities" in md_str
-    
+
     # Check that details collapsible blocks are present
     assert "<details>" in md_str
     assert "<summary><b>View Circular Import Paths</b></summary>" in md_str
     assert "<summary><b>View Design Smells Details</b></summary>" in md_str
     assert "<summary><b>View Dead Code Registry</b></summary>" in md_str
     assert "<summary><b>View Recommended Reading Order Guide</b></summary>" in md_str
-    
+
     # Check variables are injected
     assert "5000" in md_str
     assert "120" in md_str
@@ -134,14 +137,13 @@ def test_markdown_renderer_generates_valid_output(sample_report):
 def test_pdf_renderer_generates_valid_output(sample_report):
     renderer = PDFRenderer()
     pdf_html_bytes = renderer.render(sample_report)
-    
+
     assert isinstance(pdf_html_bytes, bytes)
     pdf_html_str = pdf_html_bytes.decode("utf-8")
-    
+
     # It must contain the regular HTML report content
     assert "Repository Intelligence Report" in pdf_html_str
     assert "org/test-repo" in pdf_html_str
-    
+
     # And specifically it must contain the window.print() trigger
     assert "window.print()" in pdf_html_str
-

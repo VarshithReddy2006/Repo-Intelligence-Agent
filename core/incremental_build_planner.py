@@ -64,9 +64,17 @@ class IncrementalBuildPlanner:
         # Collect changed code files
         supported_exts = {".py", ".js", ".jsx", ".ts", ".tsx"}
         all_changed_files = (
-            change_set.added | change_set.modified | change_set.deleted | set(change_set.renamed.keys()) | set(change_set.renamed.values())
+            change_set.added
+            | change_set.modified
+            | change_set.deleted
+            | set(change_set.renamed.keys())
+            | set(change_set.renamed.values())
         )
-        changed_code_files = {f for f in all_changed_files if any(f.endswith(ext) for ext in supported_exts)}
+        changed_code_files = {
+            f
+            for f in all_changed_files
+            if any(f.endswith(ext) for ext in supported_exts)
+        }
 
         for node in nodes:
             # 1. Force rebuild -> FULL
@@ -76,11 +84,15 @@ class IncrementalBuildPlanner:
             elif old_manifest is None:
                 mode = "FULL"
             # 3. Missing snapshot -> FULL
-            elif not cls._snapshot_exists(node, repo_name, snapshot_store, graph_service):
+            elif not cls._snapshot_exists(
+                node, repo_name, snapshot_store, graph_service
+            ):
                 mode = "FULL"
             # 4. Stale schema version -> FULL
             else:
-                stored_version = old_manifest.schema_versions.get(node.name) or old_manifest.snapshot_versions.get(node.name)
+                stored_version = old_manifest.schema_versions.get(
+                    node.name
+                ) or old_manifest.snapshot_versions.get(node.name)
                 if stored_version is None or stored_version < node.schema_version:
                     mode = "FULL"
                 else:

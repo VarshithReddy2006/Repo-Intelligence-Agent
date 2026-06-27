@@ -32,7 +32,11 @@ from storage import JsonSnapshotStore
 
 from core import AnalysisCache, AnalysisRegistry, BuildPipeline
 
-from models.schemas import ArchitectureSummary, ComponentRelationship, RepositoryAnalysis
+from models.schemas import (
+    ArchitectureSummary,
+    ComponentRelationship,
+    RepositoryAnalysis,
+)
 from memory.chroma_store import ChromaStore
 from services.github_service import GitHubConfig, GitHubService
 from services.chunking_service import CodeChunker
@@ -158,9 +162,7 @@ async def _persist_analysis_store() -> None:
             await asyncio.to_thread(_write_store_atomic, payload)
             logger.debug("Analysis store persisted (%d entries).", len(payload))
         except Exception as exc:
-            logger.error(
-                "Failed to persist analysis store: %s", exc, exc_info=True
-            )
+            logger.error("Failed to persist analysis store: %s", exc, exc_info=True)
 
 
 def _write_store_atomic(payload: Dict[str, Any]) -> None:
@@ -184,14 +186,56 @@ analysis_registry = AnalysisRegistry()
 build_pipeline = BuildPipeline(analysis_registry)
 
 # Register builders to DAG
-analysis_registry.register("Symbol Index", SymbolService, dependencies=[], outputs=["symbols"], schema_version=SymbolService.get_schema_version())
-analysis_registry.register("Dependency Graph", ArchitectureService, dependencies=["Symbol Index"], outputs=["graphs/dependency"], schema_version=ArchitectureService.get_schema_version())
-analysis_registry.register("Call Graph", CallGraphService, dependencies=["Symbol Index", "Dependency Graph"], outputs=["graphs/call", "call_graphs"], schema_version=CallGraphService.get_schema_version())
-analysis_registry.register("Git History", GitHistoryService, dependencies=["Dependency Graph"], outputs=["churn"], schema_version=GitHistoryService.get_schema_version())
-analysis_registry.register("API Surface", APISurfaceService, dependencies=["Symbol Index", "Dependency Graph"], outputs=["api_surface"], schema_version=APISurfaceService.get_schema_version())
-analysis_registry.register("Module Stability", type(None), dependencies=["API Surface"], outputs=["stability"])
-analysis_registry.register("Dependency Smells", type(None), dependencies=["Dependency Graph"], outputs=["dependency_smells"])
-analysis_registry.register("Architecture Health", type(None), dependencies=["Dependency Graph", "Call Graph"], outputs=["health"])
+analysis_registry.register(
+    "Symbol Index",
+    SymbolService,
+    dependencies=[],
+    outputs=["symbols"],
+    schema_version=SymbolService.get_schema_version(),
+)
+analysis_registry.register(
+    "Dependency Graph",
+    ArchitectureService,
+    dependencies=["Symbol Index"],
+    outputs=["graphs/dependency"],
+    schema_version=ArchitectureService.get_schema_version(),
+)
+analysis_registry.register(
+    "Call Graph",
+    CallGraphService,
+    dependencies=["Symbol Index", "Dependency Graph"],
+    outputs=["graphs/call", "call_graphs"],
+    schema_version=CallGraphService.get_schema_version(),
+)
+analysis_registry.register(
+    "Git History",
+    GitHistoryService,
+    dependencies=["Dependency Graph"],
+    outputs=["churn"],
+    schema_version=GitHistoryService.get_schema_version(),
+)
+analysis_registry.register(
+    "API Surface",
+    APISurfaceService,
+    dependencies=["Symbol Index", "Dependency Graph"],
+    outputs=["api_surface"],
+    schema_version=APISurfaceService.get_schema_version(),
+)
+analysis_registry.register(
+    "Module Stability", type(None), dependencies=["API Surface"], outputs=["stability"]
+)
+analysis_registry.register(
+    "Dependency Smells",
+    type(None),
+    dependencies=["Dependency Graph"],
+    outputs=["dependency_smells"],
+)
+analysis_registry.register(
+    "Architecture Health",
+    type(None),
+    dependencies=["Dependency Graph", "Call Graph"],
+    outputs=["health"],
+)
 
 github_service = GitHubService()
 embedding_service = EmbeddingService(model_name=settings.embedding_model)
@@ -208,7 +252,9 @@ graph_serializer = GraphSerializer(
     architecture_service=architecture_service,
 )
 reading_order_service = ReadingOrderService(architecture_service=architecture_service)
-impact_analysis_service = ImpactAnalysisService(architecture_service=architecture_service)
+impact_analysis_service = ImpactAnalysisService(
+    architecture_service=architecture_service
+)
 arch_context_service = ArchContextService(architecture_service=architecture_service)
 symbol_service = SymbolService()
 pr_intelligence_service = PRIntelligenceService(
@@ -284,6 +330,7 @@ def get_retrieval_pipeline():
     )
     return _retrieval_pipeline
 
+
 def get_service_by_class(cls: Type[Any]) -> Optional[Any]:
 
     if cls == SymbolService:
@@ -297,4 +344,3 @@ def get_service_by_class(cls: Type[Any]) -> Optional[Any]:
     if cls == APISurfaceService:
         return api_surface_service
     return None
-

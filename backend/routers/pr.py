@@ -52,6 +52,7 @@ async def analyze_pull_request(request: PRAnalyzeRequest):
     repo_name = f"{owner}/{repo}"
     try:
         import backend.api as _api  # late import — test patches backend.api.<name>
+
         result = await asyncio.to_thread(
             _api.pr_intelligence_service.analyze_pull_request, owner, repo, pr_number
         )
@@ -62,7 +63,10 @@ async def analyze_pull_request(request: PRAnalyzeRequest):
     except Exception as exc:
         logger.error(
             "PR analysis failed for %s (PR #%s): %s",
-            repo_name, pr_number, exc, exc_info=True,
+            repo_name,
+            pr_number,
+            exc,
+            exc_info=True,
         )
         raise HTTPException(
             status_code=502,
@@ -98,7 +102,9 @@ async def get_pr_health(
     if owner and repo:
         repo_name = f"{owner}/{repo}"
         logger.info("[DIAGNOSTICS] Requested repo_name: %s", repo_name)
-        logger.info("[DIAGNOSTICS] ANALYSIS_STORE keys: %s", list(ANALYSIS_STORE.keys()))
+        logger.info(
+            "[DIAGNOSTICS] ANALYSIS_STORE keys: %s", list(ANALYSIS_STORE.keys())
+        )
 
         g_dir = os.path.join("data", "graphs")
         s_dir = os.path.join("data", "symbols")
@@ -149,6 +155,7 @@ async def analyze_architecture_drift(request: PRDriftRequest):
     repo_name = f"{owner}/{repo}"
     try:
         import backend.api as _api  # late import — test patches backend.api.<name>
+
         result = await asyncio.to_thread(
             _api.architecture_drift_service.analyze_drift, owner, repo, pr_number
         )
@@ -159,7 +166,10 @@ async def analyze_architecture_drift(request: PRDriftRequest):
     except Exception as exc:
         logger.error(
             "Drift analysis failed for %s (PR #%s): %s",
-            repo_name, pr_number, exc, exc_info=True,
+            repo_name,
+            pr_number,
+            exc,
+            exc_info=True,
         )
         raise HTTPException(
             status_code=502,
@@ -175,6 +185,7 @@ async def analyze_dead_code(request: DeadCodeRequest):
     repo_name = f"{owner}/{repo}"
     try:
         import backend.api as _api  # late import — test patches backend.api.<name>
+
         result = await asyncio.to_thread(
             _api.dead_code_service.analyze_dead_code, owner, repo
         )

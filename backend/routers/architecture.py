@@ -34,6 +34,7 @@ router = APIRouter(prefix="/api", tags=["Architecture"])
 # Request models
 # ---------------------------------------------------------------------------
 
+
 class ArchitectureBuildRequest(BaseModel):
     repo: str = Field(..., description="Repository identifier (owner/repo)")
 
@@ -50,6 +51,7 @@ class ImpactAnalysisRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
 
 @router.post("/architecture/build")
 async def build_architecture(request: ArchitectureBuildRequest):
@@ -69,9 +71,7 @@ async def build_architecture(request: ArchitectureBuildRequest):
             architecture_service.build, repo_name, local_path, None, False
         )
         try:
-            await asyncio.to_thread(
-                symbol_service.build, repo_name, local_path, None
-            )
+            await asyncio.to_thread(symbol_service.build, repo_name, local_path, None)
         except Exception as sym_exc:
             logger.warning(
                 "Symbol index build failed for %s (non-fatal): %s", repo_name, sym_exc
@@ -175,9 +175,7 @@ async def get_reading_order(request: ReadingOrderRequest):
     except ValueError as val_err:
         raise HTTPException(status_code=404, detail=str(val_err))
     except Exception as exc:
-        logger.error(
-            "Reading order failed for %s: %s", repo_name, exc, exc_info=True
-        )
+        logger.error("Reading order failed for %s: %s", repo_name, exc, exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"Reading order generation failed: {str(exc)}",
@@ -197,9 +195,7 @@ async def get_impact_analysis(request: ImpactAnalysisRequest):
     except ValueError as val_err:
         raise HTTPException(status_code=404, detail=str(val_err))
     except Exception as exc:
-        logger.error(
-            "Impact analysis failed for %s: %s", repo_name, exc, exc_info=True
-        )
+        logger.error("Impact analysis failed for %s: %s", repo_name, exc, exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"Impact analysis failed: {str(exc)}",

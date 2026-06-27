@@ -1,6 +1,5 @@
 import json
-import sqlite3
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 import pytest
 
 import networkx as nx
@@ -20,7 +19,9 @@ def test_score_calculation_perfect_repo():
     # Mock services to represent a perfectly clean repository
     mock_symbol = MagicMock()
     mock_symbol.symbol_count = 100
-    mock_symbol.symbols = [MagicMock(name=f"func_{i}", type="function") for i in range(100)]
+    mock_symbol.symbols = [
+        MagicMock(name=f"func_{i}", type="function") for i in range(100)
+    ]
     for i, s in enumerate(mock_symbol.symbols):
         s.name = f"func_{i}"
 
@@ -52,16 +53,13 @@ def test_score_calculation_perfect_repo():
     mock_analysis = MagicMock()
     mock_analysis.metadata = {"loc": "1200", "commits_count": "45"}
     mock_analysis.tech_stack = ["python"]
-    
+
     mock_architecture = MagicMock()
     # 5 files in reading path
     mock_architecture.reading_order = ["a.py", "b.py"]
-    
+
     store = {
-        "org/perfect": {
-            "analysis": mock_analysis,
-            "architecture": mock_architecture
-        }
+        "org/perfect": {"analysis": mock_analysis, "architecture": mock_architecture}
     }
 
     composer = ReportComposer(
@@ -74,12 +72,12 @@ def test_score_calculation_perfect_repo():
     )
 
     report = composer.compose_report("org/perfect")
-    
+
     assert isinstance(report, ReportDataModel)
     assert report.metadata.repo_name == "org/perfect"
     assert report.metadata.total_loc == 1200
     assert report.metadata.commits_count == 45
-    
+
     # Check scores:
     # cycles = 0, SCCs = 1 (nx.strongly_connected_components returns 2 for 2 isolated file nodes/DiGraph components)
     # math.exp(-0.1 * (0 + 3 * 2)) = exp(-0.6) = 0.5488 -> S_arch should be ~54.9
@@ -88,16 +86,18 @@ def test_score_calculation_perfect_repo():
     assert report.scores.hygiene == 100.0
     # Churn has 0 hotspots -> S_churn = 100 * exp(0) = 100.0
     assert report.scores.churn == 100.0
-    
+
     # SQLite persistence verification
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT overall_score, grade, report_data FROM repo_reports WHERE repo_name = 'org/perfect'")
+    cursor.execute(
+        "SELECT overall_score, grade, report_data FROM repo_reports WHERE repo_name = 'org/perfect'"
+    )
     row = cursor.fetchone()
     assert row is not None
     assert row[0] == report.scores.overall
     assert row[1] == report.scores.grade
-    
+
     # Verify loaded JSON is valid ReportDataModel
     loaded_data = json.loads(row[2])
     assert loaded_data["metadata"]["repo_name"] == "org/perfect"
@@ -109,7 +109,9 @@ def test_score_calculation_degraded_repo():
     mock_symbol = MagicMock()
     mock_symbol.symbol_count = 10
     # Let's say 5 of these are dead/unused (50% dead code ratio)
-    mock_symbol.symbols = [MagicMock(name=f"func_{i}", type="function") for i in range(10)]
+    mock_symbol.symbols = [
+        MagicMock(name=f"func_{i}", type="function") for i in range(10)
+    ]
     for i, s in enumerate(mock_symbol.symbols):
         s.name = f"func_{i}"
 
@@ -117,13 +119,17 @@ def test_score_calculation_degraded_repo():
     mock_symbol_service.load.return_value = mock_symbol
 
     mock_dead_code = MagicMock()
-    mock_dead_code.unused_files = [MagicMock(file_path=f"file_{i}.py", recommendation="Clean") for i in range(5)]
+    mock_dead_code.unused_files = [
+        MagicMock(file_path=f"file_{i}.py", recommendation="Clean") for i in range(5)
+    ]
     mock_dead_code_service = MagicMock()
     mock_dead_code_service.analyze.return_value = mock_dead_code
 
     mock_churn = MagicMock()
     # 5 hotspots out of 10 files (50% hotspot ratio)
-    mock_churn.hotspots = [MagicMock(file_path=f"file_{i}.py", churn_score=0.9) for i in range(5)]
+    mock_churn.hotspots = [
+        MagicMock(file_path=f"file_{i}.py", churn_score=0.9) for i in range(5)
+    ]
     mock_churn.file_records = [MagicMock() for _ in range(10)]
     mock_git_history_service = MagicMock()
     mock_git_history_service.load.return_value = mock_churn
@@ -139,15 +145,12 @@ def test_score_calculation_degraded_repo():
     mock_analysis = MagicMock()
     mock_analysis.metadata = {"loc": "1200", "commits_count": "45"}
     mock_analysis.tech_stack = ["python"]
-    
+
     mock_architecture = MagicMock()
     mock_architecture.reading_order = []
-    
+
     store = {
-        "org/degraded": {
-            "analysis": mock_analysis,
-            "architecture": mock_architecture
-        }
+        "org/degraded": {"analysis": mock_analysis, "architecture": mock_architecture}
     }
 
     composer = ReportComposer(
@@ -160,10 +163,10 @@ def test_score_calculation_degraded_repo():
     )
 
     report = composer.compose_report("org/degraded")
-    
+
     assert isinstance(report, ReportDataModel)
     assert report.metadata.repo_name == "org/degraded"
-    
+
     # Check that score is significantly degraded
     assert report.scores.overall < 80.0
     assert report.scores.architecture < 80.0

@@ -15,7 +15,9 @@ class ExecutionScheduler:
     """Schedules BuildTasks into topological execution stages to maximize parallelism."""
 
     @staticmethod
-    def schedule(tasks: List[BuildTask], registry: AnalysisRegistry) -> List[List[BuildTask]]:
+    def schedule(
+        tasks: List[BuildTask], registry: AnalysisRegistry
+    ) -> List[List[BuildTask]]:
         """Groups tasks into stages using dynamic level assignment based on DAG dependencies.
 
         Within each stage, tasks are sorted alphabetically by their analysis name to ensure
@@ -40,7 +42,9 @@ class ExecutionScheduler:
                 return 0
 
             # Stage index is 1 + max of dependency stage indices
-            stages_indices[name] = 1 + max(get_stage_index(dep) for dep in relevant_deps)
+            stages_indices[name] = 1 + max(
+                get_stage_index(dep) for dep in relevant_deps
+            )
             return stages_indices[name]
 
         # Calculate stage index for each task

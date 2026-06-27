@@ -1,4 +1,5 @@
 """Tests for `services.github_review_renderer`."""
+
 from __future__ import annotations
 
 import pytest
@@ -36,14 +37,32 @@ def _result(**overrides: object) -> PRAnalysisResult:
         ],
         top_risks=["Touches billing core", "Breaks public API"],
         changed_files=[
-            ChangedFile(filename="src/a.py", status="modified", additions=10, deletions=2, changes=12),
-            ChangedFile(filename="src/b.py", status="added", additions=40, deletions=0, changes=40),
+            ChangedFile(
+                filename="src/a.py",
+                status="modified",
+                additions=10,
+                deletions=2,
+                changes=12,
+            ),
+            ChangedFile(
+                filename="src/b.py",
+                status="added",
+                additions=40,
+                deletions=0,
+                changes=40,
+            ),
         ],
         total_additions=50,
         total_deletions=2,
         added_symbols=[
-            SymbolChange(name="new_fn", type="function", file_path="src/b.py",
-                         line_number=10, language="python", change_type="added"),
+            SymbolChange(
+                name="new_fn",
+                type="function",
+                file_path="src/b.py",
+                line_number=10,
+                language="python",
+                change_type="added",
+            ),
         ],
         modified_symbols=[],
         removed_symbols=[],
@@ -121,8 +140,11 @@ def test_render_pr_review_handles_empty_optional_sections():
 
 
 def test_render_check_summary_includes_elapsed_and_link():
-    summary = render_check_summary(_result(), elapsed_seconds=12.34,
-                                   comment_url="https://github.com/acme/widgets/pull/42#issuecomment-1")
+    summary = render_check_summary(
+        _result(),
+        elapsed_seconds=12.34,
+        comment_url="https://github.com/acme/widgets/pull/42#issuecomment-1",
+    )
     assert "12.3s" in summary
     assert "72/100" in summary
     assert "Full review comment" in summary

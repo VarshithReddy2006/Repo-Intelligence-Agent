@@ -32,24 +32,26 @@ configure_logging(log_level=settings.log_level, log_format=settings.log_format)
 # Run database migrations on startup
 run_migrations()
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.middleware.gzip import GZipMiddleware
-from backend.logging_middleware import RequestIdMiddleware
-from backend.security_middleware import RateLimitMiddleware
-from backend.metrics_middleware import MetricsMiddleware
+from fastapi import FastAPI  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from fastapi.middleware.trustedhost import TrustedHostMiddleware  # noqa: E402
+from fastapi.middleware.gzip import GZipMiddleware  # noqa: E402
+from backend.logging_middleware import RequestIdMiddleware  # noqa: E402
+from backend.security_middleware import RateLimitMiddleware  # noqa: E402
+from backend.metrics_middleware import MetricsMiddleware  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Application
 # ---------------------------------------------------------------------------
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager  # noqa: E402
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Validate LLM providers during startup before serving traffic
     await validate_llm_providers()
     yield
+
 
 app = FastAPI(
     title="Repo Intelligence Agent API",
@@ -89,23 +91,27 @@ from backend.dependencies import _load_analysis_store  # noqa: E402
 
 _load_analysis_store()
 
+
 # ---------------------------------------------------------------------------
 # Startup Warmup — Eagerly load high-impact services (BGE model, Tokenizer, Python parser)
 # ---------------------------------------------------------------------------
 def _warmup_services() -> None:
     import logging
+
     logger = logging.getLogger("backend.api")
     try:
         # 1. Warm up embedding model & tokenizer
         from services.embedding_service import _get_model
+
         logger.info("Warming up embedding model and tokenizer...")
         model = _get_model()
         # Explicitly warm up the tokenizer and model with a dummy text
         model.encode(["Represent this sentence: dummy text"], show_progress_bar=False)
         logger.info("Embedding model and tokenizer warmed up successfully.")
-        
+
         # 2. Warm up ONLY Python Tree-sitter parser
         from services.tree_sitter_service import TreeSitterService
+
         logger.info("Warming up Python Tree-sitter parser...")
         ts = TreeSitterService()
         ts.parse_file("dummy.py", "def dummy(): pass")
@@ -113,11 +119,13 @@ def _warmup_services() -> None:
     except Exception as exc:
         logger.warning("Startup warm-up failed: %s", exc, exc_info=True)
 
+
 _warmup_services()
 
 # ---------------------------------------------------------------------------
 # Startup Validation — validate LLM providers before serving traffic
 # ---------------------------------------------------------------------------
+
 
 async def validate_llm_providers() -> None:
     """Validate LLM providers during startup before serving traffic.
@@ -178,13 +186,9 @@ async def validate_llm_providers() -> None:
 
     # All providers unhealthy → fail fast in production, warn in development
     if not healthy_names:
-        msg = (
-            "No LLM providers are healthy. Chat will not work.\n"
-            + "\n".join(
-                f"  [{name}] {h.error_type}: {h.error_message}"
-                f"  →  {h.recommendation}"
-                for name, h in unhealthy
-            )
+        msg = "No LLM providers are healthy. Chat will not work.\n" + "\n".join(
+            f"  [{name}] {h.error_type}: {h.error_message}  →  {h.recommendation}"
+            for name, h in unhealthy
         )
         if settings.app_env == "production":
             raise RuntimeError(msg)
@@ -209,6 +213,7 @@ async def validate_llm_providers() -> None:
         "LLM provider validation complete. healthy_providers=%s",
         healthy_names,
     )
+
 
 # ---------------------------------------------------------------------------
 # Public re-exports — backward-compatible shims so that existing test files
@@ -242,20 +247,20 @@ from backend.dependencies import (  # noqa: E402, F401
 # ---------------------------------------------------------------------------
 # Router registration
 # ---------------------------------------------------------------------------
-from backend.routers.health import router as health_router
-from backend.routers.repositories import router as repositories_router
-from backend.routers.chat import router as chat_router
-from backend.routers.architecture import router as architecture_router
-from backend.routers.graph import router as graph_router
-from backend.routers.symbols import router as symbols_router
-from backend.routers.pr import router as pr_router
-from backend.routers.git_history import router as git_history_router
-from backend.routers.call_graph import router as call_graph_router
-from backend.routers.api_surface import router as api_surface_router
-from backend.routers.stability import router as stability_router
-from backend.routers.dependency_smells import router as dependency_smells_router
-from backend.routers.metrics import router as metrics_router
-from backend.routers.report import router as report_router
+from backend.routers.health import router as health_router  # noqa: E402
+from backend.routers.repositories import router as repositories_router  # noqa: E402
+from backend.routers.chat import router as chat_router  # noqa: E402
+from backend.routers.architecture import router as architecture_router  # noqa: E402
+from backend.routers.graph import router as graph_router  # noqa: E402
+from backend.routers.symbols import router as symbols_router  # noqa: E402
+from backend.routers.pr import router as pr_router  # noqa: E402
+from backend.routers.git_history import router as git_history_router  # noqa: E402
+from backend.routers.call_graph import router as call_graph_router  # noqa: E402
+from backend.routers.api_surface import router as api_surface_router  # noqa: E402
+from backend.routers.stability import router as stability_router  # noqa: E402
+from backend.routers.dependency_smells import router as dependency_smells_router  # noqa: E402
+from backend.routers.metrics import router as metrics_router  # noqa: E402
+from backend.routers.report import router as report_router  # noqa: E402
 
 
 # 1. Register routes under root (backward compatibility)

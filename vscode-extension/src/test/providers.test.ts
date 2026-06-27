@@ -57,7 +57,7 @@ describe('Hover content', () => {
       fan_out: 1,
     };
 
-    const md = new StubMarkdownString();
+    const md = new MarkdownString();
     if (symbol.parent_class) {
       md.appendMarkdown(`| Class | \`${symbol.parent_class}\` |\n`);
     }
@@ -78,7 +78,7 @@ describe('Hover content', () => {
       fan_out: 0,
     };
 
-    const md = new StubMarkdownString();
+    const md = new MarkdownString();
     if (symbol.parent_class) {
       md.appendMarkdown(`| Class | \`${symbol.parent_class}\` |\n`);
     }

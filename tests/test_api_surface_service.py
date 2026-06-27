@@ -9,8 +9,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import List, Optional
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -19,7 +18,6 @@ from models.api_surface import (
     APISurfaceStats,
     ApiKind,
     ApiStatus,
-    BreakingChange,
     BreakingChangeKind,
     ClassifiedSymbol,
     Visibility,
@@ -33,11 +31,22 @@ from services.symbol_classifier import SymbolClassifier
 # Fixtures
 # ---------------------------------------------------------------------------
 
-def sym(name, sym_type="function", file_path="services/auth.py",
-        line=1, lang="python", parent=None):
+
+def sym(
+    name,
+    sym_type="function",
+    file_path="services/auth.py",
+    line=1,
+    lang="python",
+    parent=None,
+):
     return Symbol(
-        name=name, type=sym_type, file_path=file_path,
-        line_number=line, language=lang, parent_class=parent,
+        name=name,
+        type=sym_type,
+        file_path=file_path,
+        line_number=line,
+        language=lang,
+        parent_class=parent,
     )
 
 
@@ -99,8 +108,8 @@ def old_function():
 # SymbolClassifier — Python
 # ---------------------------------------------------------------------------
 
-class TestSymbolClassifierPython:
 
+class TestSymbolClassifierPython:
     def test_route_decorator_classified_as_route(self):
         s = sym("list_users", line=5)
         cs = SymbolClassifier.classify(s, PYTHON_ROUTE)
@@ -160,8 +169,7 @@ class TestSymbolClassifierPython:
     def test_entry_point_file_override(self):
         s = sym("main", file_path="backend/main.py", line=1)
         cs = SymbolClassifier.classify(
-            s, "def main(): pass\n",
-            entry_point_files={"backend/main.py"}
+            s, "def main(): pass\n", entry_point_files={"backend/main.py"}
         )
         assert cs.visibility == Visibility.PUBLIC
         assert cs.api_kind == ApiKind.MAIN_ENTRY
@@ -205,7 +213,8 @@ class TestSymbolClassifierPython:
     def test_orphan_flag_when_fan_in_zero_and_public(self):
         s = sym("public_api", line=1)
         cs = SymbolClassifier.classify(
-            s, "def public_api(): pass\n",
+            s,
+            "def public_api(): pass\n",
             call_graph_fan_in=0,
         )
         if cs.visibility == Visibility.PUBLIC:
@@ -214,7 +223,8 @@ class TestSymbolClassifierPython:
     def test_not_orphan_when_fan_in_positive(self):
         s = sym("public_api", line=1)
         cs = SymbolClassifier.classify(
-            s, "def public_api(): pass\n",
+            s,
+            "def public_api(): pass\n",
             call_graph_fan_in=3,
         )
         assert cs.is_orphan is False
@@ -224,11 +234,16 @@ class TestSymbolClassifierPython:
 # SymbolClassifier — TypeScript
 # ---------------------------------------------------------------------------
 
-class TestSymbolClassifierTypeScript:
 
+class TestSymbolClassifierTypeScript:
     def test_exported_function_classified_public(self):
-        s = sym("createUser", sym_type="function",
-                file_path="src/api.ts", lang="typescript", line=1)
+        s = sym(
+            "createUser",
+            sym_type="function",
+            file_path="src/api.ts",
+            lang="typescript",
+            line=1,
+        )
         cs = SymbolClassifier.classify(
             s, TS_EXPORTED, parsed_exports=["createUser", "UserService"]
         )
@@ -236,8 +251,13 @@ class TestSymbolClassifierTypeScript:
         assert cs.api_kind == ApiKind.EXPORTED
 
     def test_exported_class_classified_public_class(self):
-        s = sym("UserService", sym_type="class",
-                file_path="src/api.ts", lang="typescript", line=2)
+        s = sym(
+            "UserService",
+            sym_type="class",
+            file_path="src/api.ts",
+            lang="typescript",
+            line=2,
+        )
         cs = SymbolClassifier.classify(
             s, TS_EXPORTED, parsed_exports=["createUser", "UserService"]
         )
@@ -245,26 +265,43 @@ class TestSymbolClassifierTypeScript:
         assert cs.api_kind == ApiKind.PUBLIC_CLASS
 
     def test_non_exported_function_classified_internal(self):
-        s = sym("internalHelper", sym_type="function",
-                file_path="src/api.ts", lang="typescript", line=3)
+        s = sym(
+            "internalHelper",
+            sym_type="function",
+            file_path="src/api.ts",
+            lang="typescript",
+            line=3,
+        )
         cs = SymbolClassifier.classify(
             s, TS_EXPORTED, parsed_exports=["createUser", "UserService"]
         )
         # Not in export list and no private prefix
         # File HAS exports, so non-exported → internal or falls to top-level inference
-        assert cs.visibility in (Visibility.INTERNAL, Visibility.UNKNOWN, Visibility.PUBLIC)
+        assert cs.visibility in (
+            Visibility.INTERNAL,
+            Visibility.UNKNOWN,
+            Visibility.PUBLIC,
+        )
 
     def test_file_with_no_exports_everything_internal(self):
-        s = sym("helper", sym_type="function",
-                file_path="src/util.ts", lang="typescript", line=1)
-        cs = SymbolClassifier.classify(
-            s, "function helper() {}", parsed_exports=[]
+        s = sym(
+            "helper",
+            sym_type="function",
+            file_path="src/util.ts",
+            lang="typescript",
+            line=1,
         )
+        cs = SymbolClassifier.classify(s, "function helper() {}", parsed_exports=[])
         assert cs.visibility == Visibility.INTERNAL
 
     def test_interface_always_public(self):
-        s = sym("IUser", sym_type="interface",
-                file_path="types.ts", lang="typescript", line=1)
+        s = sym(
+            "IUser",
+            sym_type="interface",
+            file_path="types.ts",
+            lang="typescript",
+            line=1,
+        )
         cs = SymbolClassifier.classify(s, "interface IUser {}", parsed_exports=None)
         assert cs.visibility == Visibility.PUBLIC
         assert cs.api_kind == ApiKind.INTERFACE
@@ -274,8 +311,8 @@ class TestSymbolClassifierTypeScript:
 # __all__ extraction
 # ---------------------------------------------------------------------------
 
-class TestPythonAllExtraction:
 
+class TestPythonAllExtraction:
     def test_extracts_names(self):
         result = SymbolClassifier.extract_python_all(PYTHON_ALL)
         assert result == {"PublicClass", "public_fn"}
@@ -297,8 +334,14 @@ class TestPythonAllExtraction:
 # BreakingChangeAnalyzer
 # ---------------------------------------------------------------------------
 
-def make_cs(name, file_path="auth.py", visibility=Visibility.PUBLIC,
-            param_count=2, qualified=None):
+
+def make_cs(
+    name,
+    file_path="auth.py",
+    visibility=Visibility.PUBLIC,
+    param_count=2,
+    qualified=None,
+):
     return ClassifiedSymbol(
         name=name,
         qualified=qualified or name,
@@ -320,10 +363,9 @@ def make_surface(symbols, repo="test/repo"):
 
 
 class TestBreakingChangeAnalyzer:
-
     def test_removed_export_detected(self):
         before = make_surface([make_cs("authenticate")])
-        after  = make_surface([])
+        after = make_surface([])
         changes = BreakingChangeAnalyzer.diff(before, after)
         assert any(c.kind == BreakingChangeKind.REMOVED_EXPORT for c in changes)
         assert any(c.symbol_name == "authenticate" for c in changes)
@@ -331,62 +373,65 @@ class TestBreakingChangeAnalyzer:
     def test_no_change_no_breaking(self):
         s = make_cs("authenticate")
         before = make_surface([s])
-        after  = make_surface([make_cs("authenticate", param_count=2)])
+        after = make_surface([make_cs("authenticate", param_count=2)])
         changes = BreakingChangeAnalyzer.diff(before, after)
         assert changes == []
 
     def test_param_count_change_detected(self):
         before = make_surface([make_cs("login", param_count=2)])
-        after  = make_surface([make_cs("login", param_count=3)])
+        after = make_surface([make_cs("login", param_count=3)])
         changes = BreakingChangeAnalyzer.diff(before, after)
         assert any(c.kind == BreakingChangeKind.SIGNATURE_CHANGED for c in changes)
 
     def test_rename_detected_as_renamed_not_removed(self):
         before = make_surface([make_cs("old_auth", file_path="auth.py")])
-        after  = make_surface([make_cs("old_auth", file_path="new_auth.py")])
+        after = make_surface([make_cs("old_auth", file_path="new_auth.py")])
         changes = BreakingChangeAnalyzer.diff(before, after)
         kinds = {c.kind for c in changes}
         # Either RENAMED_EXPORT is present, or REMOVED_EXPORT — test that REMOVED is not
         # the only one (rename detection might or might not fire depending on impl)
-        assert BreakingChangeKind.RENAMED_EXPORT in kinds or BreakingChangeKind.REMOVED_EXPORT in kinds
+        assert (
+            BreakingChangeKind.RENAMED_EXPORT in kinds
+            or BreakingChangeKind.REMOVED_EXPORT in kinds
+        )
 
     def test_visibility_reduction_detected(self):
         before_sym = make_cs("helper", visibility=Visibility.PUBLIC)
-        after_sym  = make_cs("helper", visibility=Visibility.PRIVATE)
+        after_sym = make_cs("helper", visibility=Visibility.PRIVATE)
         before = make_surface([before_sym])
-        after  = make_surface([after_sym])
+        after = make_surface([after_sym])
         changes = BreakingChangeAnalyzer.diff(before, after)
         assert any(c.kind == BreakingChangeKind.VISIBILITY_REDUCED for c in changes)
 
     def test_internal_changes_not_breaking(self):
         before = make_surface([make_cs("_helper", visibility=Visibility.INTERNAL)])
-        after  = make_surface([])
+        after = make_surface([])
         changes = BreakingChangeAnalyzer.diff(before, after)
         # Internal symbols removed → not breaking
         assert all(c.symbol_name != "_helper" for c in changes)
 
     def test_added_export_not_breaking(self):
         before = make_surface([])
-        after  = make_surface([make_cs("new_fn")])
+        after = make_surface([make_cs("new_fn")])
         changes = BreakingChangeAnalyzer.diff(before, after)
         # Additions are never breaking
         assert changes == []
 
     def test_high_severity_for_removed(self):
         before = make_surface([make_cs("critical_fn")])
-        after  = make_surface([])
+        after = make_surface([])
         changes = BreakingChangeAnalyzer.diff(before, after)
         assert all(c.severity in ("high", "medium") for c in changes)
 
     def test_diff_file_symbols_wrapper(self):
         before_syms = [make_cs("fn_a")]
-        after_syms  = []
+        after_syms = []
         changes = BreakingChangeAnalyzer.diff_file_symbols(before_syms, after_syms)
         assert any(c.symbol_name == "fn_a" for c in changes)
 
     def test_empty_surfaces_no_changes(self):
         before = make_surface([])
-        after  = make_surface([])
+        after = make_surface([])
         assert BreakingChangeAnalyzer.diff(before, after) == []
 
 
@@ -394,10 +439,11 @@ class TestBreakingChangeAnalyzer:
 # APISurfaceService persistence
 # ---------------------------------------------------------------------------
 
-class TestAPISurfaceServicePersistence:
 
+class TestAPISurfaceServicePersistence:
     def _make_service(self, tmp_path):
         from services.api_surface_service import APISurfaceService
+
         mock_sym = MagicMock()
         mock_arch = MagicMock()
         return APISurfaceService(
@@ -438,8 +484,16 @@ class TestAPISurfaceServicePersistence:
         svc = self._make_service(tmp_path)
         path = svc._surface_path("owner/repo")
         with open(path, "w") as f:
-            json.dump({"_schema_version": 0, "repo": "owner/repo",
-                       "generated_at": "", "symbols": [], "stats": {}}, f)
+            json.dump(
+                {
+                    "_schema_version": 0,
+                    "repo": "owner/repo",
+                    "generated_at": "",
+                    "symbols": [],
+                    "stats": {},
+                },
+                f,
+            )
         assert svc.load("owner/repo") is None
 
     def test_atomic_write_no_tmp_leftover(self, tmp_path):
@@ -465,10 +519,16 @@ class TestAPISurfaceServicePersistence:
         syms = [
             make_cs("stable_fn"),
             ClassifiedSymbol(
-                name="old_fn", qualified="old_fn", symbol_type="function",
-                file_path="f.py", line_number=1, language="python",
-                visibility=Visibility.PUBLIC, api_kind=ApiKind.PUBLIC_FUNCTION,
-                status=ApiStatus.DEPRECATED, confidence=0.9,
+                name="old_fn",
+                qualified="old_fn",
+                symbol_type="function",
+                file_path="f.py",
+                line_number=1,
+                language="python",
+                visibility=Visibility.PUBLIC,
+                api_kind=ApiKind.PUBLIC_FUNCTION,
+                status=ApiStatus.DEPRECATED,
+                confidence=0.9,
                 classification_reason="test",
             ),
         ]
@@ -488,14 +548,18 @@ class TestAPISurfaceServicePersistence:
 
     def test_search_empty_query_returns_empty(self, tmp_path):
         svc = self._make_service(tmp_path)
-        surface = APISurface(repo="owner/repo", generated_at="", symbols=[make_cs("fn")])
+        surface = APISurface(
+            repo="owner/repo", generated_at="", symbols=[make_cs("fn")]
+        )
         svc._save("owner/repo", surface)
         results = svc.search("owner/repo", "zzznomatch")
         assert results == []
 
     def test_get_symbol_by_name(self, tmp_path):
         svc = self._make_service(tmp_path)
-        surface = APISurface(repo="owner/repo", generated_at="", symbols=[make_cs("fn")])
+        surface = APISurface(
+            repo="owner/repo", generated_at="", symbols=[make_cs("fn")]
+        )
         svc._save("owner/repo", surface)
         result = svc.get_symbol("owner/repo", "fn")
         assert result is not None
@@ -503,7 +567,9 @@ class TestAPISurfaceServicePersistence:
 
     def test_get_symbol_unknown_returns_none(self, tmp_path):
         svc = self._make_service(tmp_path)
-        surface = APISurface(repo="owner/repo", generated_at="", symbols=[make_cs("fn")])
+        surface = APISurface(
+            repo="owner/repo", generated_at="", symbols=[make_cs("fn")]
+        )
         svc._save("owner/repo", surface)
         assert svc.get_symbol("owner/repo", "nonexistent") is None
 
@@ -512,10 +578,11 @@ class TestAPISurfaceServicePersistence:
 # APISurfaceService._compute_stats
 # ---------------------------------------------------------------------------
 
-class TestComputeStats:
 
+class TestComputeStats:
     def test_counts_correct(self):
         from services.api_surface_service import APISurfaceService
+
         syms = [
             make_cs("a", visibility=Visibility.PUBLIC),
             make_cs("b", visibility=Visibility.INTERNAL),
@@ -529,12 +596,20 @@ class TestComputeStats:
 
     def test_route_count(self):
         from services.api_surface_service import APISurfaceService
+
         syms = [
             ClassifiedSymbol(
-                name="get_users", qualified="get_users", symbol_type="function",
-                file_path="api.py", line_number=1, language="python",
-                visibility=Visibility.PUBLIC, api_kind=ApiKind.ROUTE,
-                status=ApiStatus.STABLE, confidence=0.9, classification_reason="test",
+                name="get_users",
+                qualified="get_users",
+                symbol_type="function",
+                file_path="api.py",
+                line_number=1,
+                language="python",
+                visibility=Visibility.PUBLIC,
+                api_kind=ApiKind.ROUTE,
+                status=ApiStatus.STABLE,
+                confidence=0.9,
+                classification_reason="test",
             ),
             make_cs("other"),
         ]
@@ -543,6 +618,7 @@ class TestComputeStats:
 
     def test_orphan_count(self):
         from services.api_surface_service import APISurfaceService
+
         s = make_cs("orphan_fn")
         s_orphan = s.model_copy(update={"is_orphan": True})
         stats = APISurfaceService._compute_stats([s_orphan, make_cs("normal")])
@@ -553,8 +629,8 @@ class TestComputeStats:
 # API endpoint smoke tests
 # ---------------------------------------------------------------------------
 
-class TestAPISurfaceAPIEndpoints:
 
+class TestAPISurfaceAPIEndpoints:
     @pytest.fixture(autouse=True)
     def setup(self, tmp_path):
         from fastapi.testclient import TestClient
@@ -564,7 +640,9 @@ class TestAPISurfaceAPIEndpoints:
 
         ANALYSIS_STORE["test/repo"] = {
             "analysis": RepositoryAnalysis(
-                structure={}, dependencies=[], tech_stack=[],
+                structure={},
+                dependencies=[],
+                tech_stack=[],
                 metadata={"local_path": str(tmp_path)},
             ),
             "architecture": AS(summary="", reading_order=[], relationships=[]),

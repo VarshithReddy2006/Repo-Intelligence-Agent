@@ -11,8 +11,6 @@ Covers:
 
 import os
 import sys
-import json
-import pickle
 import pytest
 
 # ---------------------------------------------------------------------------
@@ -24,7 +22,7 @@ from services.tree_sitter_service import TreeSitterService
 from services.graph_service import GraphService
 from services.entry_point_service import EntryPointService
 from services.architecture_service import ArchitectureService
-from models.architecture import ParsedFile, GraphNode, GraphEdge, ArchitectureSummary
+from models.architecture import ParsedFile, ArchitectureSummary
 
 
 # ===========================================================================
@@ -82,6 +80,7 @@ export function startServer(port: number): void {
 }
 """
 
+
 @pytest.fixture
 def ts_service():
     return TreeSitterService()
@@ -130,6 +129,7 @@ def mixed_files(python_files, js_files):
 # 1. TreeSitterService
 # ===========================================================================
 
+
 class TestTreeSitterService:
     """Tree-Sitter parsing — imports, classes, functions."""
 
@@ -161,10 +161,13 @@ class TestTreeSitterService:
         assert result["language"] == "python"
 
     def test_python_class_methods_extracted(self, ts_service):
-        result = ts_service.parse_file("services/retrieval_service.py", PYTHON_SERVICE_CONTENT)
+        result = ts_service.parse_file(
+            "services/retrieval_service.py", PYTHON_SERVICE_CONTENT
+        )
         assert result is not None
         service_class = next(
-            (c for c in result["classes"] if c["class_name"] == "RetrievalService"), None
+            (c for c in result["classes"] if c["class_name"] == "RetrievalService"),
+            None,
         )
         assert service_class is not None
         assert "__init__" in service_class["methods"]
@@ -250,6 +253,7 @@ class TestTreeSitterService:
 # 2. GraphService
 # ===========================================================================
 
+
 class TestGraphService:
     """Dependency graph construction, stats, and persistence."""
 
@@ -317,11 +321,14 @@ class TestGraphService:
 # 3. EntryPointService
 # ===========================================================================
 
+
 class TestEntryPointService:
     """Entry point pattern detection."""
 
     def test_main_py_detected(self, entry_service):
-        result = entry_service.detect(["backend/main.py", "services/retrieval_service.py"])
+        result = entry_service.detect(
+            ["backend/main.py", "services/retrieval_service.py"]
+        )
         assert "backend/main.py" in result["entry_points"]
 
     def test_dunder_main_detected(self, entry_service):
@@ -369,6 +376,7 @@ class TestEntryPointService:
 # 4. ArchitectureSummary model
 # ===========================================================================
 
+
 class TestArchitectureSummaryModel:
     """Pydantic model validation."""
 
@@ -409,6 +417,7 @@ class TestArchitectureSummaryModel:
 # ===========================================================================
 # 5. ArchitectureService — full pipeline
 # ===========================================================================
+
 
 class TestArchitectureService:
     """Integration: parse → entry points → graph → summary → persist."""
@@ -464,7 +473,7 @@ class TestArchitectureService:
         assert arch_service.summary_exists("test/myrepo") is True
 
     def test_centrality_returns_core_modules(self, arch_service, python_files):
-        result = arch_service.build(repo_name="test/myrepo", files=python_files)
+        arch_service.build(repo_name="test/myrepo", files=python_files)
         summary = arch_service.get_summary("test/myrepo")
         assert summary is not None
         # core_modules come from centrality — they may be empty for tiny repos
@@ -482,7 +491,9 @@ class TestArchitectureService:
     def test_force_rebuild(self, arch_service, python_files):
         """Rebuilding with force_rebuild=True must not raise and must update results."""
         result1 = arch_service.build(repo_name="test/myrepo", files=python_files)
-        result2 = arch_service.build(repo_name="test/myrepo", files=python_files, force_rebuild=True)
+        result2 = arch_service.build(
+            repo_name="test/myrepo", files=python_files, force_rebuild=True
+        )
         assert result2["status"] == "success"
         assert result2["files_parsed"] == result1["files_parsed"]
 
@@ -491,6 +502,7 @@ class TestArchitectureService:
 # 6. API endpoints (FastAPI TestClient)
 # ===========================================================================
 
+
 class TestArchitectureAPI:
     """End-to-end API tests for the architecture endpoints."""
 
@@ -498,13 +510,14 @@ class TestArchitectureAPI:
     def client(self):
         from fastapi.testclient import TestClient
         from backend.api import app
+
         self._client = TestClient(app)
 
     def test_build_endpoint_missing_repo_returns_404(self):
         """Repo that hasn't been cloned yet should return 404."""
         response = self._client.post(
             "/api/architecture/build",
-            json={"repo": "nonexistent/repo-that-does-not-exist"}
+            json={"repo": "nonexistent/repo-that-does-not-exist"},
         )
         assert response.status_code == 404
 
@@ -522,8 +535,7 @@ class TestArchitectureAPI:
     def test_build_architecture_route_exists(self):
         """Route must exist and return proper HTTP error for uncloned repo."""
         response = self._client.post(
-            "/api/architecture/build",
-            json={"repo": "nonexistent/test-repo-xyz"}
+            "/api/architecture/build", json={"repo": "nonexistent/test-repo-xyz"}
         )
         assert response.status_code in (404, 422, 500)
 
@@ -534,7 +546,6 @@ class TestArchitectureAPI:
 
     def test_get_summary_response_schema_when_available(self, tmp_path):
         """If a summary JSON exists in arch_dir, the API should return valid schema."""
-        import json
         from services.architecture_service import ArchitectureService
 
         # Write a fake summary directly to the real architecture dir
@@ -567,6 +578,7 @@ class TestArchitectureAPI:
 # 7. Validation against fastapi/fastapi (cloned repo on disk)
 # ===========================================================================
 
+
 class TestFastapiRepoValidation:
     """Validate against the real fastapi/fastapi repo if it's already cloned."""
 
@@ -576,7 +588,9 @@ class TestFastapiRepoValidation:
     def local_path(self):
         base = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "data", "cloned_repos", "fastapi_fastapi"
+            "data",
+            "cloned_repos",
+            "fastapi_fastapi",
         )
         return base
 

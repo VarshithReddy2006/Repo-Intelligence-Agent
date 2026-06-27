@@ -5,6 +5,7 @@ network. The GitHub Action uses these to build the sticky comment and the
 Check Run summary; the same renderer is reusable later for HTML/PDF reports
 since the inputs are model objects and the outputs are plain strings.
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -132,9 +133,7 @@ def render_pr_review(result: PRAnalysisResult) -> str:
         lines.append("</details>")
         lines.append("")
 
-    lines.append(
-        f"<sub>Analyzed at {result.analyzed_at} · repo `{result.repo}`</sub>"
-    )
+    lines.append(f"<sub>Analyzed at {result.analyzed_at} · repo `{result.repo}`</sub>")
     return "\n".join(lines)
 
 

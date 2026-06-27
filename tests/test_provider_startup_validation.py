@@ -15,7 +15,9 @@ from services.llm.base_provider import ProviderHealth
 from services.llm.provider_errors import ProviderErrorType
 
 
-def _make_health(healthy: bool, provider: str, error_type: str = None) -> ProviderHealth:
+def _make_health(
+    healthy: bool, provider: str, error_type: str = None
+) -> ProviderHealth:
     return ProviderHealth(
         healthy=healthy,
         provider=provider,
@@ -32,6 +34,7 @@ def _make_health(healthy: bool, provider: str, error_type: str = None) -> Provid
 # Helpers: patch at canonical locations where the classes are defined,
 # not where they are locally imported inside validate_all_providers().
 # ---------------------------------------------------------------------------
+
 
 def _provider_patches(
     primary_health: ProviderHealth,
@@ -81,15 +84,12 @@ def _provider_patches(
     settings_mock.deepseek_base_url = "https://integrate.api.nvidia.com/v1"
     settings_mock.deepseek_model = "deepseek-ai/deepseek-v4-flash"
 
-    stack.enter_context(
-        patch("backend.settings.Settings", return_value=settings_mock)
-    )
+    stack.enter_context(patch("backend.settings.Settings", return_value=settings_mock))
 
     return stack, mock_secondary
 
 
 class TestValidateAllProviders:
-
     @pytest.mark.anyio
     async def test_both_providers_healthy(self):
         """Happy path: both Gemini (primary) and DeepSeek (secondary) are healthy."""
@@ -132,7 +132,8 @@ class TestValidateAllProviders:
         from services.llm.provider_factory import ProviderFactory
 
         gemini_health = _make_health(
-            False, "gemini",
+            False,
+            "gemini",
             error_type=ProviderErrorType.INVALID_CREDENTIAL_TYPE.value,
         )
         deepseek_health = _make_health(True, "deepseek")
@@ -161,7 +162,10 @@ class TestValidateAllProviders:
             results = await ProviderFactory.validate_all_providers()
 
         assert results["gemini"].healthy is False
-        assert results["gemini"].error_type == ProviderErrorType.INVALID_CREDENTIAL_TYPE.value
+        assert (
+            results["gemini"].error_type
+            == ProviderErrorType.INVALID_CREDENTIAL_TYPE.value
+        )
         assert results["deepseek"].healthy is True
 
     @pytest.mark.anyio
@@ -169,8 +173,12 @@ class TestValidateAllProviders:
         """All providers fail — returns results dict, does NOT raise."""
         from services.llm.provider_factory import ProviderFactory
 
-        gemini_health = _make_health(False, "gemini", ProviderErrorType.AUTHENTICATION_ERROR.value)
-        deepseek_health = _make_health(False, "deepseek", ProviderErrorType.AUTHENTICATION_ERROR.value)
+        gemini_health = _make_health(
+            False, "gemini", ProviderErrorType.AUTHENTICATION_ERROR.value
+        )
+        deepseek_health = _make_health(
+            False, "deepseek", ProviderErrorType.AUTHENTICATION_ERROR.value
+        )
 
         mock_primary = AsyncMock()
         mock_primary.health_check = AsyncMock(return_value=gemini_health)
@@ -213,7 +221,7 @@ class TestValidateAllProviders:
         settings_mock.llm_provider = "gemini"
         settings_mock.gemini_api_key = "good-key"
         settings_mock.gemini_model = "gemini-2.5-flash"
-        settings_mock.deepseek_api_key = None   # no secondary configured
+        settings_mock.deepseek_api_key = None  # no secondary configured
         settings_mock.deepseek_base_url = "https://integrate.api.nvidia.com/v1"
         settings_mock.deepseek_model = "deepseek-ai/deepseek-v4-flash"
 
@@ -241,7 +249,8 @@ class TestValidateAllProviders:
 
         with (
             patch.object(
-                ProviderFactory, "get_provider",
+                ProviderFactory,
+                "get_provider",
                 side_effect=ValueError("Unknown provider"),
             ),
             patch("services.llm.provider_factory.Settings", return_value=settings_mock),
@@ -257,6 +266,7 @@ class TestValidateAllProviders:
 # Startup policy (pure logic, no mocks needed)
 # ===========================================================================
 
+
 class TestStartupPolicy:
     """Verify the startup policy: only fail when ALL providers are unhealthy."""
 
@@ -266,7 +276,7 @@ class TestStartupPolicy:
             "deepseek": _make_health(False, "deepseek", "authentication_error"),
         }
         healthy = [n for n, h in results.items() if h.healthy]
-        assert len(healthy) == 0   # caller should abort
+        assert len(healthy) == 0  # caller should abort
 
     def test_policy_primary_bad_fallback_good_means_continue(self):
         results = {
@@ -274,7 +284,7 @@ class TestStartupPolicy:
             "deepseek": _make_health(True, "deepseek"),
         }
         healthy = [n for n, h in results.items() if h.healthy]
-        assert len(healthy) > 0   # caller should continue
+        assert len(healthy) > 0  # caller should continue
 
     def test_policy_all_healthy_means_continue(self):
         results = {

@@ -15,9 +15,7 @@ import json
 import logging
 import os
 import time
-from typing import Any, Dict, List, Optional
-
-logger = logging.getLogger(__name__)
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -42,6 +40,9 @@ from services.github_service import (
     RepositoryNotFoundError,
 )
 from services.ingestion_service import detect_tech_stack_and_deps, parse_repo_name
+
+logger = logging.getLogger(__name__)
+
 
 class PipelineTimer:
     def __init__(self) -> None:
@@ -104,19 +105,32 @@ def format_analysis_error(e: Exception) -> str:
         suggested_fix = "Please verify the repository exists and is public. If it is private, make sure a valid GITHUB_TOKEN (PAT) is set in your environment settings."
         recoverable = "No"
         retryable = "No"
-    elif "permission" in err_str.lower() or "authorization" in err_str.lower() or "write access" in err_str.lower():
+    elif (
+        "permission" in err_str.lower()
+        or "authorization" in err_str.lower()
+        or "write access" in err_str.lower()
+    ):
         stage = "Cloning"
         reason = "GitHub authentication or permission error."
         suggested_fix = "Please check if your GITHUB_TOKEN is correct and has the required read scopes."
         recoverable = "No"
         retryable = "No"
-    elif "network failure" in err_str.lower() or "connection failure" in err_str.lower() or "could not resolve host" in err_str.lower():
+    elif (
+        "network failure" in err_str.lower()
+        or "connection failure" in err_str.lower()
+        or "could not resolve host" in err_str.lower()
+    ):
         stage = "Cloning"
         reason = "Unable to connect to GitHub (network error)."
         suggested_fix = "Please check the server's network connection and try again."
         recoverable = "Yes"
         retryable = "Yes"
-    elif "rate limit" in err_str.lower() or "quota" in err_str.lower() or "503" in err_str.lower() or "heavy load" in err_str.lower():
+    elif (
+        "rate limit" in err_str.lower()
+        or "quota" in err_str.lower()
+        or "503" in err_str.lower()
+        or "heavy load" in err_str.lower()
+    ):
         stage = "LLM/API Call"
         reason = "GitHub or AI provider rate limit/quota exceeded or server overloaded."
         suggested_fix = "Please wait a few minutes before retrying."
@@ -138,6 +152,7 @@ router = APIRouter(prefix="/api", tags=["Repositories"])
 # Request models
 # ---------------------------------------------------------------------------
 
+
 class AnalyzeRequest(BaseModel):
     url: str = Field(..., description="GitHub repository URL")
     branch: str = Field("main", description="Git branch or ref")
@@ -145,7 +160,6 @@ class AnalyzeRequest(BaseModel):
         "deepseek-ai/deepseek-v4-flash", description="LLM model variant to use"
     )
     force_rebuild: bool = Field(False, description="Force full rebuild of all indexes")
-
 
 
 class IndexRequest(BaseModel):
@@ -165,6 +179,7 @@ class RepoRepairRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
 
 @router.get("/repos/examples")
 async def get_examples():
@@ -263,9 +278,7 @@ async def retrieve_from_repository(request: RetrieveRequest):
 
     try:
         pipeline = get_retrieval_pipeline()
-        result = await pipeline.retrieve(
-            request.repo.strip(), request.question.strip()
-        )
+        result = await pipeline.retrieve(request.repo.strip(), request.question.strip())
         return result
     except Exception as e:
         logger.error("Failed to retrieve: %s", e, exc_info=True)
@@ -282,7 +295,7 @@ async def analyze_repository(request: AnalyzeRequest):
         timer = PipelineTimer()
         try:
             start_time = time.time()
-            
+
             # ── 1. Cloning ────────────────────────────────────────────────────
             yield f"data: {json.dumps({'status': 'cloning', 'message': 'Cloning repository from GitHub...'})}\n\n"
             timer.start("Clone")
@@ -295,7 +308,9 @@ async def analyze_repository(request: AnalyzeRequest):
             # ── 2. Detecting ──────────────────────────────────────────────────
             yield f"data: {json.dumps({'status': 'detecting', 'message': 'Detecting languages and frameworks...'})}\n\n"
             timer.start("Parse")
-            files = await asyncio.to_thread(github_service.extract_source_files, local_path)
+            files = await asyncio.to_thread(
+                github_service.extract_source_files, local_path
+            )
             tech_stack, dependencies = detect_tech_stack_and_deps(files)
             timer.stop("Parse")
             yield f"data: {json.dumps({'status': 'detected', 'message': f'✓ Technologies detected: {tech_stack}'})}\n\n"
@@ -305,7 +320,9 @@ async def analyze_repository(request: AnalyzeRequest):
             from models.build_manifest import BuildManifest
 
             # Load previous manifest
-            old_manifest_data = await asyncio.to_thread(snapshot_store.load, repo_name, "build_manifest")
+            old_manifest_data = await asyncio.to_thread(
+                snapshot_store.load, repo_name, "build_manifest"
+            )
             old_manifest = None
             if old_manifest_data:
                 try:
@@ -314,17 +331,26 @@ async def analyze_repository(request: AnalyzeRequest):
                     logger.warning("Stale or malformed build manifest ignored: %s", exc)
 
             detector = ChangeDetector()
-            change_set, file_hashes, repo_hash = detector.detect_changes(files, old_manifest)
-            
+            change_set, file_hashes, repo_hash = detector.detect_changes(
+                files, old_manifest
+            )
+
             # Check schema versions to detect if force rebuild is needed
             schema_mismatch = False
             if old_manifest:
                 prev_sym_ver = old_manifest.schema_versions.get("Symbol Index", 0)
                 prev_dep_ver = old_manifest.schema_versions.get("Dependency Graph", 0)
-                if prev_sym_ver < symbol_service.schema_version or prev_dep_ver < architecture_service.schema_version:
+                if (
+                    prev_sym_ver < symbol_service.schema_version
+                    or prev_dep_ver < architecture_service.schema_version
+                ):
                     schema_mismatch = True
 
-            is_incremental = old_manifest is not None and not request.force_rebuild and not schema_mismatch
+            is_incremental = (
+                old_manifest is not None
+                and not request.force_rebuild
+                and not schema_mismatch
+            )
             changed_files = change_set.added | change_set.modified | change_set.deleted
 
             # ── 4. Granular Chunking & Embedding ──────────────────────────────
@@ -341,28 +367,46 @@ async def analyze_repository(request: AnalyzeRequest):
                         where_filter = {
                             "$and": [
                                 {"repo_name": {"$eq": repo_name}},
-                                {"file_path": {"$in": files_to_delete}}
+                                {"file_path": {"$in": files_to_delete}},
                             ]
                         }
                         await asyncio.to_thread(
-                            chroma_store.collection.delete,
-                            where=where_filter
+                            chroma_store.collection.delete, where=where_filter
                         )
-                        logger.info("Successfully deleted chunks for %d files in bulk.", len(files_to_delete))
+                        logger.info(
+                            "Successfully deleted chunks for %d files in bulk.",
+                            len(files_to_delete),
+                        )
                     except Exception as exc:
-                        logger.warning("Bulk delete with $in failed, falling back to individual file deletion: %s", exc)
+                        logger.warning(
+                            "Bulk delete with $in failed, falling back to individual file deletion: %s",
+                            exc,
+                        )
                         for file_path in files_to_delete:
                             try:
                                 await asyncio.to_thread(
                                     chroma_store.collection.delete,
-                                    where={"$and": [{"repo_name": repo_name}, {"file_path": file_path}]}
+                                    where={
+                                        "$and": [
+                                            {"repo_name": repo_name},
+                                            {"file_path": file_path},
+                                        ]
+                                    },
                                 )
                             except Exception as e:
-                                logger.warning("Failed to delete chunks for %s from Chroma: %s", file_path, e)
+                                logger.warning(
+                                    "Failed to delete chunks for %s from Chroma: %s",
+                                    file_path,
+                                    e,
+                                )
                     timer.stop("Chroma")
 
                 # Chunk only added and modified files
-                files_to_chunk = [f for f in files if f["path"] in (change_set.added | change_set.modified)]
+                files_to_chunk = [
+                    f
+                    for f in files
+                    if f["path"] in (change_set.added | change_set.modified)
+                ]
                 new_chunks = []
                 timer.start("Chunk")
                 for file in files_to_chunk:
@@ -378,30 +422,34 @@ async def analyze_repository(request: AnalyzeRequest):
                         embedding_service.generate_embeddings, new_chunks
                     )
                     timer.stop("Embedding")
-                    
+
                     # Prepare bulk insertion payload
                     bulk_ids = []
                     bulk_docs = []
                     bulk_embeddings = []
                     bulk_metadatas = []
-                    
+
                     file_chunk_counts = {}
                     for idx, chunk in enumerate(new_chunks):
                         path = chunk["path"]
                         chunk_idx = file_chunk_counts.get(path, 0)
                         file_chunk_counts[path] = chunk_idx + 1
-                        
-                        unique_id = f"{repo_name}_{path}_{chunk_idx}".replace("/", "_").replace(".", "_")
+
+                        unique_id = f"{repo_name}_{path}_{chunk_idx}".replace(
+                            "/", "_"
+                        ).replace(".", "_")
                         bulk_ids.append(unique_id)
                         bulk_docs.append(chunk["content"])
                         bulk_embeddings.append(new_embeddings[idx])
-                        bulk_metadatas.append({
-                            "repo_name": repo_name,
-                            "file_path": path,
-                            "chunk_id": chunk_idx,
-                            "language": chunker.detect_language(path),
-                        })
-                    
+                        bulk_metadatas.append(
+                            {
+                                "repo_name": repo_name,
+                                "file_path": path,
+                                "chunk_id": chunk_idx,
+                                "language": chunker.detect_language(path),
+                            }
+                        )
+
                     if bulk_ids:
                         timer.start("Chroma")
                         await asyncio.to_thread(
@@ -409,16 +457,19 @@ async def analyze_repository(request: AnalyzeRequest):
                             bulk_ids,
                             bulk_docs,
                             bulk_embeddings,
-                            bulk_metadatas
+                            bulk_metadatas,
                         )
                         timer.stop("Chroma")
-                        logger.info("Successfully bulk inserted %d new chunks into Chroma.", len(bulk_ids))
+                        logger.info(
+                            "Successfully bulk inserted %d new chunks into Chroma.",
+                            len(bulk_ids),
+                        )
             else:
                 # Full Mode: delete the entire repository index from Chroma
                 timer.start("Chroma")
                 await asyncio.to_thread(chroma_store.delete_repository, repo_name)
                 timer.stop("Chroma")
-                
+
                 # Chunk all files
                 timer.start("Chunk")
                 for file in files:
@@ -435,7 +486,7 @@ async def analyze_repository(request: AnalyzeRequest):
                         embedding_service.generate_embeddings, all_chunks
                     )
                     timer.stop("Embedding")
-                    
+
                     timer.start("Chroma")
                     await asyncio.to_thread(
                         chroma_store.index_repository, repo_name, all_chunks, embeddings
@@ -447,7 +498,11 @@ async def analyze_repository(request: AnalyzeRequest):
             timer.start("Graphs")
             if is_incremental:
                 await asyncio.to_thread(
-                    symbol_service.build_partial, repo_name, changed_files, local_path, files
+                    symbol_service.build_partial,
+                    repo_name,
+                    changed_files,
+                    local_path,
+                    files,
                 )
             else:
                 await asyncio.to_thread(
@@ -457,7 +512,11 @@ async def analyze_repository(request: AnalyzeRequest):
             yield f"data: {json.dumps({'status': 'building_dependency', 'message': 'Building Dependency Graph'})}\n\n"
             if is_incremental:
                 arch_build_result = await asyncio.to_thread(
-                    architecture_service.build_partial, repo_name, changed_files, local_path, files
+                    architecture_service.build_partial,
+                    repo_name,
+                    changed_files,
+                    local_path,
+                    files,
                 )
             else:
                 arch_build_result = await asyncio.to_thread(
@@ -472,25 +531,36 @@ async def analyze_repository(request: AnalyzeRequest):
             yield f"data: {json.dumps({'status': 'building_call', 'message': 'Building Call Graph'})}\n\n"
             from backend.dependencies import call_graph_service, api_surface_service
             from core.repository_context import RepositoryContext
+
             context = RepositoryContext(repo_name, repo_path=local_path)
-            
+
             if is_incremental:
-                call_gen = call_graph_service.build_partial(repo_name, changed_files, context=context, files=files)
+                call_gen = call_graph_service.build_partial(
+                    repo_name, changed_files, context=context, files=files
+                )
             else:
-                call_gen = call_graph_service.build_full(repo_name, context=context, files=files)
+                call_gen = call_graph_service.build_full(
+                    repo_name, context=context, files=files
+                )
             await asyncio.to_thread(lambda: list(call_gen))
 
             yield f"data: {json.dumps({'status': 'building_api', 'message': 'Computing API Surface'})}\n\n"
             if is_incremental:
-                api_gen = api_surface_service.build_partial(repo_name, changed_files, context=context, files=files)
+                api_gen = api_surface_service.build_partial(
+                    repo_name, changed_files, context=context, files=files
+                )
             else:
-                api_gen = api_surface_service.build_full(repo_name, context=context, files=files)
-            await asyncio.to_thread(lambda: list(api_gen) if hasattr(api_gen, '__iter__') else None)
+                api_gen = api_surface_service.build_full(
+                    repo_name, context=context, files=files
+                )
+            await asyncio.to_thread(
+                lambda: list(api_gen) if hasattr(api_gen, "__iter__") else None
+            )
             timer.stop("Graphs")
 
             # ── 6. Caching Architecture Summary ───────────────────────────────
             yield f"data: {json.dumps({'status': 'computing_intel', 'message': 'Computing Repository Intelligence'})}\n\n"
-            
+
             timer.start("Summary")
             cached_entry = ANALYSIS_STORE.get(repo_name)
             if cached_entry and is_incremental:
@@ -543,7 +613,12 @@ async def analyze_repository(request: AnalyzeRequest):
                 last_successful_build=time.time(),
                 build_duration_ms=(time.time() - start_time) * 1000,
             )
-            await asyncio.to_thread(snapshot_store.save, repo_name, "build_manifest", new_manifest.model_dump())
+            await asyncio.to_thread(
+                snapshot_store.save,
+                repo_name,
+                "build_manifest",
+                new_manifest.model_dump(),
+            )
 
             await _persist_analysis_store()
             timer.stop("Report")
@@ -553,7 +628,6 @@ async def analyze_repository(request: AnalyzeRequest):
             yield f"data: {json.dumps({'status': 'report', 'message': report_msg})}\n\n"
             yield f"data: {json.dumps({'status': 'complete', 'message': '✓ Repository Ready', 'report': report_msg})}\n\n"
             yield f"data: {json.dumps({'status': 'done', 'repo': repo_name})}\n\n"
-
 
         except Exception as e:
             logger.error("SSE analysis failed: %s", e, exc_info=True)
@@ -621,7 +695,9 @@ async def repair_repository(request: RepoRepairRequest):
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error("Repository repair failed for %s: %s", repo_name, exc, exc_info=True)
+        logger.error(
+            "Repository repair failed for %s: %s", repo_name, exc, exc_info=True
+        )
         raise HTTPException(
             status_code=500,
             detail=f"Failed to rebuild symbol index: {str(exc)}",

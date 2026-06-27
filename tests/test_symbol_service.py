@@ -23,7 +23,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.symbol_service import SymbolService
-from models.symbol import Symbol, SymbolIndex
+from models.symbol import SymbolIndex
 
 
 # ===========================================================================
@@ -105,6 +105,7 @@ const middleware = (req, res) => {
 # Fixtures
 # ===========================================================================
 
+
 @pytest.fixture(scope="module")
 def tmp_symbols_dir():
     """Isolated temporary directory for symbol indices — cleaned up after tests."""
@@ -136,8 +137,8 @@ def built_service(service):
 # SymbolService.build() — basic result shape
 # ===========================================================================
 
-class TestBuild:
 
+class TestBuild:
     def test_build_returns_success_status(self, built_service):
         _, result = built_service
         assert result["status"] == "success"
@@ -163,8 +164,8 @@ class TestBuild:
 # Python symbol extraction
 # ===========================================================================
 
-class TestPythonExtraction:
 
+class TestPythonExtraction:
     @pytest.fixture(scope="class")
     def py_symbols(self, built_service):
         service, _ = built_service
@@ -208,14 +209,12 @@ class TestPythonExtraction:
 # TypeScript symbol extraction (interface + enum)
 # ===========================================================================
 
-class TestTypeScriptExtraction:
 
+class TestTypeScriptExtraction:
     @pytest.fixture(scope="class")
     def ts_symbols(self, built_service):
         service, _ = built_service
-        syms = service.get_file_symbols(
-            "testorg/testrepo", "src/user.service.ts"
-        )
+        syms = service.get_file_symbols("testorg/testrepo", "src/user.service.ts")
         assert syms is not None
         return syms
 
@@ -238,8 +237,7 @@ class TestTypeScriptExtraction:
     def test_method_has_parent_class(self, ts_symbols):
         methods = [s for s in ts_symbols if s.type == "method"]
         assert any(
-            s.name == "getUser" and s.parent_class == "UserService"
-            for s in methods
+            s.name == "getUser" and s.parent_class == "UserService" for s in methods
         )
 
     def test_line_numbers_are_positive_integers(self, ts_symbols):
@@ -255,14 +253,12 @@ class TestTypeScriptExtraction:
 # JavaScript symbol extraction
 # ===========================================================================
 
-class TestJavaScriptExtraction:
 
+class TestJavaScriptExtraction:
     @pytest.fixture(scope="class")
     def js_symbols(self, built_service):
         service, _ = built_service
-        syms = service.get_file_symbols(
-            "testorg/testrepo", "src/router.js"
-        )
+        syms = service.get_file_symbols("testorg/testrepo", "src/router.js")
         assert syms is not None
         return syms
 
@@ -276,15 +272,17 @@ class TestJavaScriptExtraction:
         assert any(s.name == "middleware" and s.type == "function" for s in js_symbols)
 
     def test_method_extracted(self, js_symbols):
-        assert any(s.type == "method" and s.parent_class == "Router" for s in js_symbols)
+        assert any(
+            s.type == "method" and s.parent_class == "Router" for s in js_symbols
+        )
 
 
 # ===========================================================================
 # Persistence — save() + load() round-trip
 # ===========================================================================
 
-class TestPersistence:
 
+class TestPersistence:
     def test_index_file_exists_on_disk(self, service, tmp_symbols_dir):
         path = os.path.join(tmp_symbols_dir, "testorg_testrepo.json")
         assert os.path.exists(path)
@@ -327,8 +325,8 @@ class TestPersistence:
 # Query methods
 # ===========================================================================
 
-class TestQueryMethods:
 
+class TestQueryMethods:
     def test_get_file_symbols_filters_correctly(self, built_service):
         service, _ = built_service
         syms = service.get_file_symbols(
@@ -340,9 +338,7 @@ class TestQueryMethods:
 
     def test_get_file_symbols_returns_empty_list_for_unknown_file(self, built_service):
         service, _ = built_service
-        syms = service.get_file_symbols(
-            "testorg/testrepo", "nonexistent/file.py"
-        )
+        syms = service.get_file_symbols("testorg/testrepo", "nonexistent/file.py")
         assert syms is not None  # index exists, file just has no symbols
         assert isinstance(syms, list)
         assert len(syms) == 0
@@ -395,6 +391,7 @@ class TestQueryMethods:
 # API endpoint tests
 # ===========================================================================
 
+
 class TestSymbolAPIEndpoints:
     """Tests against the live FastAPI app via TestClient."""
 
@@ -416,9 +413,7 @@ class TestSymbolAPIEndpoints:
         yield client
 
     def test_file_endpoint_returns_200(self, client_with_index):
-        r = client_with_index.get(
-            "/api/symbols/apitest/repo/file/services/auth.py"
-        )
+        r = client_with_index.get("/api/symbols/apitest/repo/file/services/auth.py")
         assert r.status_code == 200
         body = r.json()
         assert "symbols" in body
@@ -427,9 +422,7 @@ class TestSymbolAPIEndpoints:
         assert body["symbol_count"] >= 1
 
     def test_file_endpoint_404_on_missing_repo(self, client_with_index):
-        r = client_with_index.get(
-            "/api/symbols/no/repo/file/any/file.py"
-        )
+        r = client_with_index.get("/api/symbols/no/repo/file/any/file.py")
         assert r.status_code == 404
 
     def test_definition_endpoint_returns_200(self, client_with_index):
@@ -449,15 +442,11 @@ class TestSymbolAPIEndpoints:
         assert r.status_code == 404
 
     def test_definition_endpoint_404_on_missing_repo(self, client_with_index):
-        r = client_with_index.get(
-            "/api/symbols/no/repo/definition/anything"
-        )
+        r = client_with_index.get("/api/symbols/no/repo/definition/anything")
         assert r.status_code == 404
 
     def test_references_endpoint_returns_200(self, client_with_index):
-        r = client_with_index.get(
-            "/api/symbols/apitest/repo/references/health_check"
-        )
+        r = client_with_index.get("/api/symbols/apitest/repo/references/health_check")
         assert r.status_code == 200
         body = r.json()
         assert "references" in body
@@ -465,7 +454,9 @@ class TestSymbolAPIEndpoints:
         assert "note" in body
         assert body["reference_count"] >= 1
 
-    def test_references_endpoint_returns_empty_list_for_unknown(self, client_with_index):
+    def test_references_endpoint_returns_empty_list_for_unknown(
+        self, client_with_index
+    ):
         r = client_with_index.get(
             "/api/symbols/apitest/repo/references/nonexistent_xyz"
         )
@@ -475,7 +466,5 @@ class TestSymbolAPIEndpoints:
         assert body["references"] == []
 
     def test_references_endpoint_404_on_missing_repo(self, client_with_index):
-        r = client_with_index.get(
-            "/api/symbols/no/repo/references/anything"
-        )
+        r = client_with_index.get("/api/symbols/no/repo/references/anything")
         assert r.status_code == 404

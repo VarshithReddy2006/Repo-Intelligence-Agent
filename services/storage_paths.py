@@ -11,7 +11,6 @@ Resolution order:
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 
@@ -21,8 +20,13 @@ def get_cloned_repos_dir() -> Path:
     Never returns a path inside the project tree — keeps WatchFiles quiet.
     """
     from backend.settings import settings
+
     raw = settings.cloned_repos_path.strip()
-    base = Path(raw).expanduser() if raw else Path.home() / ".repo_intelligence" / "cloned_repos"
+    base = (
+        Path(raw).expanduser()
+        if raw
+        else Path.home() / ".repo_intelligence" / "cloned_repos"
+    )
     base.mkdir(parents=True, exist_ok=True)
     return base
 
@@ -31,5 +35,7 @@ if __name__ == "__main__":
     # ponytail: minimal self-check — proves the dir exists and lives outside cwd.
     p = get_cloned_repos_dir()
     assert p.exists() and p.is_dir(), f"clone dir not created: {p}"
-    assert Path.cwd() not in p.parents and p != Path.cwd(), f"clone dir inside project: {p}"
+    assert Path.cwd() not in p.parents and p != Path.cwd(), (
+        f"clone dir inside project: {p}"
+    )
     print(f"OK cloned_repos_dir={p}")

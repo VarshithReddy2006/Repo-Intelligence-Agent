@@ -20,7 +20,6 @@ Persistence:
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import time
@@ -36,12 +35,11 @@ import networkx as nx
 
 from models.call_graph import (
     BlastRadiusResult,
-    CallEdge,
     CallGraphSummary,
     CallHierarchyNode,
     CallNode,
 )
-from models.symbol import Symbol, SymbolIndex
+from models.symbol import Symbol
 from services.graph_service import GraphService
 from services.symbol_service import SymbolService
 from services.tree_sitter_service import TreeSitterService, _LANGUAGE_REGISTRY
@@ -70,6 +68,7 @@ _MAX_BLAST_DEPTH = 10
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _node_id(file_path: str, qualified: str) -> str:
     """Build a globally unique node ID."""
@@ -121,9 +120,13 @@ class CallGraphService:
                 parent_dir = os.path.dirname(call_graphs_dir)
                 dir_name = os.path.basename(call_graphs_dir)
                 from storage.snapshot_store import JsonSnapshotStore
-                self.snapshot_store = JsonSnapshotStore(base_dir=parent_dir, key_map={"call_graphs": dir_name})
+
+                self.snapshot_store = JsonSnapshotStore(
+                    base_dir=parent_dir, key_map={"call_graphs": dir_name}
+                )
             else:
                 from backend.dependencies import snapshot_store as default_store
+
                 self.snapshot_store = default_store
         else:
             self.snapshot_store = snapshot_store
@@ -174,7 +177,10 @@ class CallGraphService:
             else:
                 files = []
 
-        yield {"status": "building_lookup", "message": "Building definition lookup table…"}
+        yield {
+            "status": "building_lookup",
+            "message": "Building definition lookup table…",
+        }
 
         # Build: name → list[Symbol] for fast callee resolution
         defn_by_name: Dict[str, List[Symbol]] = defaultdict(list)
@@ -182,8 +188,10 @@ class CallGraphService:
             if sym.type in ("function", "method", "class"):
                 defn_by_name[sym.name].append(sym)
 
-        yield {"status": "extracting_calls",
-               "message": f"Extracting call sites from {len(files)} files…"}
+        yield {
+            "status": "extracting_calls",
+            "message": f"Extracting call sites from {len(files)} files…",
+        }
 
         # Collect all call edges across the repo
         all_nodes: Dict[str, CallNode] = {}
@@ -218,15 +226,19 @@ class CallGraphService:
             file_edges_map[path] = file_edges
 
         # Cache call edges map
-        self.snapshot_store.save(repo_name, "call_edges", {"edges": file_edges_map, "_schema_version": 1})
+        self.snapshot_store.save(
+            repo_name, "call_edges", {"edges": file_edges_map, "_schema_version": 1}
+        )
 
         # Combine edges
         all_edges = []
         for edges in file_edges_map.values():
             all_edges.extend(edges)
 
-        yield {"status": "building_graph",
-               "message": f"Building graph ({len(all_nodes)} nodes, {len(all_edges)} edges)…"}
+        yield {
+            "status": "building_graph",
+            "message": f"Building graph ({len(all_nodes)} nodes, {len(all_edges)} edges)…",
+        }
 
         # Build NetworkX DiGraph
         G: nx.DiGraph = nx.DiGraph()
@@ -252,7 +264,8 @@ class CallGraphService:
                         G[caller_id][callee_id]["call_line"] = call_line
                 else:
                     G.add_edge(
-                        caller_id, callee_id,
+                        caller_id,
+                        callee_id,
                         call_line=call_line,
                         ambiguous=ambiguous,
                         relationship="calls",
@@ -289,11 +302,13 @@ class CallGraphService:
         # Build and save summary
         top_fan_in = sorted(
             [{"node_id": n, "fan_in": G.in_degree(n)} for n in G.nodes()],
-            key=lambda x: x["fan_in"], reverse=True
+            key=lambda x: x["fan_in"],
+            reverse=True,
         )[:10]
         top_fan_out = sorted(
             [{"node_id": n, "fan_out": G.out_degree(n)} for n in G.nodes()],
-            key=lambda x: x["fan_out"], reverse=True
+            key=lambda x: x["fan_out"],
+            reverse=True,
         )[:10]
 
         summary = CallGraphSummary(
@@ -308,8 +323,10 @@ class CallGraphService:
         )
         self._save_summary(repo_name, summary)
 
-        yield {"status": "complete",
-               "message": f"✓ Call graph built: {G.number_of_nodes()} functions, {G.number_of_edges()} calls"}
+        yield {
+            "status": "complete",
+            "message": f"✓ Call graph built: {G.number_of_nodes()} functions, {G.number_of_edges()} calls",
+        }
 
         return summary
 
@@ -323,7 +340,10 @@ class CallGraphService:
         """Incrementally update call edges and rebuild the call graph."""
         old_edges_data = self.snapshot_store.load(repo_name, "call_edges")
         if old_edges_data is None:
-            logger.info("No existing call edges cache found for %s, running full build.", repo_name)
+            logger.info(
+                "No existing call edges cache found for %s, running full build.",
+                repo_name,
+            )
             return (yield from self.build_full(repo_name, context=context, files=files))
 
         yield {"status": "loading_symbols", "message": "Loading symbol index…"}
@@ -345,7 +365,10 @@ class CallGraphService:
             else:
                 files = []
 
-        yield {"status": "building_lookup", "message": "Building definition lookup table…"}
+        yield {
+            "status": "building_lookup",
+            "message": "Building definition lookup table…",
+        }
 
         # Build: name → list[Symbol] for fast callee resolution
         defn_by_name: Dict[str, List[Symbol]] = defaultdict(list)
@@ -353,8 +376,10 @@ class CallGraphService:
             if sym.type in ("function", "method", "class"):
                 defn_by_name[sym.name].append(sym)
 
-        yield {"status": "extracting_calls",
-               "message": f"Extracting call sites from changed files…"}
+        yield {
+            "status": "extracting_calls",
+            "message": "Extracting call sites from changed files…",
+        }
 
         # Collect all call edges across the repo
         all_nodes: Dict[str, CallNode] = {}
@@ -400,7 +425,9 @@ class CallGraphService:
                     full_path = os.path.join(repo_path, path)
                     if os.path.exists(full_path):
                         try:
-                            with open(full_path, "r", encoding="utf-8", errors="ignore") as fh:
+                            with open(
+                                full_path, "r", encoding="utf-8", errors="ignore"
+                            ) as fh:
                                 content = fh.read()
                             file_edges = self._extract_call_edges(
                                 path, content, defn_by_name, all_nodes
@@ -410,15 +437,19 @@ class CallGraphService:
                             pass
 
         # 3. Save updated edges map
-        self.snapshot_store.save(repo_name, "call_edges", {"edges": file_edges_map, "_schema_version": 1})
+        self.snapshot_store.save(
+            repo_name, "call_edges", {"edges": file_edges_map, "_schema_version": 1}
+        )
 
         # 4. Combine all edges
         all_edges = []
         for edges in file_edges_map.values():
             all_edges.extend(edges)
 
-        yield {"status": "building_graph",
-               "message": f"Building graph ({len(all_nodes)} nodes, {len(all_edges)} edges)…"}
+        yield {
+            "status": "building_graph",
+            "message": f"Building graph ({len(all_nodes)} nodes, {len(all_edges)} edges)…",
+        }
 
         # Build NetworkX DiGraph
         G: nx.DiGraph = nx.DiGraph()
@@ -443,7 +474,8 @@ class CallGraphService:
                         G[caller_id][callee_id]["call_line"] = call_line
                 else:
                     G.add_edge(
-                        caller_id, callee_id,
+                        caller_id,
+                        callee_id,
                         call_line=call_line,
                         ambiguous=ambiguous,
                         relationship="calls",
@@ -478,11 +510,13 @@ class CallGraphService:
         # Build and save summary
         top_fan_in = sorted(
             [{"node_id": n, "fan_in": G.in_degree(n)} for n in G.nodes()],
-            key=lambda x: x["fan_in"], reverse=True
+            key=lambda x: x["fan_in"],
+            reverse=True,
         )[:10]
         top_fan_out = sorted(
             [{"node_id": n, "fan_out": G.out_degree(n)} for n in G.nodes()],
-            key=lambda x: x["fan_out"], reverse=True
+            key=lambda x: x["fan_out"],
+            reverse=True,
         )[:10]
 
         # Aggregate summary metrics
@@ -498,8 +532,10 @@ class CallGraphService:
         )
         self._save_summary(repo_name, summary)
 
-        yield {"status": "complete",
-               "message": f"✓ Call graph built: {G.number_of_nodes()} functions, {G.number_of_edges()} calls"}
+        yield {
+            "status": "complete",
+            "message": f"✓ Call graph built: {G.number_of_nodes()} functions, {G.number_of_edges()} calls",
+        }
 
         return summary
 
@@ -536,7 +572,9 @@ class CallGraphService:
         if stored_ver < _SCHEMA_VERSION:
             logger.warning(
                 "Discarding stale call graph summary for %s (v%d < v%d)",
-                repo_name, stored_ver, _SCHEMA_VERSION,
+                repo_name,
+                stored_ver,
+                _SCHEMA_VERSION,
             )
             return None
 
@@ -570,9 +608,7 @@ class CallGraphService:
             return []
         return [self._node_from_graph(G, n) for n in G.successors(function_id)]
 
-    def get_blast_radius(
-        self, repo_name: str, function_id: str
-    ) -> BlastRadiusResult:
+    def get_blast_radius(self, repo_name: str, function_id: str) -> BlastRadiusResult:
         """Compute function-level blast radius via BFS on callers.
 
         'Who would be affected if I changed this function?' — walks backward
@@ -602,11 +638,13 @@ class CallGraphService:
                     queue.append((caller, depth + 1))
 
         affected_list = sorted(affected)
-        affected_files = sorted({
-            G.nodes[n].get("file_path", "")
-            for n in affected_list
-            if G.nodes[n].get("file_path")
-        })
+        affected_files = sorted(
+            {
+                G.nodes[n].get("file_path", "")
+                for n in affected_list
+                if G.nodes[n].get("file_path")
+            }
+        )
 
         n = len(affected_list)
         risk = "high" if n >= _BLAST_HIGH else "medium" if n >= _BLAST_MED else "low"
@@ -614,8 +652,7 @@ class CallGraphService:
         # Detect SCCs (mutual recursion / cycles) in the affected subgraph
         subgraph = G.subgraph(set(affected_list) | {function_id})
         sccs = [
-            list(c) for c in nx.strongly_connected_components(subgraph)
-            if len(c) > 1
+            list(c) for c in nx.strongly_connected_components(subgraph) if len(c) > 1
         ]
 
         return BlastRadiusResult(
@@ -687,8 +724,7 @@ class CallGraphService:
             "node_count": G.number_of_nodes(),
             "edge_count": G.number_of_edges(),
             "entry_functions": len([n for n in G.nodes() if G.in_degree(n) == 0]),
-            "recursive_functions": len([n for n in G.nodes()
-                                        if G.has_edge(n, n)]),
+            "recursive_functions": len([n for n in G.nodes() if G.has_edge(n, n)]),
             "mutual_recursion_groups": len(non_trivial_sccs),
             "top_fan_in": summary.top_fan_in if summary else [],
             "top_fan_out": summary.top_fan_out if summary else [],
@@ -754,14 +790,20 @@ class CallGraphService:
         """
         G = self.load_graph(repo_name)
         if G is None:
-            return {"nodes": [], "edges": [], "node_count": 0, "edge_count": 0,
-                    "error": "Call graph not found. Run build first."}
+            return {
+                "nodes": [],
+                "edges": [],
+                "node_count": 0,
+                "edge_count": 0,
+                "error": "Call graph not found. Run build first.",
+            }
 
         # Filter by search query if provided
         if search_query and search_query.strip():
             q = search_query.lower()
             matching = {
-                n for n in G.nodes()
+                n
+                for n in G.nodes()
                 if q in G.nodes[n].get("name", "").lower()
                 or q in G.nodes[n].get("qualified", "").lower()
                 or q in G.nodes[n].get("file_path", "").lower()
@@ -792,42 +834,46 @@ class CallGraphService:
             attrs = working.nodes[n]
             fi = working.in_degree(n)
             fo = working.out_degree(n)
-            cat = "entry_point" if fi == 0 else (
-                "core_module" if fi >= 5 else "regular"
+            cat = (
+                "entry_point" if fi == 0 else ("core_module" if fi >= 5 else "regular")
             )
             if attrs.get("is_recursive"):
                 cat = "high_coupling"
 
-            res_nodes.append({
-                "id": n,
-                "label": attrs.get("name", n),
-                "category": cat,
-                "degree": fi + fo,
-                "centrality": round(centrality.get(n, 0.0), 4),
-                "language": attrs.get("language", "unknown"),
-                "highlighted": False,
-                "is_focus": False,
-                # Call-graph-specific extras
-                "qualified": attrs.get("qualified", ""),
-                "file_path": attrs.get("file_path", ""),
-                "fan_in": fi,
-                "fan_out": fo,
-                "is_recursive": attrs.get("is_recursive", False),
-                "parent_class": attrs.get("parent_class", ""),
-                "symbol_type": attrs.get("symbol_type", "function"),
-            })
+            res_nodes.append(
+                {
+                    "id": n,
+                    "label": attrs.get("name", n),
+                    "category": cat,
+                    "degree": fi + fo,
+                    "centrality": round(centrality.get(n, 0.0), 4),
+                    "language": attrs.get("language", "unknown"),
+                    "highlighted": False,
+                    "is_focus": False,
+                    # Call-graph-specific extras
+                    "qualified": attrs.get("qualified", ""),
+                    "file_path": attrs.get("file_path", ""),
+                    "fan_in": fi,
+                    "fan_out": fo,
+                    "is_recursive": attrs.get("is_recursive", False),
+                    "parent_class": attrs.get("parent_class", ""),
+                    "symbol_type": attrs.get("symbol_type", "function"),
+                }
+            )
 
         res_edges = []
         count = 0
         for u, v, eattrs in working.edges(data=True):
             if count >= max_edges:
                 break
-            res_edges.append({
-                "source": u,
-                "target": v,
-                "relationship": "calls",
-                "ambiguous": eattrs.get("ambiguous", False),
-            })
+            res_edges.append(
+                {
+                    "source": u,
+                    "target": v,
+                    "relationship": "calls",
+                    "ambiguous": eattrs.get("ambiguous", False),
+                }
+            )
             count += 1
 
         return {
@@ -841,8 +887,13 @@ class CallGraphService:
         """Return immediate callers + callees as React Flow JSON."""
         G = self.load_graph(repo_name)
         if G is None or function_id not in G:
-            return {"nodes": [], "edges": [], "node_count": 0, "edge_count": 0,
-                    "error": f"Function '{function_id}' not found."}
+            return {
+                "nodes": [],
+                "edges": [],
+                "node_count": 0,
+                "edge_count": 0,
+                "error": f"Function '{function_id}' not found.",
+            }
 
         context = {function_id}
         context.update(G.predecessors(function_id))
@@ -859,8 +910,13 @@ class CallGraphService:
         """Return BFS trace from *function_id* as React Flow JSON."""
         G = self.load_graph(repo_name)
         if G is None or function_id not in G:
-            return {"nodes": [], "edges": [], "node_count": 0, "edge_count": 0,
-                    "error": f"Function '{function_id}' not found."}
+            return {
+                "nodes": [],
+                "edges": [],
+                "node_count": 0,
+                "edge_count": 0,
+                "error": f"Function '{function_id}' not found.",
+            }
 
         reachable: Set[str] = {function_id}
         highlighted: Set[str] = set()
@@ -875,8 +931,9 @@ class CallGraphService:
             reachable.update(bwd)
             highlighted.update(bwd)
 
-        return self._serialise_subgraph(G, reachable, focus_id=function_id,
-                                        highlighted=highlighted)
+        return self._serialise_subgraph(
+            G, reachable, focus_id=function_id, highlighted=highlighted
+        )
 
     # ------------------------------------------------------------------
     # AST call-site extraction
@@ -912,7 +969,9 @@ class CallGraphService:
 
         # Build file-local function scope stack:
         # maps (start_byte, end_byte) → caller_node_id
-        scopes = self._build_scope_map(tree.root_node, file_path, all_nodes, language_name)
+        scopes = self._build_scope_map(
+            tree.root_node, file_path, all_nodes, language_name
+        )
 
         # Extract all call expressions from the AST
         call_sites = self._find_call_sites(tree.root_node, language_name)
@@ -949,13 +1008,6 @@ class CallGraphService:
         """Build a list of (start_byte, end_byte, node_id) for all tracked functions."""
         scopes: List[Tuple[int, int, str]] = []
 
-        fn_types = (
-            {"function_definition", "decorated_definition"}
-            if language_name == "python"
-            else {"function_declaration", "method_definition",
-                  "arrow_function", "function_expression"}
-        )
-
         def walk(node, parent_class: Optional[str] = None):
             nt = node.type
 
@@ -969,8 +1021,12 @@ class CallGraphService:
                     actual = node
                     if nt == "decorated_definition":
                         actual = next(
-                            (c for c in node.children
-                             if c.type == "function_definition"), None
+                            (
+                                c
+                                for c in node.children
+                                if c.type == "function_definition"
+                            ),
+                            None,
                         )
                     if actual is None:
                         return
@@ -1021,9 +1077,7 @@ class CallGraphService:
         walk(root)
         return scopes
 
-    def _find_call_sites(
-        self, root, language_name: str
-    ) -> List[Tuple[str, int, int]]:
+    def _find_call_sites(self, root, language_name: str) -> List[Tuple[str, int, int]]:
         """Walk AST and return all (callee_name, line_1indexed, start_byte) tuples."""
         results: List[Tuple[str, int, int]] = []
 
@@ -1047,7 +1101,9 @@ class CallGraphService:
                             last = children[-1]
                             if last.type in ("identifier", "property_identifier"):
                                 name = last.text.decode("utf-8", errors="replace")
-                                results.append((name, node.start_point[0] + 1, node.start_byte))
+                                results.append(
+                                    (name, node.start_point[0] + 1, node.start_byte)
+                                )
 
             elif language_name != "python" and nt == "call_expression":
                 fn_child = node.children[0] if node.children else None
@@ -1065,7 +1121,9 @@ class CallGraphService:
                             last = children[-1]
                             if last.type in ("property_identifier", "identifier"):
                                 name = last.text.decode("utf-8", errors="replace")
-                                results.append((name, node.start_point[0] + 1, node.start_byte))
+                                results.append(
+                                    (name, node.start_point[0] + 1, node.start_byte)
+                                )
 
             for child in node.children:
                 walk(child)
@@ -1114,16 +1172,24 @@ class CallGraphService:
 
         # Score each candidate
         same_file = [s for s in candidates if s.file_path == caller_file]
-        same_dir = [s for s in candidates
-                    if _file_dir(s.file_path) == caller_dir and s.file_path != caller_file]
-        global_rest = [s for s in candidates
-                       if s.file_path != caller_file
-                       and _file_dir(s.file_path) != caller_dir]
+        same_dir = [
+            s
+            for s in candidates
+            if _file_dir(s.file_path) == caller_dir and s.file_path != caller_file
+        ]
+        global_rest = [
+            s
+            for s in candidates
+            if s.file_path != caller_file and _file_dir(s.file_path) != caller_dir
+        ]
 
         def first_valid(syms: List[Symbol]) -> Tuple[Optional[str], bool]:
-            valid = [s for s in syms
-                     if s.type in ("function", "method")
-                     and _node_id(s.file_path, _qualified(s)) in all_nodes]
+            valid = [
+                s
+                for s in syms
+                if s.type in ("function", "method")
+                and _node_id(s.file_path, _qualified(s)) in all_nodes
+            ]
             if not valid:
                 return None, False
             nid = _node_id(valid[0].file_path, _qualified(valid[0]))
@@ -1139,7 +1205,9 @@ class CallGraphService:
 
         nid, amb = first_valid(global_rest)
         if nid:
-            return nid, len(global_rest) > 1  # global match is always potentially ambiguous
+            return nid, len(
+                global_rest
+            ) > 1  # global match is always potentially ambiguous
 
         return None, False
 
@@ -1171,42 +1239,53 @@ class CallGraphService:
             attrs = subgraph.nodes[n]
             fi = subgraph.in_degree(n)
             fo = subgraph.out_degree(n)
-            cat = "focus" if n == focus_id else (
-                "entry_point" if fi == 0 else
-                "core_module" if fi >= 5 else "regular"
+            cat = (
+                "focus"
+                if n == focus_id
+                else (
+                    "entry_point"
+                    if fi == 0
+                    else "core_module"
+                    if fi >= 5
+                    else "regular"
+                )
             )
             if attrs.get("is_recursive"):
                 cat = "high_coupling" if n != focus_id else cat
 
-            res_nodes.append({
-                "id": n,
-                "label": attrs.get("name", n),
-                "category": cat,
-                "degree": fi + fo,
-                "centrality": round(centrality.get(n, 0.0), 4),
-                "language": attrs.get("language", "unknown"),
-                "highlighted": n in highlighted,
-                "is_focus": n == focus_id,
-                "qualified": attrs.get("qualified", ""),
-                "file_path": attrs.get("file_path", ""),
-                "fan_in": fi,
-                "fan_out": fo,
-                "is_recursive": attrs.get("is_recursive", False),
-                "parent_class": attrs.get("parent_class", ""),
-                "symbol_type": attrs.get("symbol_type", "function"),
-            })
+            res_nodes.append(
+                {
+                    "id": n,
+                    "label": attrs.get("name", n),
+                    "category": cat,
+                    "degree": fi + fo,
+                    "centrality": round(centrality.get(n, 0.0), 4),
+                    "language": attrs.get("language", "unknown"),
+                    "highlighted": n in highlighted,
+                    "is_focus": n == focus_id,
+                    "qualified": attrs.get("qualified", ""),
+                    "file_path": attrs.get("file_path", ""),
+                    "fan_in": fi,
+                    "fan_out": fo,
+                    "is_recursive": attrs.get("is_recursive", False),
+                    "parent_class": attrs.get("parent_class", ""),
+                    "symbol_type": attrs.get("symbol_type", "function"),
+                }
+            )
 
         res_edges = []
         count = 0
         for u, v, eattrs in subgraph.edges(data=True):
             if count >= max_edges:
                 break
-            res_edges.append({
-                "source": u,
-                "target": v,
-                "relationship": "calls",
-                "ambiguous": eattrs.get("ambiguous", False),
-            })
+            res_edges.append(
+                {
+                    "source": u,
+                    "target": v,
+                    "relationship": "calls",
+                    "ambiguous": eattrs.get("ambiguous", False),
+                }
+            )
             count += 1
 
         return {
@@ -1244,8 +1323,7 @@ class CallGraphService:
             if depth >= max_depth:
                 continue
             neighbours = (
-                list(G.successors(node)) if forward
-                else list(G.predecessors(node))
+                list(G.successors(node)) if forward else list(G.predecessors(node))
             )
             for nb in neighbours:
                 if nb not in visited and nb != start:

@@ -8,7 +8,7 @@ from typing import Any, Dict, Generator, List, Optional
 
 from core.analysis_registry import AnalysisRegistry
 from core.change_detector import ChangeDetector
-from core.incremental_build_planner import IncrementalBuildPlanner, BuildTask
+from core.incremental_build_planner import IncrementalBuildPlanner
 from core.repository_context import RepositoryContext
 from models.build_manifest import BuildManifest
 
@@ -32,7 +32,7 @@ class BuildPipeline:
         """Execute build tasks (FULL, PARTIAL, SKIP) and yield process events."""
         import uuid
         from backend.logging_config import build_id_var, repository_var
-        
+
         build_id = str(uuid.uuid4())
         token_build = build_id_var.set(build_id)
         token_repo = repository_var.set(repo_name)
@@ -55,7 +55,7 @@ class BuildPipeline:
 
             # 2. Ingest snapshot store & graph service dependencies
             from backend.dependencies import snapshot_store, graph_service
-            
+
             # 3. Load previous manifest
             old_manifest_data = snapshot_store.load(repo_name, "build_manifest")
             old_manifest = None
@@ -67,7 +67,9 @@ class BuildPipeline:
 
             # 4. Change detection
             detector = ChangeDetector()
-            change_set, file_hashes, repo_hash = detector.detect_changes(file_list, old_manifest)
+            change_set, file_hashes, repo_hash = detector.detect_changes(
+                file_list, old_manifest
+            )
 
             # 5. Generate build plan
             build_tasks = IncrementalBuildPlanner.plan(
@@ -152,6 +154,7 @@ class BuildPipeline:
 
         # Record metrics duration
         from core.metrics import metrics_registry
+
         metrics_registry.record_build_duration(repo_name, (end_time - start_time))
 
         # Yield BuildCompleted and legacy END events

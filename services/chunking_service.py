@@ -51,7 +51,7 @@ class CodeChunker:
             ".c": "c",
             ".h": "c",
             ".cs": "csharp",
-            ".sql": "sql"
+            ".sql": "sql",
         }
         return mapping.get(ext, "text")
 
@@ -68,65 +68,73 @@ class CodeChunker:
             A list of dictionary records containing path, chunk_id, content, and language.
         """
         language = self.detect_language(file_path)
-        
+
         # Empty or whitespace-only file: return no chunks
         if not content or not content.strip():
             return []
-        
+
         # Very short file: single chunk
         if len(content) <= self.chunk_size:
-            return [{
-                "path": file_path,
-                "chunk_id": 1,
-                "content": content,
-                "language": language
-            }]
-            
+            return [
+                {
+                    "path": file_path,
+                    "chunk_id": 1,
+                    "content": content,
+                    "language": language,
+                }
+            ]
+
         chunks = []
         lines = content.splitlines()
-        
+
         current_chunk_lines = []
         current_chunk_size = 0
         chunk_id = 1
-        
+
         for line in lines:
-            line_len = len(line) + 1 # +1 for newline character
-            
+            line_len = len(line) + 1  # +1 for newline character
+
             # If a single line exceeds chunk size, chunk it separately or add it
             if line_len > self.chunk_size:
                 # Flush the current chunk if it has any contents
                 if current_chunk_lines:
-                    chunks.append({
-                        "path": file_path,
-                        "chunk_id": chunk_id,
-                        "content": "\n".join(current_chunk_lines),
-                        "language": language
-                    })
+                    chunks.append(
+                        {
+                            "path": file_path,
+                            "chunk_id": chunk_id,
+                            "content": "\n".join(current_chunk_lines),
+                            "language": language,
+                        }
+                    )
                     chunk_id += 1
                     current_chunk_lines = []
                     current_chunk_size = 0
-                
+
                 # Add this long line as its own chunk
-                chunks.append({
-                    "path": file_path,
-                    "chunk_id": chunk_id,
-                    "content": line,
-                    "language": language
-                })
+                chunks.append(
+                    {
+                        "path": file_path,
+                        "chunk_id": chunk_id,
+                        "content": line,
+                        "language": language,
+                    }
+                )
                 chunk_id += 1
                 continue
-                
+
             # Check if adding this line exceeds the target chunk size
             if current_chunk_size + line_len > self.chunk_size:
                 # Flush current chunk
-                chunks.append({
-                    "path": file_path,
-                    "chunk_id": chunk_id,
-                    "content": "\n".join(current_chunk_lines),
-                    "language": language
-                })
+                chunks.append(
+                    {
+                        "path": file_path,
+                        "chunk_id": chunk_id,
+                        "content": "\n".join(current_chunk_lines),
+                        "language": language,
+                    }
+                )
                 chunk_id += 1
-                
+
                 # Compute overlap: keep last few lines that fit in the overlap window
                 overlap_lines = []
                 overlap_size = 0
@@ -136,20 +144,22 @@ class CodeChunker:
                         break
                     overlap_lines.insert(0, old_line)
                     overlap_size += old_line_len
-                
+
                 current_chunk_lines = overlap_lines
                 current_chunk_size = overlap_size
-                
+
             current_chunk_lines.append(line)
             current_chunk_size += line_len
-            
+
         # Add any remaining text
         if current_chunk_lines:
-            chunks.append({
-                "path": file_path,
-                "chunk_id": chunk_id,
-                "content": "\n".join(current_chunk_lines),
-                "language": language
-            })
-            
+            chunks.append(
+                {
+                    "path": file_path,
+                    "chunk_id": chunk_id,
+                    "content": "\n".join(current_chunk_lines),
+                    "language": language,
+                }
+            )
+
         return chunks

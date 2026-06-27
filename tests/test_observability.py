@@ -1,5 +1,4 @@
-import pytest
-from fastapi import FastAPI, Response
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from backend.logging_middleware import RequestIdMiddleware
 from backend.security_middleware import RateLimitMiddleware
@@ -64,7 +63,10 @@ def test_metrics_middleware():
 
     # check prometheus metrics text
     metrics_str = metrics_registry.generate_prometheus_metrics()
-    assert 'http_requests_total{method="GET",path="/test-metrics",status="200"}' in metrics_str
+    assert (
+        'http_requests_total{method="GET",path="/test-metrics",status="200"}'
+        in metrics_str
+    )
     assert "active_requests_count" in metrics_str
 
 

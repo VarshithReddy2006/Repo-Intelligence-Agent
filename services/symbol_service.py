@@ -24,7 +24,6 @@ Supported symbol types:
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import time
@@ -90,9 +89,13 @@ class SymbolService:
                 parent_dir = os.path.dirname(symbols_dir)
                 dir_name = os.path.basename(symbols_dir)
                 from storage.snapshot_store import JsonSnapshotStore
-                self.snapshot_store = JsonSnapshotStore(base_dir=parent_dir, key_map={"symbols": dir_name})
+
+                self.snapshot_store = JsonSnapshotStore(
+                    base_dir=parent_dir, key_map={"symbols": dir_name}
+                )
             else:
                 from backend.dependencies import snapshot_store as default_store
+
                 self.snapshot_store = default_store
         else:
             self.snapshot_store = snapshot_store
@@ -166,7 +169,9 @@ class SymbolService:
         """Incrementally update the symbol index using changed files list."""
         old_index = self.load(repo_name)
         if old_index is None:
-            logger.info("No existing symbol index found for %s, running full build.", repo_name)
+            logger.info(
+                "No existing symbol index found for %s, running full build.", repo_name
+            )
             return self.build_full(repo_name, repo_path=repo_path, files=files)
 
         if repo_path is None and files is None:
@@ -176,8 +181,7 @@ class SymbolService:
 
         # 1. Filter out symbols belonging to modified or deleted files
         retained_symbols = [
-            sym for sym in old_index.symbols
-            if sym.file_path not in changed_files
+            sym for sym in old_index.symbols if sym.file_path not in changed_files
         ]
 
         # 2. Extract new symbols from added or modified files
@@ -238,7 +242,9 @@ class SymbolService:
         if stored_version < _SCHEMA_VERSION:
             logger.warning(
                 "Discarding stale symbol index for %s (schema v%d < current v%d)",
-                repo_name, stored_version, _SCHEMA_VERSION
+                repo_name,
+                stored_version,
+                _SCHEMA_VERSION,
             )
             return None
 
@@ -270,14 +276,9 @@ class SymbolService:
             return None
         # Normalise separators before comparing
         norm = file_path.replace("\\", "/")
-        return [
-            s for s in index.symbols
-            if s.file_path.replace("\\", "/") == norm
-        ]
+        return [s for s in index.symbols if s.file_path.replace("\\", "/") == norm]
 
-    def get_definition(
-        self, repo_name: str, symbol_name: str
-    ) -> Optional[Symbol]:
+    def get_definition(self, repo_name: str, symbol_name: str) -> Optional[Symbol]:
         """Return the first symbol matching *symbol_name*.
 
         Priority order: class → function → method → interface → enum.
@@ -286,8 +287,14 @@ class SymbolService:
         index = self.load(repo_name)
         if index is None:
             return None
-        _priority = {"class": 0, "function": 1, "method": 2,
-                     "interface": 3, "enum": 4, "variable": 5}
+        _priority = {
+            "class": 0,
+            "function": 1,
+            "method": 2,
+            "interface": 3,
+            "enum": 4,
+            "variable": 5,
+        }
         matches = [s for s in index.symbols if s.name == symbol_name]
         if not matches:
             return None
@@ -313,9 +320,7 @@ class SymbolService:
     # Symbol Extraction — per-file entry point
     # ------------------------------------------------------------------
 
-    def _extract_file_symbols(
-        self, file_path: str, content: str
-    ) -> List[Symbol]:
+    def _extract_file_symbols(self, file_path: str, content: str) -> List[Symbol]:
         """Parse one file with Tree-sitter and return Symbol objects.
 
         Uses TreeSitterService._get_parser() to reuse the cached parser, then
@@ -335,9 +340,7 @@ class SymbolService:
         try:
             tree = parser.parse(content.encode("utf-8", errors="replace"))
         except Exception as exc:
-            logger.warning(
-                "Symbol extraction parse error for %s: %s", file_path, exc
-            )
+            logger.warning("Symbol extraction parse error for %s: %s", file_path, exc)
             return []
 
         root = tree.root_node
@@ -352,9 +355,7 @@ class SymbolService:
     # Python AST walker
     # ------------------------------------------------------------------
 
-    def _walk_python(
-        self, root, file_path: str, lang: str
-    ) -> List[Symbol]:
+    def _walk_python(self, root, file_path: str, lang: str) -> List[Symbol]:
         symbols: List[Symbol] = []
         for node in root.children:
             nt = node.type
@@ -372,9 +373,7 @@ class SymbolService:
                         if sym:
                             symbols.append(sym)
                     elif child.type == "class_definition":
-                        symbols.extend(
-                            self._python_class(child, file_path, lang)
-                        )
+                        symbols.extend(self._python_class(child, file_path, lang))
         return symbols
 
     def _python_fn(
@@ -396,9 +395,7 @@ class SymbolService:
             parent_class=parent_class,
         )
 
-    def _python_class(
-        self, node, file_path: str, lang: str
-    ) -> List[Symbol]:
+    def _python_class(self, node, file_path: str, lang: str) -> List[Symbol]:
         symbols: List[Symbol] = []
         class_name = ""
 
@@ -445,9 +442,7 @@ class SymbolService:
     # JavaScript / TypeScript AST walker
     # ------------------------------------------------------------------
 
-    def _walk_js_ts(
-        self, root, file_path: str, lang: str
-    ) -> List[Symbol]:
+    def _walk_js_ts(self, root, file_path: str, lang: str) -> List[Symbol]:
         symbols: List[Symbol] = []
 
         for node in root.children:
@@ -470,9 +465,7 @@ class SymbolService:
                             symbols.append(sym)
 
             elif nt == "export_statement":
-                symbols.extend(
-                    self._js_export(node, file_path, lang)
-                )
+                symbols.extend(self._js_export(node, file_path, lang))
 
             # TypeScript-specific top-level declarations
             elif nt == "interface_declaration":
@@ -487,9 +480,7 @@ class SymbolService:
 
         return symbols
 
-    def _js_export(
-        self, export_node, file_path: str, lang: str
-    ) -> List[Symbol]:
+    def _js_export(self, export_node, file_path: str, lang: str) -> List[Symbol]:
         """Handle export_statement wrapping function/class/interface/enum."""
         symbols: List[Symbol] = []
         for child in export_node.children:
@@ -535,9 +526,7 @@ class SymbolService:
             parent_class=parent_class,
         )
 
-    def _js_arrow(
-        self, declarator_node, file_path: str, lang: str
-    ) -> Optional[Symbol]:
+    def _js_arrow(self, declarator_node, file_path: str, lang: str) -> Optional[Symbol]:
         """Handle `const fn = (x) => ...` variable declarator nodes."""
         name = ""
         has_arrow = False
@@ -556,9 +545,7 @@ class SymbolService:
             )
         return None
 
-    def _js_class(
-        self, node, file_path: str, lang: str
-    ) -> List[Symbol]:
+    def _js_class(self, node, file_path: str, lang: str) -> List[Symbol]:
         symbols: List[Symbol] = []
         class_name = ""
 
@@ -599,9 +586,7 @@ class SymbolService:
 
         return symbols
 
-    def _ts_interface(
-        self, node, file_path: str, lang: str
-    ) -> Optional[Symbol]:
+    def _ts_interface(self, node, file_path: str, lang: str) -> Optional[Symbol]:
         name = self._node_name(node)
         if not name:
             return None
@@ -613,9 +598,7 @@ class SymbolService:
             language=lang,
         )
 
-    def _ts_enum(
-        self, node, file_path: str, lang: str
-    ) -> Optional[Symbol]:
+    def _ts_enum(self, node, file_path: str, lang: str) -> Optional[Symbol]:
         name = self._node_name(node)
         if not name:
             return None
@@ -644,8 +627,16 @@ class SymbolService:
     # ------------------------------------------------------------------
 
     _IGNORED_DIRS = {
-        "node_modules", ".git", "dist", "build", ".next",
-        "venv", "__pycache__", ".venv", ".tox", "coverage",
+        "node_modules",
+        ".git",
+        "dist",
+        "build",
+        ".next",
+        "venv",
+        "__pycache__",
+        ".venv",
+        ".tox",
+        "coverage",
     }
 
     def _walk_repo(self, repo_path: str) -> List[Dict[str, str]]:

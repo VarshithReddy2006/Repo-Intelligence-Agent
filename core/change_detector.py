@@ -43,31 +43,42 @@ class ChangeDetector:
     @classmethod
     def scan_directory(cls, repo_path: str) -> List[Dict[str, str]]:
         """Walk directory and read supported files (mirroring extract_source_files)."""
-        ignored_names = {"node_modules", ".git", "dist", "build", ".next", "venv", ".venv", "__pycache__", ".tox", "coverage", "data"}
+        ignored_names = {
+            "node_modules",
+            ".git",
+            "dist",
+            "build",
+            ".next",
+            "venv",
+            ".venv",
+            "__pycache__",
+            ".tox",
+            "coverage",
+            "data",
+        }
         supported_exts = {".py", ".js", ".jsx", ".ts", ".tsx"}
         extracted_files = []
-        
+
         for root, dirs, files in os.walk(repo_path):
             dirs[:] = [d for d in dirs if d not in ignored_names]
             for file in files:
                 file_path = os.path.join(root, file)
                 rel_path = os.path.relpath(file_path, repo_path)
-                
+
                 parts = rel_path.split(os.sep)
                 if any(part in ignored_names for part in parts):
                     continue
-                    
+
                 ext = os.path.splitext(file)[1].lower()
                 if ext not in supported_exts:
                     continue
-                    
+
                 try:
                     with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                         content = f.read()
-                    extracted_files.append({
-                        "path": rel_path.replace(os.sep, "/"),
-                        "content": content
-                    })
+                    extracted_files.append(
+                        {"path": rel_path.replace(os.sep, "/"), "content": content}
+                    )
                 except Exception:
                     pass
         return extracted_files
@@ -124,7 +135,7 @@ class ChangeDetector:
         # Detect renames: a file is deleted and another is added with the same hash
         renamed = {}
         added_candidates = {current_hashes[p]: p for p in added_paths}
-        
+
         for path in list(deleted_paths):
             h = old_hashes[path]
             if h in added_candidates:

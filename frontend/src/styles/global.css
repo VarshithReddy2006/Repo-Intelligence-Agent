@@ -232,6 +232,20 @@ html.dark, html { color-scheme: dark; }
 .fade-up        { animation: fade-up 280ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 .fade-up-delay  { animation: fade-up 320ms cubic-bezier(0.16, 1, 0.3, 1) 60ms both; }
 
+@keyframes typing-bounce {
+  0%, 100% { transform: translateY(0); opacity: 0.4; }
+  50% { transform: translateY(-4px); opacity: 1; }
+}
+.animate-typing-1 { animation: typing-bounce 1s infinite 0.1s; }
+.animate-typing-2 { animation: typing-bounce 1s infinite 0.2s; }
+.animate-typing-3 { animation: typing-bounce 1s infinite 0.3s; }
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.animate-blink { animation: blink 0.8s infinite; }
+
 /* ---------------------------------------------------------------------------
  * Table polish — opt-in via .table-base
  * ------------------------------------------------------------------------- */
@@ -299,4 +313,40 @@ html.dark, html { color-scheme: dark; }
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--border);
+}
+
+/* Custom React Flow Dark Theme Polishing */
+.react-flow__controls {
+  background: var(--surface-1) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  box-shadow: var(--shadow-float) !important;
+  overflow: hidden;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0 !important;
+  padding: 2px !important;
+}
+.react-flow__controls-button {
+  background: transparent !important;
+  border-bottom: 1px solid var(--border) !important;
+  color: var(--text-muted) !important;
+  fill: currentColor !important;
+  transition: all 0.2s !important;
+  width: 28px !important;
+  height: 28px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+.react-flow__controls-button:hover {
+  background: var(--canvas) !important;
+  color: var(--text) !important;
+}
+.react-flow__controls-button:last-child {
+  border-bottom: none !important;
+}
+.react-flow__controls-button svg {
+  width: 12px !important;
+  height: 12px !important;
 }

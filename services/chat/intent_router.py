@@ -27,7 +27,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from .intent_detector import Intent, IntentResult
 
@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Output model
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class RepositoryIntelligence:
@@ -50,6 +51,7 @@ class RepositoryIntelligence:
         metadata:           Raw data / metrics for observability.
         router_elapsed_ms:  Time taken by the router in milliseconds.
     """
+
     intent: Intent
     structured_context: str = ""
     source_files: List[str] = field(default_factory=list)
@@ -64,6 +66,7 @@ class RepositoryIntelligence:
 # ---------------------------------------------------------------------------
 # Router
 # ---------------------------------------------------------------------------
+
 
 class IntentRouter:
     """Routes intents to structured repository intelligence handlers.
@@ -110,13 +113,13 @@ class IntentRouter:
         intent = intent_result.intent
 
         dispatch = {
-            Intent.ARCHITECTURE:        self._handle_architecture,
+            Intent.ARCHITECTURE: self._handle_architecture,
             Intent.CIRCULAR_DEPENDENCY: self._handle_circular_dependency,
-            Intent.API_SURFACE:         self._handle_api_surface,
-            Intent.CALL_GRAPH:          self._handle_call_graph,
-            Intent.SYMBOL:              self._handle_symbol,
-            Intent.READING_ORDER:       self._handle_reading_order,
-            Intent.IMPACT_ANALYSIS:     self._handle_impact_analysis,
+            Intent.API_SURFACE: self._handle_api_surface,
+            Intent.CALL_GRAPH: self._handle_call_graph,
+            Intent.SYMBOL: self._handle_symbol,
+            Intent.READING_ORDER: self._handle_reading_order,
+            Intent.IMPACT_ANALYSIS: self._handle_impact_analysis,
         }
 
         handler = dispatch.get(intent)
@@ -129,7 +132,9 @@ class IntentRouter:
             except Exception as exc:
                 logger.warning(
                     "IntentRouter: handler for %s failed (repo=%s): %s",
-                    intent.value, repo_name, exc,
+                    intent.value,
+                    repo_name,
+                    exc,
                 )
                 result = RepositoryIntelligence(intent=intent)
 
@@ -181,9 +186,7 @@ class IntentRouter:
                 + ", ".join(f"`{m}`" for m in summary.high_coupling_modules[:8])
             )
         if hasattr(summary, "tech_stack") and summary.tech_stack:
-            lines.append(
-                "- **Tech stack:** " + ", ".join(summary.tech_stack[:10])
-            )
+            lines.append("- **Tech stack:** " + ", ".join(summary.tech_stack[:10]))
 
         return RepositoryIntelligence(
             intent=ir.intent,
@@ -272,7 +275,8 @@ class IntentRouter:
         symbols = getattr(surface, "symbols", []) or []
         # ClassifiedSymbol.visibility is a Visibility enum — compare by value
         public = [
-            s for s in symbols
+            s
+            for s in symbols
             if getattr(s, "visibility", None) is not None
             and getattr(s.visibility, "value", s.visibility) in ("public", "PUBLIC")
         ]
@@ -287,11 +291,13 @@ class IntentRouter:
         if len(public) > 20:
             lines.append(f"… and {len(public) - 20} more.")
 
-        source_files = list({
-            getattr(s, "file_path", "")
-            for s in public[:10]
-            if getattr(s, "file_path", "")
-        })
+        source_files = list(
+            {
+                getattr(s, "file_path", "")
+                for s in public[:10]
+                if getattr(s, "file_path", "")
+            }
+        )
 
         stats = getattr(surface, "stats", None)
         if stats:
@@ -346,14 +352,24 @@ class IntentRouter:
             lines.append("\n**Most-called functions:**")
             for node in top_fan_in[:8]:
                 # node is a dict with "node_id" and "fan_in" keys
-                node_id = node.get("node_id", "") if isinstance(node, dict) else getattr(node, "node_id", "")
-                callers = node.get("fan_in", 0) if isinstance(node, dict) else getattr(node, "fan_in", 0)
+                node_id = (
+                    node.get("node_id", "")
+                    if isinstance(node, dict)
+                    else getattr(node, "node_id", "")
+                )
+                callers = (
+                    node.get("fan_in", 0)
+                    if isinstance(node, dict)
+                    else getattr(node, "fan_in", 0)
+                )
                 # node_id format is "file_path::qualified_name" — extract the name part
                 display = node_id.split("::")[-1] if "::" in node_id else node_id
                 lines.append(f"  - `{display}` ← {callers} callers")
 
         for entity in ir.entities:
-            lines.append(f"\n*(Tip: use /api/call-graph to trace calls to/from `{entity}`)*")
+            lines.append(
+                f"\n*(Tip: use /api/call-graph to trace calls to/from `{entity}`)*"
+            )
             break
 
         return RepositoryIntelligence(
@@ -463,7 +479,9 @@ class IntentRouter:
         if not self._impact or not ir.entities:
             return RepositoryIntelligence(intent=ir.intent)
 
-        seed = ir.entities[0] if ir.entities else (ir.keywords[0] if ir.keywords else "")
+        seed = (
+            ir.entities[0] if ir.entities else (ir.keywords[0] if ir.keywords else "")
+        )
         if not seed:
             return RepositoryIntelligence(intent=ir.intent)
 

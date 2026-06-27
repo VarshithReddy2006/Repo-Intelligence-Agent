@@ -21,7 +21,6 @@ Design:
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import time
@@ -37,7 +36,6 @@ from models.api_surface import (
     ApiKind,
     ApiStatus,
 )
-from models.symbol import SymbolIndex
 from services.symbol_service import SymbolService
 from services.tree_sitter_service import TreeSitterService
 from services.symbol_classifier import SymbolClassifier
@@ -89,9 +87,13 @@ class APISurfaceService:
                 parent_dir = os.path.dirname(api_surface_dir)
                 dir_name = os.path.basename(api_surface_dir)
                 from storage.snapshot_store import JsonSnapshotStore
-                self.snapshot_store = JsonSnapshotStore(base_dir=parent_dir, key_map={"api_surface": dir_name})
+
+                self.snapshot_store = JsonSnapshotStore(
+                    base_dir=parent_dir, key_map={"api_surface": dir_name}
+                )
             else:
                 from backend.dependencies import snapshot_store as default_store
+
                 self.snapshot_store = default_store
         else:
             self.snapshot_store = snapshot_store
@@ -144,8 +146,10 @@ class APISurfaceService:
                 "Run POST /api/architecture/build first."
             )
 
-        yield {"status": "loading_arch",
-               "message": "Loading architecture summary for entry points…"}
+        yield {
+            "status": "loading_arch",
+            "message": "Loading architecture summary for entry points…",
+        }
 
         if context is not None:
             arch_summary = self.architecture_service.get_summary(repo_name)
@@ -162,13 +166,13 @@ class APISurfaceService:
             else:
                 files = []
 
-        yield {"status": "building_file_index",
-               "message": f"Indexing {len(files)} source files…"}
+        yield {
+            "status": "building_file_index",
+            "message": f"Indexing {len(files)} source files…",
+        }
 
         # Build content map and parsed metadata map
-        content_map: Dict[str, str] = {
-            f["path"]: f.get("content", "") for f in files
-        }
+        content_map: Dict[str, str] = {f["path"]: f.get("content", "") for f in files}
 
         # Load cached parsed files list to avoid redundant Tree-Sitter AST parsing
         parsed_map: Dict[str, Dict[str, Any]] = {}
@@ -189,15 +193,17 @@ class APISurfaceService:
                 if result:
                     parsed_map[path] = result
 
-        yield {"status": "classifying",
-               "message": f"Classifying {symbol_index.symbol_count} symbols…"}
+        yield {
+            "status": "classifying",
+            "message": f"Classifying {symbol_index.symbol_count} symbols…",
+        }
 
         # ── Try to load call graph fan-in for orphan detection ─────────
         fan_in_map: Dict[str, int] = self._load_fan_in(repo_name, context=context)
 
         # ── File-level caches to avoid re-computing per symbol ─────────
         all_list_cache: Dict[str, Optional[Set[str]]] = {}
-        exports_cache:  Dict[str, Optional[List[str]]] = {}
+        exports_cache: Dict[str, Optional[List[str]]] = {}
 
         classified: List[ClassifiedSymbol] = []
 
@@ -218,7 +224,9 @@ class APISurfaceService:
                 exports_cache[fp] = p.get("exports") if p else None
 
             # Call graph fan-in for this symbol's node_id
-            node_id = f"{fp}::{sym.parent_class + '.' if sym.parent_class else ''}{sym.name}"
+            node_id = (
+                f"{fp}::{sym.parent_class + '.' if sym.parent_class else ''}{sym.name}"
+            )
             fan_in = fan_in_map.get(node_id, 0)
 
             cs = SymbolClassifier.classify(
@@ -231,7 +239,10 @@ class APISurfaceService:
             )
             classified.append(cs)
 
-        yield {"status": "computing_stats", "message": "Computing aggregate statistics…"}
+        yield {
+            "status": "computing_stats",
+            "message": "Computing aggregate statistics…",
+        }
 
         stats = self._compute_stats(classified)
 
@@ -275,7 +286,9 @@ class APISurfaceService:
         if stored_ver < _SCHEMA_VERSION:
             logger.warning(
                 "Discarding stale API surface report for %s (v%d < v%d)",
-                repo_name, stored_ver, _SCHEMA_VERSION,
+                repo_name,
+                stored_ver,
+                _SCHEMA_VERSION,
             )
             return None
 
@@ -301,8 +314,7 @@ class APISurfaceService:
         surface = self.load(repo_name)
         if surface is None:
             return []
-        return [s for s in surface.symbols
-                if s.visibility == Visibility.INTERNAL]
+        return [s for s in surface.symbols if s.visibility == Visibility.INTERNAL]
 
     def get_deprecated(self, repo_name: str) -> List[ClassifiedSymbol]:
         surface = self.load(repo_name)
@@ -408,7 +420,9 @@ class APISurfaceService:
     # Call graph fan-in helper
     # ------------------------------------------------------------------
 
-    def _load_fan_in(self, repo_name: str, context: Optional[RepositoryContext] = None) -> Dict[str, int]:
+    def _load_fan_in(
+        self, repo_name: str, context: Optional[RepositoryContext] = None
+    ) -> Dict[str, int]:
         """Load fan-in counts from the call graph if available."""
         try:
             G = None
@@ -420,6 +434,7 @@ class APISurfaceService:
                     G = cached
             if G is None:
                 from backend.dependencies import graph_service
+
                 G = graph_service.load_graph(f"{repo_name}_call_graph")
 
             if G is None:

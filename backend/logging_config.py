@@ -62,7 +62,9 @@ class HumanFormatter(logging.Formatter):
         analysis = analysis_var.get()
 
         # Timestamp and level
-        timestamp = datetime.fromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
+        timestamp = datetime.fromtimestamp(record.created).strftime(
+            "%Y-%m-%d %H:%M:%S,%f"
+        )[:-3]
         parts = [
             f"{timestamp}",
             f"[{record.levelname}]",

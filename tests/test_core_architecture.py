@@ -1,18 +1,14 @@
 """Unit tests for Core Architecture Foundation (PH2-002)."""
 
-import os
 import tempfile
 import pytest
-import networkx as nx
 
 from core import (
     AnalysisCache,
-    RepositoryContext,
     AnalysisRegistry,
     BuildPipeline,
 )
 from storage import JsonSnapshotStore
-from models.symbol import SymbolIndex
 
 
 def test_analysis_cache():

@@ -5,7 +5,7 @@ leveraging ChromaStore and EmbeddingService.
 """
 
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 from memory.chroma_store import ChromaStore
 from services.embedding_service import EmbeddingService

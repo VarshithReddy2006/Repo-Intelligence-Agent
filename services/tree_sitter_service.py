@@ -24,37 +24,42 @@ logger = logging.getLogger(__name__)
 # loader_callable() must return a tree-sitter Language object.
 # New languages can be added here without touching parsing logic.
 
+
 def _load_python_language():
     from tree_sitter import Language
     import tree_sitter_python as tspython
+
     return Language(tspython.language(), "python")
 
 
 def _load_javascript_language():
     from tree_sitter import Language
     import tree_sitter_javascript as tsjs
+
     return Language(tsjs.language(), "javascript")
 
 
 def _load_typescript_language():
     from tree_sitter import Language
     import tree_sitter_typescript as tsts
+
     return Language(tsts.language_typescript(), "typescript")
 
 
 def _load_tsx_language():
     from tree_sitter import Language
     import tree_sitter_typescript as tsts
+
     return Language(tsts.language_tsx(), "tsx")
 
 
 # Extension → (canonical language name, loader)
 _LANGUAGE_REGISTRY: Dict[str, Tuple[str, Any]] = {
-    ".py":  ("python",     _load_python_language),
-    ".js":  ("javascript", _load_javascript_language),
+    ".py": ("python", _load_python_language),
+    ".js": ("javascript", _load_javascript_language),
     ".jsx": ("javascript", _load_javascript_language),
-    ".ts":  ("typescript", _load_typescript_language),
-    ".tsx": ("tsx",        _load_tsx_language),
+    ".ts": ("typescript", _load_typescript_language),
+    ".tsx": ("tsx", _load_tsx_language),
 }
 
 
@@ -171,13 +176,16 @@ class TreeSitterService:
 
         try:
             from tree_sitter import Parser
+
             language = loader()
             parser = Parser()
             parser.set_language(language)
             self._local.parsers[language_name] = parser
             return parser
         except Exception as exc:
-            logger.error("Failed to initialise Tree-Sitter parser for %s: %s", language_name, exc)
+            logger.error(
+                "Failed to initialise Tree-Sitter parser for %s: %s", language_name, exc
+            )
             return None
 
     # ------------------------------------------------------------------
@@ -185,8 +193,16 @@ class TreeSitterService:
     # ------------------------------------------------------------------
 
     _IGNORED_DIRS = {
-        "node_modules", ".git", "dist", "build", ".next",
-        "venv", "__pycache__", ".venv", ".tox", "coverage",
+        "node_modules",
+        ".git",
+        "dist",
+        "build",
+        ".next",
+        "venv",
+        "__pycache__",
+        ".venv",
+        ".tox",
+        "coverage",
     }
 
     def _parse_from_disk(self, repo_path: str) -> List[Dict[str, Any]]:
@@ -241,7 +257,9 @@ class TreeSitterService:
                         # import foo as bar → grab dotted_name child
                         for sub in child.children:
                             if sub.type == "dotted_name":
-                                imports.append(sub.text.decode("utf-8", errors="replace"))
+                                imports.append(
+                                    sub.text.decode("utf-8", errors="replace")
+                                )
                                 break
 
             elif ntype == "import_from_statement":
@@ -305,8 +323,14 @@ class TreeSitterService:
         for child in node.children:
             if child.type == "parameters":
                 for p in child.children:
-                    if p.type in ("identifier", "typed_parameter", "typed_default_parameter",
-                                  "default_parameter", "list_splat_pattern", "dictionary_splat_pattern"):
+                    if p.type in (
+                        "identifier",
+                        "typed_parameter",
+                        "typed_default_parameter",
+                        "default_parameter",
+                        "list_splat_pattern",
+                        "dictionary_splat_pattern",
+                    ):
                         # Grab the identifier inside typed params, or the node text for simple ones
                         if p.type == "identifier":
                             params.append(p.text.decode("utf-8", errors="replace"))
@@ -320,7 +344,9 @@ class TreeSitterService:
     # JavaScript / TypeScript extraction
     # ------------------------------------------------------------------
 
-    def _extract_js_ts(self, root, content: str) -> Tuple[List[str], List[Dict], List[Dict]]:
+    def _extract_js_ts(
+        self, root, content: str
+    ) -> Tuple[List[str], List[Dict], List[Dict]]:
         imports: List[str] = []
         classes: List[Dict] = []
         functions: List[Dict] = []
@@ -367,7 +393,9 @@ class TreeSitterService:
                 return raw.strip("'\"` ")
         return None
 
-    def _handle_js_var_declarator(self, node, imports: List[str], functions: List[Dict]):
+    def _handle_js_var_declarator(
+        self, node, imports: List[str], functions: List[Dict]
+    ):
         """Handle  const x = require('y')  and  const fn = (x) => ...  patterns."""
         name = ""
         for child in node.children:
@@ -375,7 +403,11 @@ class TreeSitterService:
                 name = child.text.decode("utf-8", errors="replace")
             elif child.type == "call_expression":
                 fn_node = child.children[0] if child.children else None
-                if fn_node and fn_node.type == "identifier" and fn_node.text == b"require":
+                if (
+                    fn_node
+                    and fn_node.type == "identifier"
+                    and fn_node.text == b"require"
+                ):
                     # extract string argument
                     for arg_child in child.children:
                         if arg_child.type == "arguments":
@@ -438,8 +470,12 @@ class TreeSitterService:
                 for p in child.children:
                     if p.type == "identifier":
                         params.append(p.text.decode("utf-8", errors="replace"))
-                    elif p.type in ("required_parameter", "optional_parameter",
-                                    "rest_pattern", "assignment_pattern"):
+                    elif p.type in (
+                        "required_parameter",
+                        "optional_parameter",
+                        "rest_pattern",
+                        "assignment_pattern",
+                    ):
                         ident = self._get_identifier(p)
                         if ident:
                             params.append(ident)

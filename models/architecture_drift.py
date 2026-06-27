@@ -1,6 +1,5 @@
 import re
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -17,14 +16,19 @@ class PRDriftRequest(BaseModel):
             pr_url = data.get("pr_url")
             if pr_url:
                 # Parse and validate URL
-                match = re.match(r"^https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)/?$", pr_url.strip())
+                match = re.match(
+                    r"^https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)/?$",
+                    pr_url.strip(),
+                )
                 if not match:
                     raise ValueError("Invalid GitHub Pull Request URL format")
                 data["owner"] = match.group(1)
                 data["repo"] = match.group(2)
                 data["pr_number"] = int(match.group(3))
             elif not all([data.get("owner"), data.get("repo"), data.get("pr_number")]):
-                raise ValueError("Must provide either pr_url or all of owner, repo, and pr_number")
+                raise ValueError(
+                    "Must provide either pr_url or all of owner, repo, and pr_number"
+                )
         return data
 
 

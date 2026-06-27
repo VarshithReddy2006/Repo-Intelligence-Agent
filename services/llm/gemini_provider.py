@@ -16,7 +16,7 @@ from .provider_errors import classify_gemini_error, ProviderErrorType
 
 logger = logging.getLogger(__name__)
 
-_HEALTH_CHECK_TIMEOUT = 10.0   # seconds — list models is cheap, 10s is generous
+_HEALTH_CHECK_TIMEOUT = 10.0  # seconds — list models is cheap, 10s is generous
 _HEALTH_CHECK_PROMPT = "Reply with the single word: ready"
 
 
@@ -29,13 +29,12 @@ class GeminiProvider(BaseLLMProvider):
         model: Optional[str] = None,
     ) -> None:
         from backend.settings import settings
+
         self.api_key = api_key or settings.gemini_api_key or ""
         self.model = model or settings.gemini_model or "gemini-2.5-flash"
 
         if not self.api_key:
-            logger.warning(
-                "GEMINI_API_KEY is not set — requests to Gemini will fail."
-            )
+            logger.warning("GEMINI_API_KEY is not set — requests to Gemini will fail.")
             # In production settings.py validator will fail fast if key is missing,
             # but we initialize the client here safely.
 
@@ -59,6 +58,7 @@ class GeminiProvider(BaseLLMProvider):
         # Fast-path: missing credential — no need to make a network call
         if not self.api_key:
             from .provider_errors import _GEMINI_MESSAGES
+
             msg, rec = _GEMINI_MESSAGES[ProviderErrorType.MISSING_CREDENTIAL]
             logger.error(
                 "PROVIDER_HEALTH provider=gemini model=%s authenticated=false "
@@ -150,11 +150,9 @@ class GeminiProvider(BaseLLMProvider):
                 # Normalize Gemini/OpenAI roles
                 if role == "assistant":
                     role = "model"
-                
+
                 content = turn.get("content", "")
-                contents.append(
-                    {"role": role, "parts": [{"text": str(content)}]}
-                )
+                contents.append({"role": role, "parts": [{"text": str(content)}]})
 
         contents.append({"role": "user", "parts": [{"text": prompt}]})
         return contents
@@ -166,7 +164,7 @@ class GeminiProvider(BaseLLMProvider):
         history: Optional[List[Dict[str, Any]]] = None,
         response_mime_type: Optional[str] = None,
     ) -> str:
-        """Generate a complete text response from Gemini with backoff retry and timeout."""
+        """Generate a complete text response from Gemini with retry policy and timeout."""
         import random
 
         contents = self._build_contents(prompt, history)
@@ -177,11 +175,11 @@ class GeminiProvider(BaseLLMProvider):
         if response_mime_type == "application/json":
             config.response_mime_type = response_mime_type
 
-        max_retries = 3
         base_delay = 1.0
         timeout_seconds = 30.0
+        attempt = 0
 
-        for attempt in range(max_retries + 1):
+        while True:
             try:
                 response = await asyncio.wait_for(
                     self.client.aio.models.generate_content(
@@ -197,31 +195,43 @@ class GeminiProvider(BaseLLMProvider):
                 raise
             except Exception as e:
                 error = classify_gemini_error(e, "gemini")
-                if attempt == max_retries:
-                    logger.error(
-                        "Gemini generate failed after %d retries: "
-                        "model=%s error_type=%s exc_type=%s",
-                        max_retries,
+
+                is_auth = error.error_type in (
+                    ProviderErrorType.AUTHENTICATION_ERROR,
+                    ProviderErrorType.INVALID_CREDENTIAL_TYPE,
+                    ProviderErrorType.MISSING_CREDENTIAL,
+                )
+                is_quota = error.error_type in (
+                    ProviderErrorType.QUOTA_EXCEEDED,
+                    ProviderErrorType.RATE_LIMIT_ERROR,
+                )
+                should_retry = not is_auth and not is_quota
+
+                if should_retry and attempt < 1:
+                    attempt += 1
+                    delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
+                    logger.warning(
+                        "Gemini generate failed (transient error, retry %d/1): model=%s "
+                        "error_type=%s exc_type=%s retrying_in=%.2fs",
+                        attempt,
                         self.model,
                         error.error_type.value,
                         type(e).__name__,
-                        exc_info=True,
+                        delay,
                     )
-                    raise
+                    await asyncio.sleep(delay)
+                    continue
 
-                delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
-                logger.warning(
-                    "Gemini generate failed: model=%s attempt=%d/%d "
-                    "error_type=%s exc_type=%s retrying_in=%.2fs",
+                logger.error(
+                    "Gemini generate failed permanently: model=%s error_type=%s exc_type=%s "
+                    "attempts=%d",
                     self.model,
-                    attempt + 1,
-                    max_retries,
                     error.error_type.value,
                     type(e).__name__,
-                    delay,
+                    attempt + 1,
+                    exc_info=True,
                 )
-                await asyncio.sleep(delay)
-        return ""
+                raise
 
     async def stream(
         self,
@@ -229,7 +239,7 @@ class GeminiProvider(BaseLLMProvider):
         system_instruction: Optional[str] = None,
         history: Optional[List[Dict[str, Any]]] = None,
     ) -> AsyncIterator[str]:
-        """Stream token-by-token text output from Gemini with backoff retry and timeout."""
+        """Stream token-by-token text output from Gemini with retry policy and timeout."""
         import random
 
         contents = self._build_contents(prompt, history)
@@ -238,11 +248,11 @@ class GeminiProvider(BaseLLMProvider):
         if system_instruction:
             config.system_instruction = system_instruction
 
-        max_retries = 3
         base_delay = 1.0
         timeout_seconds = 30.0
+        attempt = 0
 
-        for attempt in range(max_retries + 1):
+        while True:
             try:
                 response_stream = await asyncio.wait_for(
                     self.client.aio.models.generate_content_stream(
@@ -261,27 +271,40 @@ class GeminiProvider(BaseLLMProvider):
                 raise
             except Exception as e:
                 error = classify_gemini_error(e, "gemini")
-                if attempt == max_retries:
-                    logger.error(
-                        "Gemini stream failed after %d retries: "
-                        "model=%s error_type=%s exc_type=%s",
-                        max_retries,
+
+                is_auth = error.error_type in (
+                    ProviderErrorType.AUTHENTICATION_ERROR,
+                    ProviderErrorType.INVALID_CREDENTIAL_TYPE,
+                    ProviderErrorType.MISSING_CREDENTIAL,
+                )
+                is_quota = error.error_type in (
+                    ProviderErrorType.QUOTA_EXCEEDED,
+                    ProviderErrorType.RATE_LIMIT_ERROR,
+                )
+                should_retry = not is_auth and not is_quota
+
+                if should_retry and attempt < 1:
+                    attempt += 1
+                    delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
+                    logger.warning(
+                        "Gemini stream failed (transient error, retry %d/1): model=%s "
+                        "error_type=%s exc_type=%s retrying_in=%.2fs",
+                        attempt,
                         self.model,
                         error.error_type.value,
                         type(e).__name__,
-                        exc_info=True,
+                        delay,
                     )
-                    raise
+                    await asyncio.sleep(delay)
+                    continue
 
-                delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
-                logger.warning(
-                    "Gemini stream failed: model=%s attempt=%d/%d "
-                    "error_type=%s exc_type=%s retrying_in=%.2fs",
+                logger.error(
+                    "Gemini stream failed permanently: model=%s error_type=%s exc_type=%s "
+                    "attempts=%d",
                     self.model,
-                    attempt + 1,
-                    max_retries,
                     error.error_type.value,
                     type(e).__name__,
-                    delay,
+                    attempt + 1,
+                    exc_info=True,
                 )
-                await asyncio.sleep(delay)
+                raise

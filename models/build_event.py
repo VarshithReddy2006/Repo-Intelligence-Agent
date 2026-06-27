@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 @dataclass
 class BuildEvent:
     """Base class for all build pipeline events."""
+
     event_type: str
     repo_name: str
     timestamp: float = field(default_factory=time.time)
@@ -37,9 +38,11 @@ class BuildEvent:
 # New Concurrency Staging Events
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class TaskQueued(BuildEvent):
     """Event emitted when a task is scheduled in the execution queue."""
+
     def __init__(self, repo_name: str, node: str) -> None:
         super().__init__(
             event_type="TASK_QUEUED",
@@ -51,6 +54,7 @@ class TaskQueued(BuildEvent):
 @dataclass
 class TaskStarted(BuildEvent):
     """Event emitted when a worker thread begins executing a task."""
+
     def __init__(self, repo_name: str, node: str) -> None:
         super().__init__(
             event_type="TASK_STARTED",
@@ -62,6 +66,7 @@ class TaskStarted(BuildEvent):
 @dataclass
 class TaskCompleted(BuildEvent):
     """Event emitted when a task completes successfully."""
+
     def __init__(self, repo_name: str, node: str, duration_ms: float) -> None:
         super().__init__(
             event_type="TASK_COMPLETED",
@@ -74,6 +79,7 @@ class TaskCompleted(BuildEvent):
 @dataclass
 class TaskSkipped(BuildEvent):
     """Event emitted when a task is skipped (e.g. cache hit)."""
+
     def __init__(self, repo_name: str, node: str) -> None:
         super().__init__(
             event_type="TASK_SKIPPED",
@@ -85,6 +91,7 @@ class TaskSkipped(BuildEvent):
 @dataclass
 class TaskFailed(BuildEvent):
     """Event emitted when a task fails during execution."""
+
     def __init__(self, repo_name: str, node: str, error_message: str) -> None:
         super().__init__(
             event_type="TASK_FAILED",
@@ -97,6 +104,7 @@ class TaskFailed(BuildEvent):
 @dataclass
 class StageCompleted(BuildEvent):
     """Event emitted when all tasks in a parallel stage have finished."""
+
     stage_index: int = 0
     tasks: List[str] = field(default_factory=list)
 
@@ -119,6 +127,7 @@ class StageCompleted(BuildEvent):
 @dataclass
 class BuildCompleted(BuildEvent):
     """Event emitted when the entire parallel build process finishes."""
+
     def __init__(self, repo_name: str, duration_ms: float) -> None:
         super().__init__(
             event_type="BUILD_COMPLETED",
@@ -130,6 +139,7 @@ class BuildCompleted(BuildEvent):
 # ---------------------------------------------------------------------------
 # Legacy Mapping Events (Backward Compatibility)
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class StartEvent(BuildEvent):
@@ -158,7 +168,9 @@ class CacheMissEvent(BuildEvent):
 @dataclass
 class ProgressEvent(BuildEvent):
     def __init__(self, repo_name: str, node: str, message: str) -> None:
-        super().__init__(event_type="PROGRESS", repo_name=repo_name, node=node, message=message)
+        super().__init__(
+            event_type="PROGRESS", repo_name=repo_name, node=node, message=message
+        )
 
 
 @dataclass
@@ -170,7 +182,12 @@ class SaveEvent(BuildEvent):
 @dataclass
 class BuildTimeEvent(BuildEvent):
     def __init__(self, repo_name: str, node: str, duration_ms: float) -> None:
-        super().__init__(event_type="BUILD TIME", repo_name=repo_name, node=node, duration_ms=duration_ms)
+        super().__init__(
+            event_type="BUILD TIME",
+            repo_name=repo_name,
+            node=node,
+            duration_ms=duration_ms,
+        )
 
 
 @dataclass
@@ -181,5 +198,9 @@ class EndEvent(BuildEvent):
 
 @dataclass
 class ErrorEvent(BuildEvent):
-    def __init__(self, repo_name: str, message: str, node: Optional[str] = None) -> None:
-        super().__init__(event_type="ERROR", repo_name=repo_name, node=node, message=message)
+    def __init__(
+        self, repo_name: str, message: str, node: Optional[str] = None
+    ) -> None:
+        super().__init__(
+            event_type="ERROR", repo_name=repo_name, node=node, message=message
+        )

@@ -43,7 +43,9 @@ class ArchitectureExplainer:
         # TODO: Implement dependency graph or heuristic-based file ordering
         raise NotImplementedError("recommend_reading_order is not yet implemented.")
 
-    def explain_component_relationships(self, files: List[str]) -> List[ComponentRelationship]:
+    def explain_component_relationships(
+        self, files: List[str]
+    ) -> List[ComponentRelationship]:
         """Maps relations (imports/dependencies) between primary codebase modules.
 
         Args:
@@ -53,4 +55,6 @@ class ArchitectureExplainer:
             A list of ComponentRelationship models describing inter-file connections.
         """
         # TODO: Parse imports or use LLM to deduce module relationships
-        raise NotImplementedError("explain_component_relationships is not yet implemented.")
+        raise NotImplementedError(
+            "explain_component_relationships is not yet implemented."
+        )

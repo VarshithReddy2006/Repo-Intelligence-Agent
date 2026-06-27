@@ -16,14 +16,18 @@ from services.llm.provider_errors import ProviderErrorType
 # GeminiProvider.health_check()
 # ===========================================================================
 
+
 class TestGeminiProviderHealthCheck:
     """Tests for GeminiProvider.health_check() — mocks genai.Client."""
 
-    def _make_provider(self, api_key: str = "AIza-test-key", model: str = "gemini-2.5-flash"):
+    def _make_provider(
+        self, api_key: str = "AIza-test-key", model: str = "gemini-2.5-flash"
+    ):
         with patch("services.llm.gemini_provider.genai") as mock_genai:
             mock_client = MagicMock()
             mock_genai.Client.return_value = mock_client
             from services.llm.gemini_provider import GeminiProvider
+
             provider = GeminiProvider.__new__(GeminiProvider)
             provider.api_key = api_key
             provider.model = model
@@ -63,6 +67,7 @@ class TestGeminiProviderHealthCheck:
     async def test_health_check_access_token_type_unsupported(self):
         """The exact failure mode that triggered this feature."""
         from tests.test_provider_errors import _mock_exc
+
         provider, mock_client = self._make_provider()
 
         exc = _mock_exc(
@@ -83,6 +88,7 @@ class TestGeminiProviderHealthCheck:
     @pytest.mark.anyio
     async def test_health_check_invalid_key_401(self):
         from tests.test_provider_errors import _mock_exc
+
         provider, mock_client = self._make_provider()
 
         exc = _mock_exc("ClientError 401 UNAUTHENTICATED", class_name="ClientError")
@@ -97,9 +103,12 @@ class TestGeminiProviderHealthCheck:
     @pytest.mark.anyio
     async def test_health_check_rate_limited(self):
         from tests.test_provider_errors import _mock_exc
+
         provider, mock_client = self._make_provider()
 
-        exc = _mock_exc("ClientError 429 RESOURCE_EXHAUSTED rate limit", class_name="ClientError")
+        exc = _mock_exc(
+            "ClientError 429 RESOURCE_EXHAUSTED rate limit", class_name="ClientError"
+        )
         mock_client.aio.models.list = AsyncMock(side_effect=exc)
 
         health = await provider.health_check()
@@ -136,6 +145,7 @@ class TestGeminiProviderHealthCheck:
 # DeepSeekProvider.health_check()
 # ===========================================================================
 
+
 class TestDeepSeekProviderHealthCheck:
     """Tests for DeepSeekProvider.health_check() — mocks httpx.AsyncClient."""
 
@@ -146,6 +156,7 @@ class TestDeepSeekProviderHealthCheck:
         model: str = "deepseek-ai/deepseek-v4-flash",
     ):
         from services.llm.deepseek_provider import DeepSeekProvider
+
         provider = DeepSeekProvider.__new__(DeepSeekProvider)
         provider.api_key = api_key
         provider.base_url = base_url.rstrip("/")
@@ -166,7 +177,9 @@ class TestDeepSeekProviderHealthCheck:
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.get = AsyncMock(return_value=mock_response)
 
-        with patch("services.llm.deepseek_provider.httpx.AsyncClient", return_value=mock_client):
+        with patch(
+            "services.llm.deepseek_provider.httpx.AsyncClient", return_value=mock_client
+        ):
             health = await provider.health_check()
 
         assert health.healthy is True
@@ -206,7 +219,9 @@ class TestDeepSeekProviderHealthCheck:
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.get = AsyncMock(side_effect=http_exc)
 
-        with patch("services.llm.deepseek_provider.httpx.AsyncClient", return_value=mock_client):
+        with patch(
+            "services.llm.deepseek_provider.httpx.AsyncClient", return_value=mock_client
+        ):
             health = await provider.health_check()
 
         assert health.healthy is False
@@ -224,7 +239,9 @@ class TestDeepSeekProviderHealthCheck:
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.get = AsyncMock(side_effect=httpx.TimeoutException("timed out"))
 
-        with patch("services.llm.deepseek_provider.httpx.AsyncClient", return_value=mock_client):
+        with patch(
+            "services.llm.deepseek_provider.httpx.AsyncClient", return_value=mock_client
+        ):
             health = await provider.health_check()
 
         assert health.healthy is False
@@ -239,9 +256,13 @@ class TestDeepSeekProviderHealthCheck:
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.get = AsyncMock(side_effect=httpx.ConnectError("connection refused"))
+        mock_client.get = AsyncMock(
+            side_effect=httpx.ConnectError("connection refused")
+        )
 
-        with patch("services.llm.deepseek_provider.httpx.AsyncClient", return_value=mock_client):
+        with patch(
+            "services.llm.deepseek_provider.httpx.AsyncClient", return_value=mock_client
+        ):
             health = await provider.health_check()
 
         assert health.healthy is False
@@ -257,7 +278,9 @@ class TestDeepSeekProviderHealthCheck:
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.get = AsyncMock(side_effect=RuntimeError("kaboom"))
 
-        with patch("services.llm.deepseek_provider.httpx.AsyncClient", return_value=mock_client):
+        with patch(
+            "services.llm.deepseek_provider.httpx.AsyncClient", return_value=mock_client
+        ):
             health = await provider.health_check()
 
         assert isinstance(health, ProviderHealth)
@@ -267,6 +290,7 @@ class TestDeepSeekProviderHealthCheck:
 # ===========================================================================
 # ProviderHealth dataclass contract
 # ===========================================================================
+
 
 class TestProviderHealthDataclass:
     def test_healthy_instance(self):

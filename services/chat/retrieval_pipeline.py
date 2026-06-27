@@ -28,16 +28,16 @@ import asyncio
 import json
 import logging
 import time
-from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 from services.arch_context_service import ArchContextService
 from services.embedding_service import EmbeddingService
 from memory.chroma_store import ChromaStore
 
 from .conversation_memory import ConversationMemoryStore, conversation_memory
-from .intent_detector import IntentDetector, RuleBasedIntentDetector, Intent
-from .intent_router import IntentRouter
-from .retrieval import intelligent_retrieve
+from .intent_detector import IntentDetector, RuleBasedIntentDetector
+from .intent_router import IntentRouter, RepositoryIntelligence
+from .retrieval import intelligent_retrieve, detect_deterministic_retrieval
 from .context_builder import ContextBuilder
 from .provider_manager import ProviderManager
 from .fallback_renderer import render_fallback, render_mid_stream_termination
@@ -64,6 +64,7 @@ class RetrievalPipeline:
         provider_manager: Optional[ProviderManager] = None,
         memory_store: Optional[ConversationMemoryStore] = None,
         observability: Optional[ChatObservability] = None,
+        symbol_service: Optional[Any] = None,
     ) -> None:
         self.embedding_service = embedding_service
         self.chroma_store = chroma_store
@@ -74,6 +75,9 @@ class RetrievalPipeline:
         self.provider_manager = provider_manager or ProviderManager()
         self.memory_store = memory_store or conversation_memory
         self.observability = observability or chat_observability
+        self.symbol_service = symbol_service or getattr(
+            self.intent_router, "_symbols", None
+        )
 
     # ------------------------------------------------------------------
     # Non-streaming path (for RetrievalService compatibility + tests)
@@ -111,26 +115,55 @@ class RetrievalPipeline:
         intent_result = self.intent_detector.detect(resolved_question)
         trace.intent = intent_result.intent.value
 
-        # 3. Intent routing
-        intelligence = self.intent_router.route(
-            repo_name, resolved_question, intent_result
+        # Check for deterministic match
+        det_match = detect_deterministic_retrieval(
+            resolved_question, repo_name, self.chroma_store, self.symbol_service
         )
+
+        if det_match and det_match.get("clarification_needed"):
+            choices = det_match["choices"]
+            cand = det_match["candidate"]
+            msg = (
+                f"Multiple production files named '{cand}' exist in the repository:\n"
+                + "\n".join(f"- `{f}`" for f in choices)
+                + "\n\nPlease clarify which file you would like to retrieve."
+            )
+            return {
+                "answer": msg,
+                "sources": choices,
+                "confidence": 98,
+                "verified": True,
+                "evaluation": {},
+                "intent": intent_result.intent.value,
+                "fallback_mode": False,
+            }
+
+        # 3. Intent routing
+        if det_match:
+            # Bypass intent router for deterministic retrieval
+            intelligence = RepositoryIntelligence(intent=intent_result.intent)
+        else:
+            intelligence = self.intent_router.route(
+                repo_name, resolved_question, intent_result
+            )
         trace.router_has_data = intelligence.has_data
         trace.router_elapsed_ms = intelligence.router_elapsed_ms
 
-        # 4. Vector retrieval
+        # 4. Vector/Deterministic retrieval
         try:
             chunks, ret_metrics = intelligent_retrieve(
                 question=resolved_question,
                 repo_name=repo_name,
                 embedding_service=self.embedding_service,
                 chroma_store=self.chroma_store,
+                symbol_service=self.symbol_service,
             )
             trace.from_retrieval_metrics(ret_metrics)
             trace.from_chunks(chunks)
         except Exception as exc:
-            logger.error("RetrievalPipeline.retrieve: vector search failed: %s", exc)
+            logger.error("RetrievalPipeline.retrieve: retrieval failed: %s", exc)
             chunks = []
+            ret_metrics = {}
             trace.fallback_triggered = True
             trace.fallback_reason = f"retrieval_error: {exc}"
 
@@ -139,6 +172,7 @@ class RetrievalPipeline:
         arch_block = arch_ctx.to_prompt_block() if arch_ctx.available else ""
 
         # 6. Build context
+        t_cb = time.perf_counter()
         built = self.context_builder.build(
             repo_name=repo_name,
             question=resolved_question,
@@ -147,9 +181,22 @@ class RetrievalPipeline:
             code_chunks=chunks,
             conversation_history=history,
             intent_name=intent_result.intent.value,
+            deterministic_file_path=ret_metrics.get("matched_file")
+            if ret_metrics.get("deterministic")
+            else None,
         )
+        context_build_ms = (time.perf_counter() - t_cb) * 1000
+        non_llm_latency_ms = (time.perf_counter() - trace._start_time) * 1000
         trace.context_estimated_tokens = built.estimated_tokens
         trace.context_slot_breakdown = built.slot_breakdown
+
+        logger.info(
+            "CHAT_LATENCY | embedding=%.1fms retrieval/ranking=%.1fms context_building=%.1fms non_llm=%.1fms",
+            ret_metrics.get("embed_ms", 0.0),
+            ret_metrics.get("search_ms", 0.0) + ret_metrics.get("rerank_ms", 0.0),
+            context_build_ms,
+            non_llm_latency_ms,
+        )
 
         # 7. LLM generation
         normalised_history = self._normalise_history(history or [])
@@ -171,9 +218,7 @@ class RetrievalPipeline:
             trace.llm_latency_ms = (time.perf_counter() - t_llm) * 1000
             fallback_triggered = True
             fallback_reason = str(exc)
-            logger.warning(
-                "RetrievalPipeline.retrieve: all providers failed: %s", exc
-            )
+            logger.warning("RetrievalPipeline.retrieve: all providers failed: %s", exc)
             answer = render_fallback(
                 question=resolved_question,
                 structured_intelligence=intelligence.structured_context,
@@ -189,7 +234,9 @@ class RetrievalPipeline:
         # 8. Update conversation memory
         if not fallback_triggered:
             session.add_turn("user", question)
-            session.add_turn("assistant", answer[:2000])  # store summary, not full answer
+            session.add_turn(
+                "assistant", answer[:2000]
+            )  # store summary, not full answer
             session.update_context(
                 entities=intent_result.entities,
                 files=built.source_files[:5],
@@ -197,9 +244,7 @@ class RetrievalPipeline:
             )
 
         # 9. Collect sources
-        all_sources = sorted(set(
-            intelligence.source_files + built.source_files
-        ))
+        all_sources = sorted(set(intelligence.source_files + built.source_files))
 
         trace.finish()
         self.observability.emit(trace)
@@ -207,7 +252,9 @@ class RetrievalPipeline:
         return {
             "answer": answer,
             "sources": all_sources,
-            "confidence": 85 if not fallback_triggered else 0,
+            "confidence": ret_metrics.get("confidence", 85)
+            if not fallback_triggered
+            else 0,
             "verified": not fallback_triggered,
             "evaluation": {},
             "intent": intent_result.intent.value,
@@ -244,14 +291,43 @@ class RetrievalPipeline:
         intent_result = self.intent_detector.detect(resolved_question)
         trace.intent = intent_result.intent.value
 
-        # ── 3. Intent routing ────────────────────────────────────────────
-        intelligence = self.intent_router.route(
-            repo_name, resolved_question, intent_result
+        # Check for deterministic match
+        det_match = detect_deterministic_retrieval(
+            resolved_question, repo_name, self.chroma_store, self.symbol_service
         )
+
+        if det_match and det_match.get("clarification_needed"):
+            choices = det_match["choices"]
+            cand = det_match["candidate"]
+            msg = (
+                f"Multiple production files named '{cand}' exist in the repository:\n"
+                + "\n".join(f"- `{f}`" for f in choices)
+                + "\n\nPlease clarify which file you would like to retrieve."
+            )
+            yield self._sse({"text": msg})
+            yield self._sse(
+                {
+                    "sources": choices,
+                    "confidence": 98,
+                    "fallback_mode": False,
+                    "intent": intent_result.intent.value,
+                    "status": "done",
+                }
+            )
+            return
+
+        # ── 3. Intent routing ────────────────────────────────────────────
+        if det_match:
+            # Bypass intent router for deterministic retrieval
+            intelligence = RepositoryIntelligence(intent=intent_result.intent)
+        else:
+            intelligence = self.intent_router.route(
+                repo_name, resolved_question, intent_result
+            )
         trace.router_has_data = intelligence.has_data
         trace.router_elapsed_ms = intelligence.router_elapsed_ms
 
-        # ── 4. Vector retrieval ──────────────────────────────────────────
+        # ── 4. Vector/Deterministic retrieval ────────────────────────────
         chunks: List[Dict] = []
         try:
             chunks, ret_metrics = intelligent_retrieve(
@@ -259,17 +335,19 @@ class RetrievalPipeline:
                 repo_name=repo_name,
                 embedding_service=self.embedding_service,
                 chroma_store=self.chroma_store,
+                symbol_service=self.symbol_service,
             )
             trace.from_retrieval_metrics(ret_metrics)
             trace.from_chunks(chunks)
         except Exception as exc:
             logger.error(
-                "RetrievalPipeline.stream: vector search failed "
+                "RetrievalPipeline.stream: retrieval failed "
                 "repo=%s exc_type=%s fallback_triggered=true",
                 repo_name,
                 type(exc).__name__,
                 exc_info=True,
             )
+            ret_metrics = {}
             trace.fallback_triggered = True
             trace.fallback_reason = f"retrieval_error: {exc}"
 
@@ -278,6 +356,7 @@ class RetrievalPipeline:
         arch_block = arch_ctx.to_prompt_block() if arch_ctx.available else ""
 
         # ── 6. Build context ─────────────────────────────────────────────
+        t_cb = time.perf_counter()
         built = self.context_builder.build(
             repo_name=repo_name,
             question=resolved_question,
@@ -286,9 +365,22 @@ class RetrievalPipeline:
             code_chunks=chunks,
             conversation_history=history,
             intent_name=intent_result.intent.value,
+            deterministic_file_path=ret_metrics.get("matched_file")
+            if ret_metrics.get("deterministic")
+            else None,
         )
+        context_build_ms = (time.perf_counter() - t_cb) * 1000
+        non_llm_latency_ms = (time.perf_counter() - trace._start_time) * 1000
         trace.context_estimated_tokens = built.estimated_tokens
         trace.context_slot_breakdown = built.slot_breakdown
+
+        logger.info(
+            "CHAT_STREAM_LATENCY | embedding=%.1fms retrieval/ranking=%.1fms context_building=%.1fms non_llm=%.1fms",
+            ret_metrics.get("embed_ms", 0.0),
+            ret_metrics.get("search_ms", 0.0) + ret_metrics.get("rerank_ms", 0.0),
+            context_build_ms,
+            non_llm_latency_ms,
+        )
 
         normalised_history = self._normalise_history(history or [])
 
@@ -384,23 +476,23 @@ class RetrievalPipeline:
             )
 
         # ── 9. Collect sources + terminal done event ─────────────────────
-        all_sources = sorted(set(
-            intelligence.source_files + built.source_files
-        ))
-        confidence = 85 if not fallback_triggered else 0
+        all_sources = sorted(set(intelligence.source_files + built.source_files))
+        confidence = ret_metrics.get("confidence", 85) if not fallback_triggered else 0
 
         trace.fallback_triggered = fallback_triggered
         trace.fallback_reason = fallback_reason
         trace.finish()
         self.observability.emit(trace)
 
-        yield self._sse({
-            "sources":      all_sources,
-            "confidence":   confidence,
-            "fallback_mode": fallback_triggered,
-            "intent":       intent_result.intent.value,
-            "status":       "done",
-        })
+        yield self._sse(
+            {
+                "sources": all_sources,
+                "confidence": confidence,
+                "fallback_mode": fallback_triggered,
+                "intent": intent_result.intent.value,
+                "status": "done",
+            }
+        )
 
     # ------------------------------------------------------------------
     # Helpers
@@ -411,9 +503,7 @@ class RetrievalPipeline:
         return f"data: {json.dumps(payload)}\n\n"
 
     @staticmethod
-    def _normalise_history(
-        history: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+    def _normalise_history(history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Normalise frontend history format to provider-compatible format."""
         normalised = []
         for turn in history:

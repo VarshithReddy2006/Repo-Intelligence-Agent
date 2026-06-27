@@ -3,7 +3,7 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set
 
 import networkx as nx
 
@@ -37,7 +37,9 @@ class DeadCodeService:
 
         if scores_file_path is None:
             project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            self.scores_file_path = os.path.join(project_root, "data", "dead_code_scores.json")
+            self.scores_file_path = os.path.join(
+                project_root, "data", "dead_code_scores.json"
+            )
         else:
             self.scores_file_path = scores_file_path
 
@@ -297,10 +299,14 @@ class DeadCodeService:
         all_unreachable = set(G.nodes) - reachable_nodes
 
         unreachable_filtered = {
-            node for node in all_unreachable if not self.is_ignored(node, ignore_patterns)
+            node
+            for node in all_unreachable
+            if not self.is_ignored(node, ignore_patterns)
         }
         reachable_filtered = {
-            node for node in reachable_nodes if not self.is_ignored(node, ignore_patterns)
+            node
+            for node in reachable_nodes
+            if not self.is_ignored(node, ignore_patterns)
         }
 
         H = G.subgraph(unreachable_filtered)
@@ -342,7 +348,9 @@ class DeadCodeService:
 
                 last_parent = self._find_last_reachable_parent(G, v, reachable_filtered)
 
-                rec = f"Review orphaned module {v}; no active execution path reaches it."
+                rec = (
+                    f"Review orphaned module {v}; no active execution path reaches it."
+                )
                 orphan_modules_list.append(
                     OrphanModule(
                         file_path=v,
@@ -359,7 +367,9 @@ class DeadCodeService:
 
         cleanup_score = max(0, min(100, 100 - int(total_deductions)))
 
-        total_findings_count = len(unused_files_list) + len(orphan_modules_list) + len(chains)
+        total_findings_count = (
+            len(unused_files_list) + len(orphan_modules_list) + len(chains)
+        )
         if total_findings_count <= 2:
             effort = "LOW"
         elif total_findings_count <= 10:

@@ -109,7 +109,6 @@ export class RepositoryDashboardPanel {
   // ── HTML builders ────────────────────────────────────────────────────
 
   private _buildLoadingHtml(): string {
-    const nonce = getNonce();
     return /* html */ `<!DOCTYPE html>
 <html><head>
 <meta charset="UTF-8">

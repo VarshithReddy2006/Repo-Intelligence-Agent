@@ -10,7 +10,7 @@ instead of the previous Gemini dependency.
 import asyncio
 import json
 import logging
-from typing import List, Optional, Any, Dict
+from typing import List, Optional, Any
 
 from models.schemas import EvaluationResult
 from services.llm import ProviderFactory, BaseLLMProvider
@@ -23,7 +23,7 @@ class EvaluationAgent:
 
     def __init__(
         self,
-        client: Any = None,              # accepted but ignored (legacy Gemini client arg)
+        client: Any = None,  # accepted but ignored (legacy Gemini client arg)
         provider: Optional[BaseLLMProvider] = None,
     ) -> None:
         """Initialise the EvaluationAgent.
@@ -34,7 +34,9 @@ class EvaluationAgent:
                       ProviderFactory.get_provider().
         """
         if client is not None:
-            logger.debug("EvaluationAgent: 'client' parameter is ignored — using LLM provider.")
+            logger.debug(
+                "EvaluationAgent: 'client' parameter is ignored — using LLM provider."
+            )
         self._provider = provider or ProviderFactory.get_provider()
 
     def evaluate_response(
@@ -65,6 +67,7 @@ class EvaluationAgent:
 
             if is_running:
                 import concurrent.futures
+
                 with concurrent.futures.ThreadPoolExecutor() as pool:
                     future = pool.submit(
                         asyncio.run,
@@ -72,9 +75,13 @@ class EvaluationAgent:
                     )
                     return future.result()
             else:
-                return asyncio.run(self._evaluate_async(prompt, response, source_contexts))
+                return asyncio.run(
+                    self._evaluate_async(prompt, response, source_contexts)
+                )
         except Exception as exc:
-            logger.error("EvaluationAgent.evaluate_response failed: %s", exc, exc_info=True)
+            logger.error(
+                "EvaluationAgent.evaluate_response failed: %s", exc, exc_info=True
+            )
             return _fallback_eval(source_contexts)
 
     async def _evaluate_async(
@@ -137,15 +144,15 @@ class EvaluationAgent:
             f"5. Rate overall confidence in the answer from 0.0 to 1.0 based on factual correctness against context.\n\n"
             f"Return a JSON object conforming exactly to this structure:\n"
             f"{{\n"
-            f"  \"citations_valid\": true,\n"
-            f"  \"hallucination_detected\": false,\n"
-            f"  \"confidence_score\": 0.9,\n"
-            f"  \"feedback\": \"detailed reason summary\",\n"
-            f"  \"unsupported_claims\": [],\n"
-            f"  \"unknown_files\": [],\n"
-            f"  \"used_chunks_indices\": [0, 1],\n"
-            f"  \"chunk_citations\": [\n"
-            f"    {{\"file_path\": \"string\", \"chunk_id\": \"0\", \"reason\": \"string\"}}\n"
+            f'  "citations_valid": true,\n'
+            f'  "hallucination_detected": false,\n'
+            f'  "confidence_score": 0.9,\n'
+            f'  "feedback": "detailed reason summary",\n'
+            f'  "unsupported_claims": [],\n'
+            f'  "unknown_files": [],\n'
+            f'  "used_chunks_indices": [0, 1],\n'
+            f'  "chunk_citations": [\n'
+            f'    {{"file_path": "string", "chunk_id": "0", "reason": "string"}}\n'
             f"  ]\n"
             f"}}\n"
         )
@@ -180,7 +187,9 @@ class EvaluationAgent:
         retrieved_count = len(source_contexts)
         unique_used = {i for i in used_chunks_indices if 0 <= i < retrieved_count}
         used_count = len(unique_used)
-        coverage = (used_count / retrieved_count * 100.0) if retrieved_count > 0 else 0.0
+        coverage = (
+            (used_count / retrieved_count * 100.0) if retrieved_count > 0 else 0.0
+        )
 
         return EvaluationResult(
             citations_valid=citations_valid,

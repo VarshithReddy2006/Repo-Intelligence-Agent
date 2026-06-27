@@ -28,17 +28,19 @@ logger = logging.getLogger(__name__)
 # Intent enumeration
 # ---------------------------------------------------------------------------
 
+
 class Intent(str, Enum):
     """Supported intent types for repository chat questions."""
-    ARCHITECTURE        = "ARCHITECTURE"
+
+    ARCHITECTURE = "ARCHITECTURE"
     CIRCULAR_DEPENDENCY = "CIRCULAR_DEPENDENCY"
-    API_SURFACE         = "API_SURFACE"
-    CALL_GRAPH          = "CALL_GRAPH"
-    SYMBOL              = "SYMBOL"
-    READING_ORDER       = "READING_ORDER"
-    IMPACT_ANALYSIS     = "IMPACT_ANALYSIS"
-    GENERAL_QA          = "GENERAL_QA"
-    UNKNOWN             = "UNKNOWN"
+    API_SURFACE = "API_SURFACE"
+    CALL_GRAPH = "CALL_GRAPH"
+    SYMBOL = "SYMBOL"
+    READING_ORDER = "READING_ORDER"
+    IMPACT_ANALYSIS = "IMPACT_ANALYSIS"
+    GENERAL_QA = "GENERAL_QA"
+    UNKNOWN = "UNKNOWN"
 
 
 @dataclass
@@ -52,6 +54,7 @@ class IntentResult:
                     mentioned in the question — used for pronoun injection.
         keywords:   The specific keywords that triggered this classification.
     """
+
     intent: Intent
     confidence: float = 1.0
     entities: List[str] = field(default_factory=list)
@@ -69,6 +72,7 @@ class IntentResult:
 # ---------------------------------------------------------------------------
 # Abstract interface
 # ---------------------------------------------------------------------------
+
 
 class IntentDetector(ABC):
     """Abstract interface for intent classifiers.
@@ -104,7 +108,6 @@ _RULE_TABLE: List[tuple] = [
         Intent.CIRCULAR_DEPENDENCY,
         0.95,
     ),
-
     # Architecture — entry points, structure, layers, overview
     (
         re.compile(
@@ -118,7 +121,6 @@ _RULE_TABLE: List[tuple] = [
         Intent.ARCHITECTURE,
         0.90,
     ),
-
     # Reading order / onboarding
     (
         re.compile(
@@ -130,7 +132,6 @@ _RULE_TABLE: List[tuple] = [
         Intent.READING_ORDER,
         0.90,
     ),
-
     # Call graph — callers, callees, who calls what
     (
         re.compile(
@@ -141,7 +142,6 @@ _RULE_TABLE: List[tuple] = [
         Intent.CALL_GRAPH,
         0.90,
     ),
-
     # API surface — endpoints, public API, exported symbols
     (
         re.compile(
@@ -153,7 +153,6 @@ _RULE_TABLE: List[tuple] = [
         Intent.API_SURFACE,
         0.88,
     ),
-
     # Impact analysis — change impact, what breaks, risk
     (
         re.compile(
@@ -165,7 +164,6 @@ _RULE_TABLE: List[tuple] = [
         Intent.IMPACT_ANALYSIS,
         0.88,
     ),
-
     # Symbol lookup — find definition, where is, what is <CapWord>
     (
         re.compile(
@@ -177,7 +175,6 @@ _RULE_TABLE: List[tuple] = [
         Intent.SYMBOL,
         0.85,
     ),
-
     # General Q&A — fallback for common how/what/why questions
     (
         re.compile(

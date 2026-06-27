@@ -9,19 +9,13 @@ from __future__ import annotations
 
 import os
 import json
-import tempfile
-from collections import Counter
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock
 
 import pytest
-import networkx as nx
 
 from models.churn import (
-    AuthorOwnership,
     ChurnSummary,
     FileChurnRecord,
-    HotspotFile,
-    TimelineEntry,
 )
 from services.git_history_service import GitHistoryService
 
@@ -60,6 +54,7 @@ def make_service(tmp_churn_dir: str) -> GitHistoryService:
 # ---------------------------------------------------------------------------
 # Parsing tests
 # ---------------------------------------------------------------------------
+
 
 class TestParseGitLog:
     def test_parses_commit_headers(self):
@@ -100,6 +95,7 @@ class TestParseGitLog:
 # Aggregation tests
 # ---------------------------------------------------------------------------
 
+
 class TestAggregateChurn:
     def test_commit_count_per_file(self):
         commits = GitHistoryService._parse_git_log(SAMPLE_GIT_LOG)
@@ -110,7 +106,9 @@ class TestAggregateChurn:
     def test_last_commit_date_is_most_recent(self):
         commits = GitHistoryService._parse_git_log(SAMPLE_GIT_LOG)
         churn = GitHistoryService._aggregate_churn(commits)
-        assert churn["services/auth.py"]["last_commit_date"] == "2024-06-03T09:00:00+00:00"
+        assert (
+            churn["services/auth.py"]["last_commit_date"] == "2024-06-03T09:00:00+00:00"
+        )
 
     def test_deleted_flag_set_correctly(self):
         commits = GitHistoryService._parse_git_log(SAMPLE_GIT_LOG)
@@ -136,6 +134,7 @@ class TestAggregateOwnership:
 # ---------------------------------------------------------------------------
 # Normalisation tests
 # ---------------------------------------------------------------------------
+
 
 class TestNormalise:
     def test_top_file_scores_100(self):
@@ -175,18 +174,27 @@ class TestNormalise:
 # Hotspot computation tests
 # ---------------------------------------------------------------------------
 
+
 class TestComputeHotspots:
     def _make_records(self):
         return [
             FileChurnRecord(
-                file_path="services/auth.py", commit_count=3,
-                churn_score=100.0, primary_author="alice@example.com",
-                author_count=2, bus_factor_risk=False, last_commit_date="",
+                file_path="services/auth.py",
+                commit_count=3,
+                churn_score=100.0,
+                primary_author="alice@example.com",
+                author_count=2,
+                bus_factor_risk=False,
+                last_commit_date="",
             ),
             FileChurnRecord(
-                file_path="models/user.py", commit_count=1,
-                churn_score=33.3, primary_author="alice@example.com",
-                author_count=1, bus_factor_risk=True, last_commit_date="",
+                file_path="models/user.py",
+                commit_count=1,
+                churn_score=33.3,
+                primary_author="alice@example.com",
+                author_count=1,
+                bus_factor_risk=True,
+                last_commit_date="",
             ),
         ]
 
@@ -214,6 +222,7 @@ class TestComputeHotspots:
 # Timeline tests
 # ---------------------------------------------------------------------------
 
+
 class TestBuildTimeline:
     def test_weekly_bucketing(self):
         commits = GitHistoryService._parse_git_log(SAMPLE_GIT_LOG)
@@ -237,6 +246,7 @@ class TestBuildTimeline:
 # ---------------------------------------------------------------------------
 # Persistence tests
 # ---------------------------------------------------------------------------
+
 
 class TestPersistence:
     def test_save_and_load_round_trip(self, tmp_path):
@@ -265,8 +275,11 @@ class TestPersistence:
     def test_summary_exists_true_after_save(self, tmp_path):
         service = make_service(str(tmp_path))
         summary = ChurnSummary(
-            repo="owner/repo", generated_at="2024-06-01T00:00:00+00:00",
-            since_days=365, total_commits=1, total_files=1,
+            repo="owner/repo",
+            generated_at="2024-06-01T00:00:00+00:00",
+            since_days=365,
+            total_commits=1,
+            total_files=1,
         )
         service._save("owner/repo", 365, summary)
         assert service.summary_exists("owner/repo", 365) is True
@@ -276,9 +289,17 @@ class TestPersistence:
         path = service._summary_path("owner/repo", 365)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as f:
-            json.dump({"_schema_version": 0, "repo": "owner/repo",
-                       "generated_at": "", "since_days": 365,
-                       "total_commits": 0, "total_files": 0}, f)
+            json.dump(
+                {
+                    "_schema_version": 0,
+                    "repo": "owner/repo",
+                    "generated_at": "",
+                    "since_days": 365,
+                    "total_commits": 0,
+                    "total_files": 0,
+                },
+                f,
+            )
         assert service.load("owner/repo", 365) is None
 
 
@@ -286,17 +307,25 @@ class TestPersistence:
 # get_file_record test
 # ---------------------------------------------------------------------------
 
+
 class TestGetFileRecord:
     def test_returns_correct_record(self, tmp_path):
         service = make_service(str(tmp_path))
         rec = FileChurnRecord(
-            file_path="services/auth.py", commit_count=3, churn_score=100.0,
-            primary_author="alice@example.com", author_count=2,
-            bus_factor_risk=False, last_commit_date="",
+            file_path="services/auth.py",
+            commit_count=3,
+            churn_score=100.0,
+            primary_author="alice@example.com",
+            author_count=2,
+            bus_factor_risk=False,
+            last_commit_date="",
         )
         summary = ChurnSummary(
-            repo="owner/repo", generated_at="2024-06-01T00:00:00+00:00",
-            since_days=365, total_commits=3, total_files=1,
+            repo="owner/repo",
+            generated_at="2024-06-01T00:00:00+00:00",
+            since_days=365,
+            total_commits=3,
+            total_files=1,
             file_records=[rec],
         )
         service._save("owner/repo", 365, summary)
@@ -307,8 +336,11 @@ class TestGetFileRecord:
     def test_unknown_file_returns_none(self, tmp_path):
         service = make_service(str(tmp_path))
         summary = ChurnSummary(
-            repo="owner/repo", generated_at="2024-06-01T00:00:00+00:00",
-            since_days=365, total_commits=0, total_files=0,
+            repo="owner/repo",
+            generated_at="2024-06-01T00:00:00+00:00",
+            since_days=365,
+            total_commits=0,
+            total_files=0,
         )
         service._save("owner/repo", 365, summary)
         assert service.get_file_record("owner/repo", "no/such/file.py", 365) is None

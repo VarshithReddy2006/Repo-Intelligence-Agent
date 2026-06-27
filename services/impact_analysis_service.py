@@ -18,7 +18,7 @@ the risk calculation without calling an LLM.
 import logging
 import os
 import re
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import networkx as nx
 
@@ -31,8 +31,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Risk thresholds
 # ---------------------------------------------------------------------------
-_HIGH_RISK_FILE_THRESHOLD = 10   # total affected files ≥ this → high
-_MED_RISK_FILE_THRESHOLD = 4     # total affected files ≥ this → medium
+_HIGH_RISK_FILE_THRESHOLD = 10  # total affected files ≥ this → high
+_MED_RISK_FILE_THRESHOLD = 4  # total affected files ≥ this → medium
 _CORE_MODULE_HIT_MULTIPLIER = 2  # each core module hit adds 2 to risk score
 _HIGH_COUPLING_HIT_MULTIPLIER = 1  # each high-coupling hit adds 1 to risk score
 
@@ -46,8 +46,14 @@ _MAX_PATHS = 5
 _COMPONENT_MAP: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"auth|oauth|login|token|jwt|session", re.I), "Authentication"),
     (re.compile(r"api|route|endpoint|controller|view", re.I), "API Layer"),
-    (re.compile(r"db|database|model|migration|schema|orm|sql|chroma|sqlite", re.I), "Database"),
-    (re.compile(r"front|ui|component|page|template|html|css|tsx|jsx", re.I), "Frontend"),
+    (
+        re.compile(r"db|database|model|migration|schema|orm|sql|chroma|sqlite", re.I),
+        "Database",
+    ),
+    (
+        re.compile(r"front|ui|component|page|template|html|css|tsx|jsx", re.I),
+        "Frontend",
+    ),
     (re.compile(r"service|retriev|embed|chunk|github|mcp", re.I), "Services"),
     (re.compile(r"model|schema|pydantic|dataclass", re.I), "Models"),
     (re.compile(r"agent|evaluat|explainer|analyzer|mapper", re.I), "Agents"),
@@ -164,7 +170,10 @@ class ImpactAnalysisService:
 
         logger.info(
             "Impact analysis complete for %s: %d direct, %d indirect, risk=%s",
-            repo_name, len(directly_affected), len(indirectly_affected), risk_level,
+            repo_name,
+            len(directly_affected),
+            len(indirectly_affected),
+            risk_level,
         )
 
         return ImpactAnalysis(
@@ -191,13 +200,63 @@ class ImpactAnalysisService:
         Returns lowercase tokens sorted by length (longer = more specific).
         """
         _STOP = {
-            "the", "a", "an", "is", "are", "was", "were", "be", "been",
-            "to", "of", "and", "or", "in", "for", "on", "with", "at",
-            "by", "from", "as", "this", "that", "it", "its", "we", "our",
-            "add", "fix", "bug", "issue", "feature", "update", "change",
-            "when", "how", "what", "which", "where", "who", "can", "will",
-            "should", "need", "needs", "want", "wants", "make", "use",
-            "into", "also", "just", "not", "have", "has", "but", "so",
+            "the",
+            "a",
+            "an",
+            "is",
+            "are",
+            "was",
+            "were",
+            "be",
+            "been",
+            "to",
+            "of",
+            "and",
+            "or",
+            "in",
+            "for",
+            "on",
+            "with",
+            "at",
+            "by",
+            "from",
+            "as",
+            "this",
+            "that",
+            "it",
+            "its",
+            "we",
+            "our",
+            "add",
+            "fix",
+            "bug",
+            "issue",
+            "feature",
+            "update",
+            "change",
+            "when",
+            "how",
+            "what",
+            "which",
+            "where",
+            "who",
+            "can",
+            "will",
+            "should",
+            "need",
+            "needs",
+            "want",
+            "wants",
+            "make",
+            "use",
+            "into",
+            "also",
+            "just",
+            "not",
+            "have",
+            "has",
+            "but",
+            "so",
         }
         raw = re.sub(r"[^a-zA-Z0-9_\-/]", " ", text.lower())
         tokens = [t for t in raw.split() if len(t) >= 4 and t not in _STOP]
@@ -252,8 +311,10 @@ class ImpactAnalysisService:
         # Fallback: if nothing matched, return entry-point-like files
         if not seeds:
             seeds = [
-                fp for fp in all_files
-                if os.path.basename(fp) in {"main.py", "api.py", "app.py", "__main__.py"}
+                fp
+                for fp in all_files
+                if os.path.basename(fp)
+                in {"main.py", "api.py", "app.py", "__main__.py"}
             ][:5]
 
         return seeds

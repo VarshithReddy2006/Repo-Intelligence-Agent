@@ -27,8 +27,7 @@ Algorithm
 """
 
 import logging
-import os
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import networkx as nx
 
@@ -41,10 +40,10 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Scoring weights
 # ---------------------------------------------------------------------------
-_ENTRY_BOOST = 100.0       # bonus for confirmed entry-point files
+_ENTRY_BOOST = 100.0  # bonus for confirmed entry-point files
 _CENTRALITY_WEIGHT = 50.0  # weight applied to normalised degree centrality
-_IN_DEGREE_WEIGHT = 30.0   # weight for normalised in-degree (imported-by count)
-_CORE_DIR_BOOST = 15.0     # bonus for files in recognised core directories
+_IN_DEGREE_WEIGHT = 30.0  # weight for normalised in-degree (imported-by count)
+_CORE_DIR_BOOST = 15.0  # bonus for files in recognised core directories
 
 # Average words per minute for reading dense code
 _WORDS_PER_MINUTE = 200
@@ -55,16 +54,40 @@ _AVG_FILE_CHARS = 2_000
 
 # Directory names whose files get a core-directory boost
 _CORE_DIRS: Set[str] = {
-    "core", "lib", "src", "api", "backend", "server",
-    "services", "agents", "models", "routes", "controllers",
-    "middleware", "auth", "db", "database",
+    "core",
+    "lib",
+    "src",
+    "api",
+    "backend",
+    "server",
+    "services",
+    "agents",
+    "models",
+    "routes",
+    "controllers",
+    "middleware",
+    "auth",
+    "db",
+    "database",
 }
 
 # Directories whose files are pushed toward the end of the reading order
 _PERIPHERAL_DIRS: Set[str] = {
-    "tests", "test", "docs", "docs_src", "examples", "example",
-    "scripts", "benchmarks", "migrations", "fixtures", "mocks",
-    "node_modules", "dist", "build", "__pycache__",
+    "tests",
+    "test",
+    "docs",
+    "docs_src",
+    "examples",
+    "example",
+    "scripts",
+    "benchmarks",
+    "migrations",
+    "fixtures",
+    "mocks",
+    "node_modules",
+    "dist",
+    "build",
+    "__pycache__",
 }
 
 # Reading time cap — we don't list more than this many files even for huge repos
@@ -138,7 +161,9 @@ class ReadingOrderService:
 
         logger.info(
             "Reading order generated for %s: %d files, ~%d min",
-            repo_name, len(entries), reading_minutes,
+            repo_name,
+            len(entries),
+            reading_minutes,
         )
 
         return ReadingOrder(
@@ -224,7 +249,6 @@ class ReadingOrderService:
 
         This handles cycles gracefully by tracking visited nodes.
         """
-        entry_set = set(entry_points)
 
         # Build predecessor count for Kahn's algorithm
         # We want to read A before B when A → B (A imports B means B should
@@ -270,7 +294,9 @@ class ReadingOrderService:
             visited.add(node)
             result.append(node)
             # Push successors (files this one imports)
-            for successor in sorted(graph.successors(node), key=lambda n: -scores.get(n, 0.0)):
+            for successor in sorted(
+                graph.successors(node), key=lambda n: -scores.get(n, 0.0)
+            ):
                 push(successor)
 
         # Append any nodes not yet visited (disconnected components)
@@ -318,20 +344,27 @@ class ReadingOrderService:
         core_set: Set[str],
     ) -> Tuple[str, str]:
         """Return (tier, reason) for a file."""
-        name = os.path.basename(fp)
-
         if fp in entry_set:
-            return "entry_point", f"Repository entry point — start here to understand execution flow."
+            return (
+                "entry_point",
+                "Repository entry point — start here to understand execution flow.",
+            )
 
         if fp in core_set:
-            return "core", f"Core module by degree centrality — heavily imported across the codebase."
+            return (
+                "core",
+                "Core module by degree centrality — heavily imported across the codebase.",
+            )
 
         if self._is_core_dir(fp):
             dirname = fp.split("/")[0] if "/" in fp else ""
             return "service", f"Located in '{dirname}' — a primary package directory."
 
         if self._is_peripheral_dir(fp):
-            return "utility", f"Peripheral file (tests/docs/examples) — read after core modules."
+            return (
+                "utility",
+                "Peripheral file (tests/docs/examples) — read after core modules.",
+            )
 
         # Score-based fallback
         if score > 20:

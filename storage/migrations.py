@@ -53,7 +53,9 @@ def run_migrations() -> None:
                         # Extract version prefix (e.g. 0001 from 0001_initial.sql)
                         parts = filename.split("_", 1)
                         version = int(parts[0])
-                        migrations.append((version, os.path.join(MIGRATIONS_DIR, filename)))
+                        migrations.append(
+                            (version, os.path.join(MIGRATIONS_DIR, filename))
+                        )
                     except ValueError:
                         logger.warning(
                             "Skipping migration file with invalid name format: %s",
@@ -83,9 +85,7 @@ def run_migrations() -> None:
                     )
                 logger.info("Migration version %d applied successfully.", version)
     except Exception as exc:
-        logger.error(
-            "Failed to run database migrations: %s", exc, exc_info=True
-        )
+        logger.error("Failed to run database migrations: %s", exc, exc_info=True)
         raise
     finally:
         conn.close()

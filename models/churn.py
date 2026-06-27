@@ -27,14 +27,22 @@ class FileChurnRecord(BaseModel):
     """
 
     file_path: str = Field(..., description="Relative path within the repository.")
-    commit_count: int = Field(0, ge=0, description="Number of commits touching this file.")
+    commit_count: int = Field(
+        0, ge=0, description="Number of commits touching this file."
+    )
     insertions: int = Field(0, ge=0, description="Total lines inserted.")
     deletions: int = Field(0, ge=0, description="Total lines deleted.")
-    churn_score: float = Field(0.0, ge=0.0, le=100.0, description="Normalised 0-100 churn score.")
+    churn_score: float = Field(
+        0.0, ge=0.0, le=100.0, description="Normalised 0-100 churn score."
+    )
     primary_author: str = Field("", description="Email of the top committer.")
     author_count: int = Field(0, ge=0, description="Number of distinct contributors.")
-    bus_factor_risk: bool = Field(False, description="True when primary_author > 80 % ownership.")
-    last_commit_date: str = Field("", description="ISO-8601 UTC date of the most recent commit.")
+    bus_factor_risk: bool = Field(
+        False, description="True when primary_author > 80 % ownership."
+    )
+    last_commit_date: str = Field(
+        "", description="ISO-8601 UTC date of the most recent commit."
+    )
     is_deleted: bool = Field(False, description="True if the file is absent at HEAD.")
 
 
@@ -48,8 +56,12 @@ class HotspotFile(BaseModel):
 
     file_path: str = Field(..., description="Relative path within the repository.")
     churn_score: float = Field(..., ge=0.0, le=100.0)
-    centrality: float = Field(..., ge=0.0, le=1.0, description="Degree centrality from the dependency graph.")
-    hotspot_score: float = Field(..., ge=0.0, description="Composite score = churn × (1 + centrality).")
+    centrality: float = Field(
+        ..., ge=0.0, le=1.0, description="Degree centrality from the dependency graph."
+    )
+    hotspot_score: float = Field(
+        ..., ge=0.0, description="Composite score = churn × (1 + centrality)."
+    )
     commit_count: int = Field(..., ge=0)
     primary_author: str = Field("")
     bus_factor_risk: bool = Field(False)

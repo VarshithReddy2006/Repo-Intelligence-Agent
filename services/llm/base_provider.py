@@ -7,13 +7,14 @@ can remain provider-agnostic.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import AsyncIterator, List, Dict, Any, Optional
 
 
 # ---------------------------------------------------------------------------
 # Health check result model
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ProviderHealth:
@@ -33,6 +34,7 @@ class ProviderHealth:
         error_type:        ProviderErrorType value, or None on success.
         recommendation:    Actionable guidance for fixing the issue.
     """
+
     healthy: bool
     provider: str
     model: str
@@ -46,6 +48,7 @@ class ProviderHealth:
 # ---------------------------------------------------------------------------
 # Abstract provider interface
 # ---------------------------------------------------------------------------
+
 
 class BaseLLMProvider(ABC):
     """Abstract base class for all LLM providers."""

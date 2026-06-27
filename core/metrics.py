@@ -37,7 +37,9 @@ class MetricsRegistry:
                 self.build_durations[repo_name] = []
             self.build_durations[repo_name].append(duration_seconds)
 
-    def record_task_duration(self, repo_name: str, task_name: str, duration_seconds: float) -> None:
+    def record_task_duration(
+        self, repo_name: str, task_name: str, duration_seconds: float
+    ) -> None:
         with self.lock:
             key = (repo_name, task_name)
             if key not in self.analysis_task_duration:
@@ -52,33 +54,50 @@ class MetricsRegistry:
             lines.append("# HELP http_requests_total Total number of HTTP requests.")
             lines.append("# TYPE http_requests_total counter")
             for (method, path, status), count in self.http_requests_total.items():
-                lines.append(f'http_requests_total{{method="{method}",path="{path}",status="{status}"}} {count}.0')
+                lines.append(
+                    f'http_requests_total{{method="{method}",path="{path}",status="{status}"}} {count}.0'
+                )
 
             # 2. Active Requests
-            lines.append("# HELP active_requests_count Total number of active requests.")
+            lines.append(
+                "# HELP active_requests_count Total number of active requests."
+            )
             lines.append("# TYPE active_requests_count gauge")
             lines.append(f"active_requests_count {self.active_requests}.0")
 
             # 3. Build Durations
-            lines.append("# HELP build_duration_seconds Build pipeline durations in seconds.")
+            lines.append(
+                "# HELP build_duration_seconds Build pipeline durations in seconds."
+            )
             lines.append("# TYPE build_duration_seconds summary")
             for repo, durations in self.build_durations.items():
                 total = sum(durations)
                 count = len(durations)
-                lines.append(f'build_duration_seconds_sum{{repository="{repo}"}} {total:.6f}')
-                lines.append(f'build_duration_seconds_count{{repository="{repo}"}} {count}')
+                lines.append(
+                    f'build_duration_seconds_sum{{repository="{repo}"}} {total:.6f}'
+                )
+                lines.append(
+                    f'build_duration_seconds_count{{repository="{repo}"}} {count}'
+                )
 
             # 4. Analysis Task Durations
-            lines.append("# HELP analysis_task_duration_seconds Duration of individual analysis tasks in seconds.")
+            lines.append(
+                "# HELP analysis_task_duration_seconds Duration of individual analysis tasks in seconds."
+            )
             lines.append("# TYPE analysis_task_duration_seconds summary")
             for (repo, task), durations in self.analysis_task_duration.items():
                 total = sum(durations)
                 count = len(durations)
-                lines.append(f'analysis_task_duration_seconds_sum{{repository="{repo}",task="{task}"}} {total:.6f}')
-                lines.append(f'analysis_task_duration_seconds_count{{repository="{repo}",task="{task}"}} {count}')
+                lines.append(
+                    f'analysis_task_duration_seconds_sum{{repository="{repo}",task="{task}"}} {total:.6f}'
+                )
+                lines.append(
+                    f'analysis_task_duration_seconds_count{{repository="{repo}",task="{task}"}} {count}'
+                )
 
         # 5. Cache Metrics from cache singleton
         from backend.dependencies import analysis_cache
+
         stats = analysis_cache.get_stats()
 
         lines.append("# HELP cache_hits_total Total number of analysis cache hits.")
@@ -91,7 +110,9 @@ class MetricsRegistry:
         for key, count in stats.get("misses", {}).items():
             lines.append(f'cache_misses_total{{cache_key="{key}"}} {count}.0')
 
-        lines.append("# HELP cache_size Total number of entries currently in the cache.")
+        lines.append(
+            "# HELP cache_size Total number of entries currently in the cache."
+        )
         lines.append("# TYPE cache_size gauge")
         lines.append(f"cache_size {stats.get('size', 0)}.0")
 

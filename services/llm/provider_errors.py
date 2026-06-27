@@ -40,8 +40,10 @@ logger = logging.getLogger(__name__)
 # Error type enumeration
 # ---------------------------------------------------------------------------
 
+
 class ProviderErrorType(str, Enum):
     """Deterministic categories for LLM provider errors."""
+
     MISSING_CREDENTIAL = "missing_credential"
     AUTHENTICATION_ERROR = "authentication_error"
     INVALID_CREDENTIAL_TYPE = "invalid_credential_type"
@@ -57,9 +59,11 @@ class ProviderErrorType(str, Enum):
 # Structured error model
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ProviderError:
     """Classified provider error with actionable diagnostics."""
+
     error_type: ProviderErrorType
     provider_name: str
     message: str
@@ -119,8 +123,7 @@ _DEEPSEEK_MESSAGES = {
     ),
     ProviderErrorType.AUTHENTICATION_ERROR: (
         "DeepSeek/NVIDIA NIM authentication failed. The API key is invalid or expired.",
-        "Verify DEEPSEEK_API_KEY is correct. "
-        "Get a key at https://build.nvidia.com",
+        "Verify DEEPSEEK_API_KEY is correct. Get a key at https://build.nvidia.com",
     ),
     ProviderErrorType.RATE_LIMIT_ERROR: (
         "DeepSeek/NVIDIA NIM rate limit exceeded.",
@@ -142,7 +145,10 @@ _DEEPSEEK_MESSAGES = {
 # Classifier: Gemini
 # ---------------------------------------------------------------------------
 
-def classify_gemini_error(exc: Exception, provider_name: str = "gemini") -> ProviderError:
+
+def classify_gemini_error(
+    exc: Exception, provider_name: str = "gemini"
+) -> ProviderError:
     """Classify a Google GenAI SDK exception into a ProviderError.
 
     This is the authoritative mapping for Gemini errors. Any exception that
@@ -160,32 +166,58 @@ def classify_gemini_error(exc: Exception, provider_name: str = "gemini") -> Prov
 
     # Missing credential — short-circuit before any API call attempt
     if _is_missing_credential(exc_str):
-        return _make(ProviderErrorType.MISSING_CREDENTIAL, provider_name, exc, _GEMINI_MESSAGES)
+        return _make(
+            ProviderErrorType.MISSING_CREDENTIAL, provider_name, exc, _GEMINI_MESSAGES
+        )
 
     # google.genai.errors.ClientError covers all HTTP-level errors
     # The message always contains the HTTP status and detail string
     if "clienterror" in exc_type.lower() or "apierror" in exc_type.lower():
         # Access token type unsupported — most specific check first
         if "access_token_type_unsupported" in exc_str:
-            return _make(ProviderErrorType.INVALID_CREDENTIAL_TYPE, provider_name, exc, _GEMINI_MESSAGES)
+            return _make(
+                ProviderErrorType.INVALID_CREDENTIAL_TYPE,
+                provider_name,
+                exc,
+                _GEMINI_MESSAGES,
+            )
 
         # Generic 401 / unauthenticated
         if "401" in exc_str or "unauthenticated" in exc_str:
-            return _make(ProviderErrorType.AUTHENTICATION_ERROR, provider_name, exc, _GEMINI_MESSAGES)
+            return _make(
+                ProviderErrorType.AUTHENTICATION_ERROR,
+                provider_name,
+                exc,
+                _GEMINI_MESSAGES,
+            )
 
         # 403 permission denied
         if "403" in exc_str or "permission_denied" in exc_str or "forbidden" in exc_str:
-            return _make(ProviderErrorType.AUTHENTICATION_ERROR, provider_name, exc, _GEMINI_MESSAGES)
+            return _make(
+                ProviderErrorType.AUTHENTICATION_ERROR,
+                provider_name,
+                exc,
+                _GEMINI_MESSAGES,
+            )
 
         # 429 rate limit
         if "429" in exc_str or "resource_exhausted" in exc_str or "rate" in exc_str:
             if "quota" in exc_str:
-                return _make(ProviderErrorType.QUOTA_EXCEEDED, provider_name, exc, _GEMINI_MESSAGES)
-            return _make(ProviderErrorType.RATE_LIMIT_ERROR, provider_name, exc, _GEMINI_MESSAGES)
+                return _make(
+                    ProviderErrorType.QUOTA_EXCEEDED,
+                    provider_name,
+                    exc,
+                    _GEMINI_MESSAGES,
+                )
+            return _make(
+                ProviderErrorType.RATE_LIMIT_ERROR, provider_name, exc, _GEMINI_MESSAGES
+            )
 
         # 503 / 502 service unavailable
         if "503" in exc_str or "502" in exc_str or "unavailable" in exc_str:
-            return _make(ProviderErrorType.NETWORK_ERROR, provider_name, exc, _GEMINI_MESSAGES)
+            return _make(
+                ProviderErrorType.NETWORK_ERROR, provider_name, exc, _GEMINI_MESSAGES
+            )
 
     # Timeout exceptions
     if _is_timeout(exc_type, exc_str):
@@ -193,16 +225,19 @@ def classify_gemini_error(exc: Exception, provider_name: str = "gemini") -> Prov
 
     # Network/connection errors
     if _is_network_error(exc_type, exc_str):
-        return _make(ProviderErrorType.NETWORK_ERROR, provider_name, exc, _GEMINI_MESSAGES)
+        return _make(
+            ProviderErrorType.NETWORK_ERROR, provider_name, exc, _GEMINI_MESSAGES
+        )
 
     # API key format issues (wrong key format detected locally)
     if "api_key" in exc_str and ("invalid" in exc_str or "malformed" in exc_str):
-        return _make(ProviderErrorType.AUTHENTICATION_ERROR, provider_name, exc, _GEMINI_MESSAGES)
+        return _make(
+            ProviderErrorType.AUTHENTICATION_ERROR, provider_name, exc, _GEMINI_MESSAGES
+        )
 
     # Unknown — log full type for future classification
     logger.warning(
-        "classify_gemini_error: unrecognized exception "
-        "exc_type=%s exc_str_prefix=%s",
+        "classify_gemini_error: unrecognized exception exc_type=%s exc_str_prefix=%s",
         exc_type,
         exc_str[:120],
     )
@@ -219,7 +254,10 @@ def classify_gemini_error(exc: Exception, provider_name: str = "gemini") -> Prov
 # Classifier: DeepSeek / NVIDIA NIM
 # ---------------------------------------------------------------------------
 
-def classify_deepseek_error(exc: Exception, provider_name: str = "deepseek") -> ProviderError:
+
+def classify_deepseek_error(
+    exc: Exception, provider_name: str = "deepseek"
+) -> ProviderError:
     """Classify a DeepSeek/NVIDIA NIM exception into a ProviderError.
 
     Args:
@@ -234,7 +272,9 @@ def classify_deepseek_error(exc: Exception, provider_name: str = "deepseek") -> 
 
     # Missing credential
     if _is_missing_credential(exc_str):
-        return _make(ProviderErrorType.MISSING_CREDENTIAL, provider_name, exc, _DEEPSEEK_MESSAGES)
+        return _make(
+            ProviderErrorType.MISSING_CREDENTIAL, provider_name, exc, _DEEPSEEK_MESSAGES
+        )
 
     # httpx.HTTPStatusError — has .response.status_code
     if hasattr(exc, "response"):
@@ -244,19 +284,46 @@ def classify_deepseek_error(exc: Exception, provider_name: str = "deepseek") -> 
             status = None
 
         if status == 401:
-            return _make(ProviderErrorType.AUTHENTICATION_ERROR, provider_name, exc, _DEEPSEEK_MESSAGES)
+            return _make(
+                ProviderErrorType.AUTHENTICATION_ERROR,
+                provider_name,
+                exc,
+                _DEEPSEEK_MESSAGES,
+            )
         if status == 403:
-            return _make(ProviderErrorType.AUTHENTICATION_ERROR, provider_name, exc, _DEEPSEEK_MESSAGES)
+            return _make(
+                ProviderErrorType.AUTHENTICATION_ERROR,
+                provider_name,
+                exc,
+                _DEEPSEEK_MESSAGES,
+            )
         if status == 429:
-            return _make(ProviderErrorType.RATE_LIMIT_ERROR, provider_name, exc, _DEEPSEEK_MESSAGES)
+            return _make(
+                ProviderErrorType.RATE_LIMIT_ERROR,
+                provider_name,
+                exc,
+                _DEEPSEEK_MESSAGES,
+            )
 
     # String-based fallback for httpx errors without response attribute
     if "401" in exc_str or "unauthorized" in exc_str:
-        return _make(ProviderErrorType.AUTHENTICATION_ERROR, provider_name, exc, _DEEPSEEK_MESSAGES)
+        return _make(
+            ProviderErrorType.AUTHENTICATION_ERROR,
+            provider_name,
+            exc,
+            _DEEPSEEK_MESSAGES,
+        )
     if "403" in exc_str or "forbidden" in exc_str:
-        return _make(ProviderErrorType.AUTHENTICATION_ERROR, provider_name, exc, _DEEPSEEK_MESSAGES)
+        return _make(
+            ProviderErrorType.AUTHENTICATION_ERROR,
+            provider_name,
+            exc,
+            _DEEPSEEK_MESSAGES,
+        )
     if "429" in exc_str or "rate limit" in exc_str or "too many requests" in exc_str:
-        return _make(ProviderErrorType.RATE_LIMIT_ERROR, provider_name, exc, _DEEPSEEK_MESSAGES)
+        return _make(
+            ProviderErrorType.RATE_LIMIT_ERROR, provider_name, exc, _DEEPSEEK_MESSAGES
+        )
 
     # Timeout
     if _is_timeout(exc_type, exc_str):
@@ -264,11 +331,12 @@ def classify_deepseek_error(exc: Exception, provider_name: str = "deepseek") -> 
 
     # Network / connection
     if _is_network_error(exc_type, exc_str):
-        return _make(ProviderErrorType.NETWORK_ERROR, provider_name, exc, _DEEPSEEK_MESSAGES)
+        return _make(
+            ProviderErrorType.NETWORK_ERROR, provider_name, exc, _DEEPSEEK_MESSAGES
+        )
 
     logger.warning(
-        "classify_deepseek_error: unrecognized exception "
-        "exc_type=%s exc_str_prefix=%s",
+        "classify_deepseek_error: unrecognized exception exc_type=%s exc_str_prefix=%s",
         exc_type,
         exc_str[:120],
     )
@@ -285,6 +353,7 @@ def classify_deepseek_error(exc: Exception, provider_name: str = "deepseek") -> 
 # Private helpers
 # ---------------------------------------------------------------------------
 
+
 def _make(
     error_type: ProviderErrorType,
     provider_name: str,
@@ -292,7 +361,9 @@ def _make(
     messages_map: dict,
 ) -> ProviderError:
     """Build a ProviderError from the messages map."""
-    msg, rec = messages_map.get(error_type, (str(exc), "Check your provider configuration."))
+    msg, rec = messages_map.get(
+        error_type, (str(exc), "Check your provider configuration.")
+    )
     return ProviderError(
         error_type=error_type,
         provider_name=provider_name,
@@ -305,14 +376,27 @@ def _make(
 def _is_missing_credential(exc_str: str) -> bool:
     return any(
         phrase in exc_str
-        for phrase in ("api_key is not set", "api key is not set", "api key missing",
-                       "no api key", "empty api key", "key is none", "key is empty")
+        for phrase in (
+            "api_key is not set",
+            "api key is not set",
+            "api key missing",
+            "no api key",
+            "empty api key",
+            "key is none",
+            "key is empty",
+        )
     )
 
 
 def _is_timeout(exc_type: str, exc_str: str) -> bool:
-    timeout_types = ("timeouterror", "timeoutexception", "readtimeout",
-                     "connecttimeout", "asynciotimeouterror", "asyncio.timeouterror")
+    timeout_types = (
+        "timeouterror",
+        "timeoutexception",
+        "readtimeout",
+        "connecttimeout",
+        "asynciotimeouterror",
+        "asyncio.timeouterror",
+    )
     return (
         any(t in exc_type.lower() for t in timeout_types)
         or "timeout" in exc_str
@@ -321,11 +405,23 @@ def _is_timeout(exc_type: str, exc_str: str) -> bool:
 
 
 def _is_network_error(exc_type: str, exc_str: str) -> bool:
-    network_types = ("connecterror", "connectionerror", "networkerror",
-                     "connectionrefused", "gaierror", "httperror", "transporterror")
-    network_phrases = ("connection refused", "network error", "name resolution",
-                       "failed to connect", "socket", "unreachable")
-    return (
-        any(t in exc_type.lower() for t in network_types)
-        or any(p in exc_str for p in network_phrases)
+    network_types = (
+        "connecterror",
+        "connectionerror",
+        "networkerror",
+        "connectionrefused",
+        "gaierror",
+        "httperror",
+        "transporterror",
+    )
+    network_phrases = (
+        "connection refused",
+        "network error",
+        "name resolution",
+        "failed to connect",
+        "socket",
+        "unreachable",
+    )
+    return any(t in exc_type.lower() for t in network_types) or any(
+        p in exc_str for p in network_phrases
     )

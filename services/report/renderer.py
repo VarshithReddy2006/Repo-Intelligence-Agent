@@ -4,8 +4,6 @@ Handles formatting and compilation of the ReportDataModel into HTML,
 Markdown, and PDF files.
 """
 
-from typing import Dict, Any, Optional
-import os
 from jinja2 import Template
 
 from models.report import ReportDataModel
@@ -883,4 +881,3 @@ class PDFRenderer:
             html_str += print_trigger
 
         return html_str.encode("utf-8")
-

@@ -15,7 +15,7 @@ be reloaded without rebuilding.
 import logging
 import os
 import pickle
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import networkx as nx
 
@@ -76,7 +76,9 @@ class GraphService:
                 resolved = self._resolve_import(imp, src, file_index, lang)
                 if resolved:
                     if not graph.has_node(resolved):
-                        resolved_lang = file_index.get(resolved, {}).get("language", "unknown")
+                        resolved_lang = file_index.get(resolved, {}).get(
+                            "language", "unknown"
+                        )
                         graph.add_node(resolved, language=resolved_lang, type="file")
                     graph.add_edge(src, resolved, relationship="imports")
 
@@ -231,10 +233,14 @@ class GraphService:
 
         # Construct collapsed graph
         collapsed_graph = nx.DiGraph()
-        
+
         # Track original properties for grouped nodes
-        collapsed_labels = {"tests/": "tests/", "docs/": "docs/", "examples/": "examples/"}
-        
+        collapsed_labels = {
+            "tests/": "tests/",
+            "docs/": "docs/",
+            "examples/": "examples/",
+        }
+
         for node, attrs in graph.nodes(data=True):
             collapsed_id = get_collapsed_id(node)
             if not collapsed_graph.has_node(collapsed_id):
@@ -255,7 +261,7 @@ class GraphService:
                         cat = "high_coupling"
                     else:
                         cat = "regular"
-                    
+
                     collapsed_graph.add_node(
                         collapsed_id,
                         label=os.path.basename(node),
@@ -268,7 +274,9 @@ class GraphService:
             c_u = get_collapsed_id(u)
             c_v = get_collapsed_id(v)
             if c_u != c_v:
-                collapsed_graph.add_edge(c_u, c_v, relationship=edge_attrs.get("relationship", "imports"))
+                collapsed_graph.add_edge(
+                    c_u, c_v, relationship=edge_attrs.get("relationship", "imports")
+                )
 
         # 4. Search Filter
         active_graph = collapsed_graph
@@ -278,7 +286,10 @@ class GraphService:
             for n in collapsed_graph.nodes():
                 # Match label or full path
                 label = collapsed_graph.nodes[n].get("label", "")
-                if search_query_lower in n.lower() or search_query_lower in label.lower():
+                if (
+                    search_query_lower in n.lower()
+                    or search_query_lower in label.lower()
+                ):
                     nodes_to_keep.add(n)
                     # Add immediate predecessors and successors
                     nodes_to_keep.update(collapsed_graph.predecessors(n))
@@ -301,7 +312,7 @@ class GraphService:
             "core_module": 3,
             "high_coupling": 2,
             "directory": 1,
-            "regular": 0
+            "regular": 0,
         }
 
         def get_node_priority(n: str) -> tuple:
@@ -309,7 +320,7 @@ class GraphService:
             return (
                 cat_priority.get(cat, 0),
                 node_centrality.get(n, 0.0),
-                node_degrees.get(n, 0)
+                node_degrees.get(n, 0),
             )
 
         sorted_nodes = sorted(active_graph.nodes(), key=get_node_priority, reverse=True)
@@ -320,24 +331,28 @@ class GraphService:
         res_nodes = []
         for n in final_graph.nodes():
             attrs = final_graph.nodes[n]
-            res_nodes.append({
-                "id": n,
-                "label": attrs.get("label", n),
-                "category": attrs.get("category", "regular"),
-                "degree": node_degrees.get(n, 0),
-                "centrality": round(node_centrality.get(n, 0.0), 4),
-            })
+            res_nodes.append(
+                {
+                    "id": n,
+                    "label": attrs.get("label", n),
+                    "category": attrs.get("category", "regular"),
+                    "degree": node_degrees.get(n, 0),
+                    "centrality": round(node_centrality.get(n, 0.0), 4),
+                }
+            )
 
         res_edges = []
         edge_count = 0
         for u, v, edge_attrs in final_graph.edges(data=True):
             if edge_count >= max_edges:
                 break
-            res_edges.append({
-                "source": u,
-                "target": v,
-                "relationship": edge_attrs.get("relationship", "imports"),
-            })
+            res_edges.append(
+                {
+                    "source": u,
+                    "target": v,
+                    "relationship": edge_attrs.get("relationship", "imports"),
+                }
+            )
             edge_count += 1
 
         return {"nodes": res_nodes, "edges": res_edges}
@@ -347,7 +362,9 @@ class GraphService:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _build_file_index(parsed_files: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    def _build_file_index(
+        parsed_files: List[Dict[str, Any]],
+    ) -> Dict[str, Dict[str, Any]]:
         """Map file paths to their parsed metadata for fast lookup."""
         return {pf["file_path"]: pf for pf in parsed_files}
 

@@ -11,7 +11,6 @@ import {
   client,
   Symbol as RepoSymbol,
   FileSymbolsResponse,
-  extractErrorMessage,
 } from '../api';
 
 // Cache: repoKey -> filePath -> symbols[]

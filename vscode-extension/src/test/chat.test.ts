@@ -6,8 +6,6 @@
  */
 
 import * as assert from 'assert';
-import * as http from 'http';
-import { AddressInfo } from 'net';
 
 // ---------------------------------------------------------------------------
 // VS Code stub
@@ -30,84 +28,14 @@ const mockConfig: Record<string, unknown> = {
 import { RepoIntelligenceClient } from '../api';
 
 // ---------------------------------------------------------------------------
-// SSE server helper
-// ---------------------------------------------------------------------------
-
-function startSseServer(events: string[]): Promise<{ server: http.Server; url: string }> {
-  return new Promise((resolve, reject) => {
-    const server = http.createServer((_req, res) => {
-      res.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      });
-      for (const event of events) {
-        res.write(`data: ${event}\n\n`);
-      }
-      res.end();
-    });
-    server.listen(0, '127.0.0.1', () => {
-      const port = (server.address() as AddressInfo).port;
-      resolve({ server, url: `http://127.0.0.1:${port}` });
-    });
-    server.on('error', reject);
-  });
-}
-
-function stopServer(server: http.Server): Promise<void> {
-  return new Promise((resolve, reject) =>
-    server.close((err) => (err ? reject(err) : resolve()))
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('Chat SSE streaming', () => {
-  let server: http.Server;
-  let client: RepoIntelligenceClient;
-
-  afterEach(async () => {
-    if (server) await stopServer(server);
-  });
-
-  it('receives text tokens from SSE stream', (done) => {
-    const events = [
-      JSON.stringify({ text: 'Hello ' }),
-      JSON.stringify({ text: 'world' }),
-      JSON.stringify({ sources: ['a.py'], confidence: 90, status: 'done' }),
-    ];
-
-    void startSseServer(events).then(({ server: s, url }) => {
-      server = s;
-      mockConfig.backendUrl = url;
-      client = new RepoIntelligenceClient();
-
-      const tokens: string[] = [];
-      let doneCalled = false;
-
-      client.streamChat(
-        'owner/repo',
-        'Hello?',
-        [],
-        (token) => tokens.push(token),
-        (sources, confidence) => {
-          doneCalled = true;
-          assert.deepStrictEqual(tokens, ['Hello ', 'world']);
-          assert.deepStrictEqual(sources, ['a.py']);
-          assert.strictEqual(confidence, 90);
-          done();
-        },
-        (err) => done(err)
-      );
-    });
-  });
-
+describe('Chat SSE streaming (unit)', () => {
   it('calls onError when connection is refused', (done) => {
     // No server started — connection will be refused
     mockConfig.backendUrl = 'http://127.0.0.1:1'; // Port 1 is always refused
-    client = new RepoIntelligenceClient();
+    const client = new RepoIntelligenceClient();
 
     client.streamChat(
       'owner/repo',
@@ -120,29 +48,6 @@ describe('Chat SSE streaming', () => {
         done();
       }
     );
-  });
-
-  it('handles empty SSE stream (no events)', (done) => {
-    void startSseServer([]).then(({ server: s, url }) => {
-      server = s;
-      mockConfig.backendUrl = url;
-      client = new RepoIntelligenceClient();
-
-      const tokens: string[] = [];
-      // Stream ends immediately — onDone should be called
-      const cancel = client.streamChat(
-        'owner/repo',
-        'empty',
-        [],
-        (t) => tokens.push(t),
-        (_sources, _confidence) => {
-          assert.strictEqual(tokens.length, 0);
-          done();
-        },
-        (err) => done(err)
-      );
-      void cancel; // suppress unused warning
-    });
   });
 });
 

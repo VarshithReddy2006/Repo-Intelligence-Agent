@@ -30,7 +30,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -120,34 +120,34 @@ class ChatObservability:
     def emit(self, trace: PipelineTrace) -> None:
         """Emit the completed trace as a structured INFO log line."""
         payload = {
-            "event":               "chat_pipeline",
-            "repo":                trace.repo_name,
-            "session":             trace.session_id,
-            "intent":              trace.intent,
-            "router_has_data":     trace.router_has_data,
-            "router_ms":           round(trace.router_elapsed_ms, 1),
+            "event": "chat_pipeline",
+            "repo": trace.repo_name,
+            "session": trace.session_id,
+            "intent": trace.intent,
+            "router_has_data": trace.router_has_data,
+            "router_ms": round(trace.router_elapsed_ms, 1),
             # Retrieval
-            "retrieved_initial":   trace.initial_retrieved,
-            "retrieved_final":     trace.final_returned,
+            "retrieved_initial": trace.initial_retrieved,
+            "retrieved_final": trace.final_returned,
             "discarded_exclusion": trace.initial_retrieved - trace.after_exclusion,
-            "discarded_dedup":     trace.after_exclusion - trace.after_dedup,
-            "retrieved_files":     trace.retrieved_files,
-            "similarity_top5":     trace.top_similarity_scores,
-            "rerank_top5":         trace.top_rerank_scores,
+            "discarded_dedup": trace.after_exclusion - trace.after_dedup,
+            "retrieved_files": trace.retrieved_files,
+            "similarity_top5": trace.top_similarity_scores,
+            "rerank_top5": trace.top_rerank_scores,
             # Timing
-            "embed_ms":            round(trace.embed_ms, 1),
-            "search_ms":           round(trace.search_ms, 1),
-            "rerank_ms":           round(trace.rerank_ms, 1),
-            "llm_ms":              round(trace.llm_latency_ms, 1),
-            "total_ms":            round(trace.total_ms, 1),
+            "embed_ms": round(trace.embed_ms, 1),
+            "search_ms": round(trace.search_ms, 1),
+            "rerank_ms": round(trace.rerank_ms, 1),
+            "llm_ms": round(trace.llm_latency_ms, 1),
+            "total_ms": round(trace.total_ms, 1),
             # Context
-            "context_tokens":      trace.context_estimated_tokens,
-            "context_slots":       trace.context_slot_breakdown,
+            "context_tokens": trace.context_estimated_tokens,
+            "context_slots": trace.context_slot_breakdown,
             # LLM
-            "provider":            trace.provider_used,
-            "tokens_streamed":     trace.tokens_streamed,
-            "fallback":            trace.fallback_triggered,
-            "fallback_reason":     trace.fallback_reason,
+            "provider": trace.provider_used,
+            "tokens_streamed": trace.tokens_streamed,
+            "fallback": trace.fallback_triggered,
+            "fallback_reason": trace.fallback_reason,
         }
 
         logger.info(

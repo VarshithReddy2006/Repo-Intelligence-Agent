@@ -5,7 +5,6 @@ import time
 import tempfile
 import shutil
 import threading
-from typing import Dict, List, Optional
 
 from core.analysis_registry import AnalysisRegistry
 from core.incremental_build_planner import BuildTask
@@ -47,6 +46,7 @@ def test_scheduler_stages():
 
 def test_runner_concurrency(monkeypatch):
     """Verify that independent tasks are executed concurrently in the runner."""
+
     class MockServiceA:
         def build_full(self, repo_name, repo_path=None, files=None):
             time.sleep(0.15)  # 150ms sleep
@@ -100,7 +100,7 @@ def test_runner_concurrency(monkeypatch):
     # Sequential duration would be 150ms + 150ms = 300ms.
     # Concurrently it should take ~150ms + scheduling overhead (< 220ms).
     assert elapsed < 0.25, f"Execution took too long: {elapsed:.2f}s (not concurrent)"
-    
+
     # Check that events were emitted
     event_types = {e.event_type for e in events}
     assert "TASK_STARTED" in event_types
@@ -110,6 +110,7 @@ def test_runner_concurrency(monkeypatch):
 
 def test_runner_exception_handling(monkeypatch):
     """Verify that a task failure propagates and cancels subsequent executions."""
+
     class MockServiceOk:
         def build_full(self, *args, **kwargs):
             pass
@@ -134,7 +135,12 @@ def test_runner_exception_handling(monkeypatch):
     registry.register("TaskOk", MockServiceOk, dependencies=[], outputs=["ok"])
     registry.register("TaskFail", MockServiceFail, dependencies=[], outputs=["fail"])
     # TaskDownstream depends on TaskFail, should not run
-    registry.register("TaskDownstream", MockServiceOk, dependencies=["TaskFail"], outputs=["downstream"])
+    registry.register(
+        "TaskDownstream",
+        MockServiceOk,
+        dependencies=["TaskFail"],
+        outputs=["downstream"],
+    )
 
     tasks = [
         BuildTask("TaskOk", "FULL", set(), []),
@@ -161,6 +167,7 @@ def test_runner_exception_handling(monkeypatch):
 
 def test_runner_deterministic_event_ordering(monkeypatch):
     """Verify that events are sorted alphabetically by task name within a stage."""
+
     class MockServiceA:
         def build_full(self, *args, **kwargs):
             time.sleep(0.08)  # finishes second
@@ -201,7 +208,7 @@ def test_runner_deterministic_event_ordering(monkeypatch):
     )
 
     events = list(runner.run_stages(stages))
-    
+
     # Filter completed events
     completed_events = [e for e in events if e.event_type == "TASK_COMPLETED"]
     assert len(completed_events) == 2
@@ -217,7 +224,7 @@ def test_cache_thread_safety():
     repo = "test/thread_repo"
 
     errors = []
-    
+
     def worker(worker_id: int):
         try:
             for i in range(100):

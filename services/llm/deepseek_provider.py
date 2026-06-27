@@ -5,7 +5,6 @@ SDK is required beyond what is already standard in the Python ecosystem.
 """
 
 import asyncio
-import json
 import logging
 import time
 from typing import AsyncIterator, List, Dict, Any, Optional
@@ -17,7 +16,7 @@ from .provider_errors import classify_deepseek_error, ProviderErrorType
 logger = logging.getLogger(__name__)
 
 _RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
-_DEFAULT_MAX_RETRIES = 2       # reduced for MVP — fail fast on sustained 429
+_DEFAULT_MAX_RETRIES = 2  # reduced for MVP — fail fast on sustained 429
 _DEFAULT_INITIAL_DELAY = 5.0
 _DEFAULT_BACKOFF_FACTOR = 2.0
 _DEFAULT_TIMEOUT = 120.0
@@ -36,11 +35,9 @@ class DeepSeekProvider(BaseLLMProvider):
         timeout: float = _DEFAULT_TIMEOUT,
     ) -> None:
         from backend.settings import settings
+
         self.api_key = api_key or settings.deepseek_api_key or ""
-        self.base_url = (
-            base_url
-            or settings.deepseek_base_url
-        ).rstrip("/")
+        self.base_url = (base_url or settings.deepseek_base_url).rstrip("/")
         self.model = model or settings.deepseek_model
         self.max_retries = max_retries
         self.timeout = timeout
@@ -66,6 +63,7 @@ class DeepSeekProvider(BaseLLMProvider):
         # Fast-path: missing credential
         if not self.api_key:
             from .provider_errors import _DEEPSEEK_MESSAGES
+
             msg, rec = _DEEPSEEK_MESSAGES[ProviderErrorType.MISSING_CREDENTIAL]
             logger.error(
                 "PROVIDER_HEALTH provider=deepseek model=%s authenticated=false "
@@ -159,7 +157,12 @@ class DeepSeekProvider(BaseLLMProvider):
                 # Normalise 'model' role (Gemini convention) → 'assistant'
                 if role == "model":
                     role = "assistant"
-                content = turn.get("content", turn.get("parts", [""])[0] if isinstance(turn.get("parts"), list) else "")
+                content = turn.get(
+                    "content",
+                    turn.get("parts", [""])[0]
+                    if isinstance(turn.get("parts"), list)
+                    else "",
+                )
                 if content:
                     messages.append({"role": role, "content": str(content)})
 
@@ -188,7 +191,10 @@ class DeepSeekProvider(BaseLLMProvider):
                     headers=self._headers(),
                     timeout=self.timeout,
                 )
-                if response.status_code in _RETRY_STATUS_CODES and attempt < self.max_retries - 1:
+                if (
+                    response.status_code in _RETRY_STATUS_CODES
+                    and attempt < self.max_retries - 1
+                ):
                     logger.warning(
                         "DeepSeek NIM returned %s (attempt %d/%d). Retrying in %.1fs…",
                         response.status_code,
@@ -235,12 +241,17 @@ class DeepSeekProvider(BaseLLMProvider):
         # When JSON output is requested, ask the model to return valid JSON
         if response_mime_type == "application/json":
             if system_instruction:
-                messages[0]["content"] += "\nYou MUST respond with valid JSON only. No markdown fences, no explanatory text outside the JSON object."
+                messages[0]["content"] += (
+                    "\nYou MUST respond with valid JSON only. No markdown fences, no explanatory text outside the JSON object."
+                )
             else:
-                messages.insert(0, {
-                    "role": "system",
-                    "content": "You MUST respond with valid JSON only. No markdown fences, no explanatory text outside the JSON object."
-                })
+                messages.insert(
+                    0,
+                    {
+                        "role": "system",
+                        "content": "You MUST respond with valid JSON only. No markdown fences, no explanatory text outside the JSON object.",
+                    },
+                )
 
         payload: Dict[str, Any] = {
             "model": self.model,
@@ -294,7 +305,10 @@ class DeepSeekProvider(BaseLLMProvider):
                     async with client.stream(
                         "POST", url, json=payload, headers=self._headers()
                     ) as response:
-                        if response.status_code in _RETRY_STATUS_CODES and attempt < self.max_retries - 1:
+                        if (
+                            response.status_code in _RETRY_STATUS_CODES
+                            and attempt < self.max_retries - 1
+                        ):
                             logger.warning(
                                 "DeepSeek stream returned %s. Retrying in %.1fs…",
                                 response.status_code,
@@ -308,11 +322,12 @@ class DeepSeekProvider(BaseLLMProvider):
                         async for line in response.aiter_lines():
                             if not line.startswith("data:"):
                                 continue
-                            raw = line[len("data:"):].strip()
+                            raw = line[len("data:") :].strip()
                             if raw == "[DONE]":
                                 return
                             try:
                                 import json
+
                                 chunk = json.loads(raw)
                                 delta = chunk["choices"][0].get("delta", {})
                                 text = delta.get("content", "")

@@ -9,8 +9,8 @@ from dotenv import load_dotenv
 is_production = os.environ.get("APP_ENV", "development").lower() == "production"
 load_dotenv(override=not is_production)
 
-from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator  # noqa: E402
+from pydantic_settings import BaseSettings, SettingsConfigDict  # noqa: E402
 
 
 class Settings(BaseSettings):
@@ -27,7 +27,9 @@ class Settings(BaseSettings):
     github_token: Optional[str] = Field(None, alias="GITHUB_TOKEN")
     llm_provider: str = Field("gemini", alias="LLM_PROVIDER")
     deepseek_api_key: Optional[str] = Field(None, alias="DEEPSEEK_API_KEY")
-    deepseek_base_url: str = Field("https://integrate.api.nvidia.com/v1", alias="DEEPSEEK_BASE_URL")
+    deepseek_base_url: str = Field(
+        "https://integrate.api.nvidia.com/v1", alias="DEEPSEEK_BASE_URL"
+    )
     deepseek_model: str = Field("deepseek-ai/deepseek-v4-flash", alias="DEEPSEEK_MODEL")
     gemini_api_key: Optional[str] = Field(None, alias="GEMINI_API_KEY")
     gemini_model: str = Field("gemini-2.5-flash", alias="GEMINI_MODEL")
@@ -48,9 +50,7 @@ class Settings(BaseSettings):
     cache_size_limit: int = Field(1000, alias="CACHE_SIZE_LIMIT")
 
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore"
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
     @field_validator("deepseek_api_key")
@@ -61,7 +61,9 @@ class Settings(BaseSettings):
         app_env = info.data.get("app_env", "development")
         if provider == "deepseek" and not v:
             if app_env == "production":
-                raise ValueError("DEEPSEEK_API_KEY is required in production when LLM_PROVIDER is deepseek")
+                raise ValueError(
+                    "DEEPSEEK_API_KEY is required in production when LLM_PROVIDER is deepseek"
+                )
         return v
 
     @field_validator("gemini_api_key")
@@ -72,9 +74,10 @@ class Settings(BaseSettings):
         app_env = info.data.get("app_env", "development")
         if provider == "gemini" and not v:
             if app_env == "production":
-                raise ValueError("GEMINI_API_KEY is required in production when LLM_PROVIDER is gemini")
+                raise ValueError(
+                    "GEMINI_API_KEY is required in production when LLM_PROVIDER is gemini"
+                )
         return v
-
 
 
 # Instantiate settings singleton

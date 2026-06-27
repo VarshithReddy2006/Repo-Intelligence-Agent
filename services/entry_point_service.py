@@ -15,7 +15,6 @@ The service is designed so that new patterns can be added by extending the
 
 import logging
 import os
-import re
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -83,7 +82,14 @@ def _is_python_framework_init(file_path: str, parsed: Optional[Dict]) -> bool:
 
     # Rule 2 — application-suggestive filename at any depth
     basename = os.path.basename(fp_lower)
-    _APP_NAMES = {"app.py", "application.py", "server.py", "wsgi.py", "asgi.py", "run.py"}
+    _APP_NAMES = {
+        "app.py",
+        "application.py",
+        "server.py",
+        "wsgi.py",
+        "asgi.py",
+        "run.py",
+    }
     if basename in _APP_NAMES:
         return True
 
@@ -185,14 +191,18 @@ class EntryPointService:
                 try:
                     if pattern["condition"](fp, parsed):
                         if fp not in seen:
-                            hits.append({
-                                "path": fp,
-                                "priority": pattern["priority"],
-                                "pattern": pattern["name"],
-                            })
+                            hits.append(
+                                {
+                                    "path": fp,
+                                    "priority": pattern["priority"],
+                                    "pattern": pattern["name"],
+                                }
+                            )
                             seen.add(fp)
                 except Exception as exc:
-                    logger.debug("Pattern %s raised for %s: %s", pattern["name"], fp, exc)
+                    logger.debug(
+                        "Pattern %s raised for %s: %s", pattern["name"], fp, exc
+                    )
 
         # Deduplicate and sort by priority then path
         hits.sort(key=lambda h: (h["priority"], h["path"]))

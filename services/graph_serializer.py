@@ -76,7 +76,8 @@ class GraphSerializer:
         if search_query and search_query.strip():
             q = search_query.strip().lower()
             matching: Set[str] = {
-                n for n in graph.nodes()
+                n
+                for n in graph.nodes()
                 if q in n.lower() or q in os.path.basename(n).lower()
             }
             # Include immediate neighbours for context
@@ -100,11 +101,11 @@ class GraphSerializer:
 
         # ── Full graph path — apply priority-sorted _MAX_NODES cap ────
         cat_priority = {
-            "entry_point":  4,
-            "core_module":  3,
+            "entry_point": 4,
+            "core_module": 3,
             "high_coupling": 2,
-            "directory":    1,
-            "regular":      0,
+            "directory": 1,
+            "regular": 0,
         }
         if graph.number_of_nodes() > 1:
             try:
@@ -214,7 +215,7 @@ class GraphSerializer:
 
         # Cap to _MAX_NODES keeping focus + highlighted first
         if len(reachable) > _MAX_NODES:
-            priority = [node_id] + list(highlighted)[:_MAX_NODES - 1]
+            priority = [node_id] + list(highlighted)[: _MAX_NODES - 1]
             reachable = set(priority)
 
         subgraph = graph.subgraph(reachable)
@@ -292,7 +293,9 @@ class GraphSerializer:
             return self._graph_cache[repo_name]
         graph = self.graph_service.load_graph(repo_name)
         if graph is None or graph.number_of_nodes() == 0:
-            logger.warning("GraphSerializer: empty or missing graph for '%s'", repo_name)
+            logger.warning(
+                "GraphSerializer: empty or missing graph for '%s'", repo_name
+            )
             return None
         self._graph_cache[repo_name] = graph
         return graph
@@ -311,7 +314,11 @@ class GraphSerializer:
             node, depth = queue.pop(0)
             if depth >= max_depth:
                 continue
-            neighbours = list(graph.successors(node)) if forward else list(graph.predecessors(node))
+            neighbours = (
+                list(graph.successors(node))
+                if forward
+                else list(graph.predecessors(node))
+            )
             for nb in neighbours:
                 if nb not in visited and nb != start:
                     visited.add(nb)
@@ -366,27 +373,31 @@ class GraphSerializer:
             if n == focus_node:
                 cat = "focus"
 
-            res_nodes.append({
-                "id": n,
-                "label": attrs.get("label", os.path.basename(n)),
-                "category": cat,
-                "degree": node_degrees.get(n, 0),
-                "centrality": round(node_centrality.get(n, 0.0), 4),
-                "language": attrs.get("language", "unknown"),
-                "highlighted": n in highlighted_nodes,
-                "is_focus": n == focus_node,
-            })
+            res_nodes.append(
+                {
+                    "id": n,
+                    "label": attrs.get("label", os.path.basename(n)),
+                    "category": cat,
+                    "degree": node_degrees.get(n, 0),
+                    "centrality": round(node_centrality.get(n, 0.0), 4),
+                    "language": attrs.get("language", "unknown"),
+                    "highlighted": n in highlighted_nodes,
+                    "is_focus": n == focus_node,
+                }
+            )
 
         res_edges: List[Dict[str, Any]] = []
         edge_count = 0
         for u, v, eattrs in subgraph.edges(data=True):
             if edge_count >= _MAX_EDGES:
                 break
-            res_edges.append({
-                "source": u,
-                "target": v,
-                "relationship": eattrs.get("relationship", "imports"),
-            })
+            res_edges.append(
+                {
+                    "source": u,
+                    "target": v,
+                    "relationship": eattrs.get("relationship", "imports"),
+                }
+            )
             edge_count += 1
 
         return {
@@ -398,4 +409,10 @@ class GraphSerializer:
 
     @staticmethod
     def _error(msg: str) -> Dict[str, Any]:
-        return {"nodes": [], "edges": [], "error": msg, "node_count": 0, "edge_count": 0}
+        return {
+            "nodes": [],
+            "edges": [],
+            "error": msg,
+            "node_count": 0,
+            "edge_count": 0,
+        }

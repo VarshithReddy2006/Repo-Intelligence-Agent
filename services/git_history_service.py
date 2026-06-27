@@ -20,7 +20,6 @@ beyond — git history is language-agnostic).
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import subprocess
@@ -98,9 +97,13 @@ class GitHistoryService:
                 parent_dir = os.path.dirname(churn_dir)
                 dir_name = os.path.basename(churn_dir)
                 from storage.snapshot_store import JsonSnapshotStore
-                self.snapshot_store = JsonSnapshotStore(base_dir=parent_dir, key_map={"churn": dir_name})
+
+                self.snapshot_store = JsonSnapshotStore(
+                    base_dir=parent_dir, key_map={"churn": dir_name}
+                )
             else:
                 from backend.dependencies import snapshot_store as default_store
+
                 self.snapshot_store = default_store
         else:
             self.snapshot_store = snapshot_store
@@ -151,7 +154,9 @@ class GitHistoryService:
         total_commits = len(commits)
         logger.info(
             "[ChurnService:%s] Mined %d commits (since_days=%d)",
-            repo_name, total_commits, since_days,
+            repo_name,
+            total_commits,
+            since_days,
         )
         yield {
             "status": "mining_done",
@@ -171,7 +176,10 @@ class GitHistoryService:
         }
 
         # ── Step 4: load graph for centrality overlay ─────────────────
-        yield {"status": "graph", "message": "Loading dependency graph for hotspot overlay…"}
+        yield {
+            "status": "graph",
+            "message": "Loading dependency graph for hotspot overlay…",
+        }
         graph = self.graph_service.load_graph(repo_name)
         centrality: Dict[str, float] = {}
         if graph and graph.number_of_nodes() > 0:
@@ -217,7 +225,9 @@ class GitHistoryService:
             ChurnSummary or None if not found / stale schema.
         """
         subkey = f"{since_days}d"
-        cached = self.analysis_cache.get(repo_name, "churn", _SCHEMA_VERSION, subkey=subkey)
+        cached = self.analysis_cache.get(
+            repo_name, "churn", _SCHEMA_VERSION, subkey=subkey
+        )
         if cached is not None:
             return cached
 
@@ -229,17 +239,23 @@ class GitHistoryService:
         if stored_ver < _SCHEMA_VERSION:
             logger.warning(
                 "Discarding stale churn summary for %s (v%d < v%d)",
-                repo_name, stored_ver, _SCHEMA_VERSION,
+                repo_name,
+                stored_ver,
+                _SCHEMA_VERSION,
             )
             return None
 
         try:
             filtered = {k: v for k, v in data.items() if not k.startswith("_")}
             summary = ChurnSummary(**filtered)
-            self.analysis_cache.set(repo_name, "churn", summary, _SCHEMA_VERSION, subkey=subkey)
+            self.analysis_cache.set(
+                repo_name, "churn", summary, _SCHEMA_VERSION, subkey=subkey
+            )
             return summary
         except Exception as exc:
-            logger.error("Failed to deserialise churn summary for %s: %s", repo_name, exc)
+            logger.error(
+                "Failed to deserialise churn summary for %s: %s", repo_name, exc
+            )
             return None
 
     def summary_exists(self, repo_name: str, since_days: int = 365) -> bool:
@@ -286,18 +302,20 @@ class GitHistoryService:
         Returns:
             (commits, shallow_warning_or_None)
         """
-        since_date = (
-            datetime.now(timezone.utc) - timedelta(days=since_days)
-        ).strftime("%Y-%m-%d")
+        since_date = (datetime.now(timezone.utc) - timedelta(days=since_days)).strftime(
+            "%Y-%m-%d"
+        )
 
         cmd = [
-            "git", "-C", repo_path,
+            "git",
+            "-C",
+            repo_path,
             "log",
             "--no-merges",
             "--name-status",
             f"--since={since_date}",
             "--format=COMMIT|%H|%ae|%aI",
-            "--diff-filter=ACDMRT",   # exclude untracked & copied; include renames
+            "--diff-filter=ACDMRT",  # exclude untracked & copied; include renames
         ]
 
         try:
@@ -391,7 +409,12 @@ class GitHistoryService:
             if len(parts) >= 2:
                 status_char = parts[0].strip()
                 path = parts[1].strip().replace("\\", "/")
-                status_map = {"M": "modified", "A": "added", "D": "deleted", "T": "modified"}
+                status_map = {
+                    "M": "modified",
+                    "A": "added",
+                    "D": "deleted",
+                    "T": "modified",
+                }
                 status = status_map.get(status_char, "modified")
                 current["files"].append({"path": path, "status": status})
 
@@ -406,7 +429,10 @@ class GitHistoryService:
         try:
             res = subprocess.run(
                 ["git", "-C", repo_path, "rev-list", "--count", "HEAD"],
-                capture_output=True, text=True, check=False, timeout=15,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=15,
             )
             return int(res.stdout.strip()) if res.returncode == 0 else 0
         except Exception:
@@ -425,11 +451,13 @@ class GitHistoryService:
         Returns:
             { file_path → { commit_count, last_commit_date, is_deleted } }
         """
-        records: Dict[str, Dict[str, Any]] = defaultdict(lambda: {
-            "commit_count": 0,
-            "last_commit_date": "",
-            "is_deleted": False,
-        })
+        records: Dict[str, Dict[str, Any]] = defaultdict(
+            lambda: {
+                "commit_count": 0,
+                "last_commit_date": "",
+                "is_deleted": False,
+            }
+        )
 
         for commit in commits:
             date = commit.get("date", "")
@@ -495,22 +523,26 @@ class GitHistoryService:
 
             author_counter = raw_ownership.get(path, Counter())
             total = sum(author_counter.values()) or 1
-            primary_author = author_counter.most_common(1)[0][0] if author_counter else ""
+            primary_author = (
+                author_counter.most_common(1)[0][0] if author_counter else ""
+            )
             primary_count = author_counter.most_common(1)[0][1] if author_counter else 0
             bus_factor_risk = (primary_count / total) > 0.8
 
-            records.append(FileChurnRecord(
-                file_path=path,
-                commit_count=commit_count,
-                insertions=0,   # enriched in future pass if needed
-                deletions=0,
-                churn_score=churn_score,
-                primary_author=primary_author,
-                author_count=len(author_counter),
-                bus_factor_risk=bus_factor_risk,
-                last_commit_date=churn.get("last_commit_date", ""),
-                is_deleted=churn.get("is_deleted", False),
-            ))
+            records.append(
+                FileChurnRecord(
+                    file_path=path,
+                    commit_count=commit_count,
+                    insertions=0,  # enriched in future pass if needed
+                    deletions=0,
+                    churn_score=churn_score,
+                    primary_author=primary_author,
+                    author_count=len(author_counter),
+                    bus_factor_risk=bus_factor_risk,
+                    last_commit_date=churn.get("last_commit_date", ""),
+                    is_deleted=churn.get("is_deleted", False),
+                )
+            )
 
         return sorted(records, key=lambda r: r.churn_score, reverse=True)
 
@@ -545,15 +577,17 @@ class GitHistoryService:
                         break
 
             hotspot_score = round(rec.churn_score * (1.0 + c), 4)
-            hotspots.append(HotspotFile(
-                file_path=rec.file_path,
-                churn_score=rec.churn_score,
-                centrality=round(c, 4),
-                hotspot_score=hotspot_score,
-                commit_count=rec.commit_count,
-                primary_author=rec.primary_author,
-                bus_factor_risk=rec.bus_factor_risk,
-            ))
+            hotspots.append(
+                HotspotFile(
+                    file_path=rec.file_path,
+                    churn_score=rec.churn_score,
+                    centrality=round(c, 4),
+                    hotspot_score=hotspot_score,
+                    commit_count=rec.commit_count,
+                    primary_author=rec.primary_author,
+                    bus_factor_risk=rec.bus_factor_risk,
+                )
+            )
 
         hotspots.sort(key=lambda h: h.hotspot_score, reverse=True)
         return hotspots[:top_n]
@@ -572,12 +606,14 @@ class GitHistoryService:
         for path, counter in raw_ownership.items():
             total = sum(counter.values()) or 1
             top_author, top_count = counter.most_common(1)[0] if counter else ("", 0)
-            result.append(AuthorOwnership(
-                file_path=path,
-                primary_author=top_author,
-                ownership_pct=round((top_count / total) * 100.0, 1),
-                contributors=dict(counter),
-            ))
+            result.append(
+                AuthorOwnership(
+                    file_path=path,
+                    primary_author=top_author,
+                    ownership_pct=round((top_count / total) * 100.0, 1),
+                    contributors=dict(counter),
+                )
+            )
         # Return sorted by ownership_pct descending, capped at top_n
         result.sort(key=lambda a: a.ownership_pct, reverse=True)
         return result[:top_n]
@@ -589,13 +625,14 @@ class GitHistoryService:
     @staticmethod
     def _build_timeline(commits: List[Dict[str, Any]]) -> List[TimelineEntry]:
         """Bin commits into ISO-8601 weekly buckets (week starts Monday)."""
-        from datetime import date
 
-        weekly: Dict[str, Dict[str, Any]] = defaultdict(lambda: {
-            "commit_count": 0,
-            "files_changed": set(),
-            "authors": set(),
-        })
+        weekly: Dict[str, Dict[str, Any]] = defaultdict(
+            lambda: {
+                "commit_count": 0,
+                "files_changed": set(),
+                "authors": set(),
+            }
+        )
 
         for commit in commits:
             raw_date = commit.get("date", "")
@@ -632,7 +669,9 @@ class GitHistoryService:
     # ------------------------------------------------------------------
 
     def _summary_path(self, repo_name: str, since_days: int) -> str:
-        return self.snapshot_store._get_path(repo_name, "churn", subkey=f"{since_days}d")
+        return self.snapshot_store._get_path(
+            repo_name, "churn", subkey=f"{since_days}d"
+        )
 
     def _save(self, repo_name: str, since_days: int, summary: ChurnSummary) -> None:
         payload = summary.model_dump()
@@ -640,7 +679,5 @@ class GitHistoryService:
         payload["_built_at"] = int(time.time())
         self.snapshot_store.save(repo_name, "churn", payload, subkey=f"{since_days}d")
 
-    def _load_raw(
-        self, repo_name: str, since_days: int
-    ) -> Optional[Dict[str, Any]]:
+    def _load_raw(self, repo_name: str, since_days: int) -> Optional[Dict[str, Any]]:
         return self.snapshot_store.load(repo_name, "churn", subkey=f"{since_days}d")

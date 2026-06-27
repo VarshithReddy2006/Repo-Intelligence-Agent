@@ -25,7 +25,6 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
 from backend.dependencies import (
-    ANALYSIS_STORE,
     chroma_store,
     embedding_service,
     get_retrieval_pipeline,
@@ -40,6 +39,7 @@ router = APIRouter(prefix="/api", tags=["Chat"])
 # ---------------------------------------------------------------------------
 # Request models (unchanged — backward compatible)
 # ---------------------------------------------------------------------------
+
 
 class ChatRequest(BaseModel):
     repo: str = Field(..., description="Repository identifier (owner/repo)")
@@ -74,6 +74,7 @@ class IssueMapRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # GET /api/chat/health — provider status diagnostic
 # ---------------------------------------------------------------------------
+
 
 @router.get("/chat/health")
 async def chat_health():
@@ -112,7 +113,9 @@ async def chat_health():
     try:
         all_results = await ProviderFactory.validate_all_providers()
     except Exception as exc:
-        logger.error("chat_health: validate_all_providers raised: %s", exc, exc_info=True)
+        logger.error(
+            "chat_health: validate_all_providers raised: %s", exc, exc_info=True
+        )
         return JSONResponse(
             {
                 "status": "error",
@@ -167,22 +170,33 @@ async def chat_health():
     else:
         status = "unhealthy"
 
-    return JSONResponse({
-        "status": status,
-        # ── Backward-compatible fields ──────────────────────────────────
-        "provider": primary_name,
-        "api_key_present": api_key_present,
-        "circuit_states": circuit_states,
-        # ── New fields ──────────────────────────────────────────────────
-        "authenticated": authenticated,
-        "healthy": healthy,
-        "latency_ms": round(primary.latency_ms, 1) if primary and primary.latency_ms else None,
-        "error_type": primary.error_type if primary else None,
-        "error_message": primary.error_message if primary else None,
-        "recommendation": primary.recommendation if primary else None,
-        "all_providers": all_providers_summary,
-        "timestamp": time.time(),
-    })
+    return JSONResponse(
+        {
+            "status": status,
+            # ── Backward-compatible fields ──────────────────────────────────
+            "provider": primary_name,
+            "api_key_present": api_key_present,
+            "circuit_states": circuit_states,
+            # ── New fields ──────────────────────────────────────────────────
+            "authenticated": authenticated,
+            "healthy": healthy,
+            "latency_ms": round(primary.latency_ms, 1)
+            if primary and primary.latency_ms
+            else None,
+            "error_type": primary.error_type if primary else None,
+            "error_message": primary.error_message if primary else None,
+            "recommendation": primary.recommendation if primary else None,
+            "all_providers": all_providers_summary,
+            "configured_providers": list(all_results.keys()),
+            "healthy_providers": [name for name, h in all_results.items() if h.healthy],
+            "unavailable_providers": [
+                name for name, h in all_results.items() if not h.healthy
+            ],
+            "circuit_breaker_states": circuit_states,
+            "configured_models": {name: h.model for name, h in all_results.items()},
+            "timestamp": time.time(),
+        }
+    )
 
 
 @router.post("/chat/reload")
@@ -203,11 +217,14 @@ async def chat_reload():
     if global_pipeline is not None:
         try:
             from services.chat.provider_manager import ProviderManager
+
             global_pipeline.provider_manager = ProviderManager()
             logger.info("chat_reload: ProviderManager rebuilt successfully")
         except Exception as exc:
             logger.error("chat_reload: ProviderManager rebuild failed: %s", exc)
-            return JSONResponse({"status": "error", "detail": str(exc)}, status_code=500)
+            return JSONResponse(
+                {"status": "error", "detail": str(exc)}, status_code=500
+            )
 
     # 3. Verify the new provider works
     try:
@@ -219,22 +236,28 @@ async def chat_reload():
         ok = bool(test_response and test_response.strip())
     except Exception as exc:
         logger.error("chat_reload: provider test failed: %s", exc)
-        return JSONResponse({
-            "status": "error",
-            "detail": f"Provider loaded but test call failed: {exc}",
-        }, status_code=500)
+        return JSONResponse(
+            {
+                "status": "error",
+                "detail": f"Provider loaded but test call failed: {exc}",
+            },
+            status_code=500,
+        )
 
     logger.info("chat_reload: provider reloaded and verified OK")
-    return JSONResponse({
-        "status": "ok",
-        "message": "LLM provider reloaded successfully. Chat is ready.",
-        "test_response": test_response.strip()[:50] if ok else "",
-    })
+    return JSONResponse(
+        {
+            "status": "ok",
+            "message": "LLM provider reloaded successfully. Chat is ready.",
+            "test_response": test_response.strip()[:50] if ok else "",
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
 # POST /api/chat — SSE streaming endpoint
 # ---------------------------------------------------------------------------
+
 
 @router.post("/chat")
 async def repository_chat(request: ChatRequest):
@@ -258,11 +281,13 @@ async def repository_chat(request: ChatRequest):
     async def chat_streamer():
         # SSE-level guard (defence-in-depth against empty repo slipping through)
         if not repo_name:
-            err = json.dumps({
-                "error": "no_repo_selected",
-                "message": "No repository selected. Please open a repository first.",
-                "status": "done",
-            })
+            err = json.dumps(
+                {
+                    "error": "no_repo_selected",
+                    "message": "No repository selected. Please open a repository first.",
+                    "status": "done",
+                }
+            )
             yield f"data: {err}\n\n"
             return
 
@@ -278,13 +303,17 @@ async def repository_chat(request: ChatRequest):
         except Exception as exc:
             logger.error(
                 "Unhandled exception in chat_streamer repo=%s: %s",
-                repo_name, exc, exc_info=True,
+                repo_name,
+                exc,
+                exc_info=True,
             )
-            err = json.dumps({
-                "error": "pipeline_error",
-                "message": "An unexpected error occurred. Please try again.",
-                "status": "done",
-            })
+            err = json.dumps(
+                {
+                    "error": "pipeline_error",
+                    "message": "An unexpected error occurred. Please try again.",
+                    "status": "done",
+                }
+            )
             yield f"data: {err}\n\n"
 
     return StreamingResponse(chat_streamer(), media_type="text/event-stream")
@@ -293,6 +322,7 @@ async def repository_chat(request: ChatRequest):
 # ---------------------------------------------------------------------------
 # POST /api/issues/map — unchanged from v1
 # ---------------------------------------------------------------------------
+
 
 @router.post("/issues/map", response_model=IssueMapResponse)
 async def map_issue(request: IssueMapRequest):

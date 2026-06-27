@@ -10,7 +10,6 @@ from fastapi.testclient import TestClient
 from backend.api import app
 from models.dead_code import (
     DeadCodeRequest,
-    DeadCodeResult,
     DeadFile,
     OrphanModule,
     DeadDependencyChain,
@@ -78,7 +77,9 @@ class TestDeadCodeAlgorithms(unittest.TestCase):
     def test_load_ignore_patterns_custom(self):
         """Covers parsing custom ignore list from data/dead_code_ignore.json."""
         custom_data = ["test_custom/"]
-        with patch("builtins.open", unittest.mock.mock_open(read_data=json.dumps(custom_data))):
+        with patch(
+            "builtins.open", unittest.mock.mock_open(read_data=json.dumps(custom_data))
+        ):
             with patch("os.path.exists", return_value=True):
                 patterns = self.service.load_ignore_patterns()
                 self.assertIn("test_custom/", patterns)
@@ -99,13 +100,17 @@ class TestDeadCodeAlgorithms(unittest.TestCase):
 
         reachable = {"main.py", "services/auth_service.py", "utils/logger.py"}
 
-        parent = self.service._find_last_reachable_parent(g, "legacy/crypto.py", reachable)
+        parent = self.service._find_last_reachable_parent(
+            g, "legacy/crypto.py", reachable
+        )
         # legacy/crypto.py -> legacy/auth.py -> utils/logger.py
         self.assertEqual(parent, "utils/logger.py")
 
         # Completely disconnected
         g.remove_edge("legacy/auth.py", "utils/logger.py")
-        parent_none = self.service._find_last_reachable_parent(g, "legacy/crypto.py", reachable)
+        parent_none = self.service._find_last_reachable_parent(
+            g, "legacy/crypto.py", reachable
+        )
         self.assertIsNone(parent_none)
 
     def test_find_dead_chains(self):
@@ -163,7 +168,7 @@ class TestDeadCodeAlgorithms(unittest.TestCase):
             github_service=mock_github.return_value,
             graph_service=mock_graph.return_value,
             architecture_service=mock_arch.return_value,
-            scores_file_path=self.temp_file.name
+            scores_file_path=self.temp_file.name,
         )
         res = service.analyze_dead_code("owner", "repo")
 
@@ -177,9 +182,13 @@ class TestDeadCodeAlgorithms(unittest.TestCase):
 
         # Verification of chain extraction
         self.assertEqual(len(res.dead_dependency_chains), 1)
-        self.assertEqual(res.dead_dependency_chains[0].chain, ["dead_root.py", "dead_child.py"])
+        self.assertEqual(
+            res.dead_dependency_chains[0].chain, ["dead_root.py", "dead_child.py"]
+        )
 
-        self.assertEqual(res.estimated_cleanup_effort, "MEDIUM")  # 1 unused + 1 orphan + 1 chain = 3 findings
+        self.assertEqual(
+            res.estimated_cleanup_effort, "MEDIUM"
+        )  # 1 unused + 1 orphan + 1 chain = 3 findings
         self.assertTrue(len(res.cleanup_recommendations) > 0)
 
 
@@ -200,7 +209,9 @@ class TestDeadCodeEndpoints(unittest.TestCase):
         }
         mock_service.analyze_dead_code.return_value = mock_res
 
-        response = client.post("/api/dead-code/analyze", json={"owner": "owner", "repo": "repo"})
+        response = client.post(
+            "/api/dead-code/analyze", json={"owner": "owner", "repo": "repo"}
+        )
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["cleanup_score"], 90)
@@ -209,8 +220,12 @@ class TestDeadCodeEndpoints(unittest.TestCase):
     @patch("backend.api.dead_code_service")
     def test_endpoint_dead_code_analyze_not_indexed(self, mock_service):
         """Covers 404 for unindexed repositories."""
-        mock_service.analyze_dead_code.side_effect = ValueError("No dependency graph found")
+        mock_service.analyze_dead_code.side_effect = ValueError(
+            "No dependency graph found"
+        )
 
-        response = client.post("/api/dead-code/analyze", json={"owner": "owner", "repo": "repo"})
+        response = client.post(
+            "/api/dead-code/analyze", json={"owner": "owner", "repo": "repo"}
+        )
         self.assertEqual(response.status_code, 404)
         self.assertEqual(response.json()["detail"], "No dependency graph found")

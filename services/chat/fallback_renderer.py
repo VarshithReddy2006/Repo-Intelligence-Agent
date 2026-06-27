@@ -13,7 +13,7 @@ Design principles:
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -85,10 +85,7 @@ def render_fallback(
 
     # Suggested retry with actionable advice
     sections.append("---\n")
-    sections.append(
-        "**Suggested Next Step**\n"
-        + _retry_advice(provider_error)
-    )
+    sections.append("**Suggested Next Step**\n" + _retry_advice(provider_error))
 
     return "\n".join(sections)
 

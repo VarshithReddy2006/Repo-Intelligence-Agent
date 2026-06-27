@@ -36,6 +36,7 @@ class GitHubConfig:
     def load_token(cls) -> Optional[str]:
         if cls.token is None:
             from backend.settings import settings
+
             cls.token = settings.github_token
         return cls.token
 
@@ -54,11 +55,11 @@ class GitHubService:
         if self.token:
             self.session.headers.update({"Authorization": f"Bearer {self.token}"})
         self.session.headers.update({"Accept": "application/vnd.github+json"})
-        
+
         # Verify request headers
         logger.info(
             "GitHub Authorization header present: %s",
-            "Authorization" in self.session.headers
+            "Authorization" in self.session.headers,
         )
 
     def parse_repo_url(self, repo_url: str) -> Dict[str, str]:
@@ -73,7 +74,7 @@ class GitHubService:
         url = repo_url.strip()
         if url.endswith(".git"):
             url = url[:-4]
-        
+
         # Strip trailing slash if present
         if url.endswith("/"):
             url = url[:-1]
@@ -82,12 +83,12 @@ class GitHubService:
             parts = url.split("github.com/")[-1].split("/")
             if len(parts) >= 2:
                 return {"owner": parts[0], "repo": parts[1]}
-        
+
         # If it's already in owner/repo format
         parts = url.split("/")
         if len(parts) == 2:
             return {"owner": parts[0], "repo": parts[1]}
-            
+
         raise ValueError(f"Invalid GitHub repository URL: {repo_url}")
 
     def get_local_repo_path(self, repo_fullName: str) -> str:
@@ -116,8 +117,6 @@ class GitHubService:
         Returns:
             The local path to the cloned repository.
         """
-        import urllib.parse
-        import subprocess
 
         try:
             parsed = self.parse_repo_url(repo_url)
@@ -158,33 +157,72 @@ class GitHubService:
             logger.info("Cloning private repository using PAT: %s", repo_fullName)
         else:
             clone_url = public_url
-            logger.info("Cloning repository anonymously (no token available): %s", repo_fullName)
+            logger.info(
+                "Cloning repository anonymously (no token available): %s", repo_fullName
+            )
 
         # 4. Perform ls-remote connection diagnostics
         try:
             cmd_check = ["git", "ls-remote", clone_url, "HEAD"]
             res = subprocess.run(cmd_check, capture_output=True, text=True, check=False)
             if res.returncode != 0:
-                err_stderr = res.stderr.replace(self.token, "********") if self.token else res.stderr
+                err_stderr = (
+                    res.stderr.replace(self.token, "********")
+                    if self.token
+                    else res.stderr
+                )
                 err_lower = err_stderr.lower()
-                
+
                 # Check for Network Failure
-                if any(kw in err_lower for kw in ["could not resolve host", "temporary failure", "network is unreachable", "timed out"]):
-                    raise RuntimeError(f"Network failure: Check your internet connection. Detail: {err_stderr.strip()}")
+                if any(
+                    kw in err_lower
+                    for kw in [
+                        "could not resolve host",
+                        "temporary failure",
+                        "network is unreachable",
+                        "timed out",
+                    ]
+                ):
+                    raise RuntimeError(
+                        f"Network failure: Check your internet connection. Detail: {err_stderr.strip()}"
+                    )
                 # Check for Auth / Access Failures
-                elif any(kw in err_lower for kw in ["permission denied", "authorization", "terminal", "write access", "403", "401"]):
+                elif any(
+                    kw in err_lower
+                    for kw in [
+                        "permission denied",
+                        "authorization",
+                        "terminal",
+                        "write access",
+                        "403",
+                        "401",
+                    ]
+                ):
                     if not self.token:
-                        raise RuntimeError(f"Repository private: The repository requires authentication but no GITHUB_TOKEN (PAT) is set in your environment.")
+                        raise RuntimeError(
+                            "Repository private: The repository requires authentication but no GITHUB_TOKEN (PAT) is set in your environment."
+                        )
                     else:
-                        raise RuntimeError(f"Authentication failure: The provided GITHUB_TOKEN (PAT) is invalid, expired, or does not have read access to {repo_fullName}.")
+                        raise RuntimeError(
+                            f"Authentication failure: The provided GITHUB_TOKEN (PAT) is invalid, expired, or does not have read access to {repo_fullName}."
+                        )
                 # Check for Not Found
-                elif any(kw in err_lower for kw in ["not found", "repository not found", "fatal: repository"]):
+                elif any(
+                    kw in err_lower
+                    for kw in ["not found", "repository not found", "fatal: repository"]
+                ):
                     if not is_public and not self.token:
-                        raise RuntimeError(f"Repository private: Repository {repo_fullName} was not found anonymously. It might be private; please provide a valid GITHUB_TOKEN (PAT).")
+                        raise RuntimeError(
+                            f"Repository private: Repository {repo_fullName} was not found anonymously. It might be private; please provide a valid GITHUB_TOKEN (PAT)."
+                        )
                     else:
-                        raise RepositoryNotFoundError(f"Repository not found: Repository {repo_fullName} does not exist. Detail: {err_stderr.strip()}")
+                        raise RepositoryNotFoundError(
+                            f"Repository not found: Repository {repo_fullName} does not exist. Detail: {err_stderr.strip()}"
+                        )
                 else:
-                    raise RuntimeError(f"Connection failure: Failed to connect to repository {repo_fullName}. Detail: {err_stderr.strip()}")
+                    raise RuntimeError(
+                        f"Connection failure: Failed to connect to repository {repo_fullName}. Detail: {err_stderr.strip()}"
+                    )
         except Exception as e:
             if isinstance(e, (RepositoryNotFoundError, RuntimeError)):
                 raise e
@@ -195,49 +233,69 @@ class GitHubService:
         if branch:
             # Check if requested branch exists
             cmd_check = ["git", "ls-remote", "--heads", clone_url, branch]
-            res_check = subprocess.run(cmd_check, capture_output=True, text=True, check=False)
-            branch_exists = (res_check.returncode == 0 and bool(res_check.stdout.strip()))
-            
+            res_check = subprocess.run(
+                cmd_check, capture_output=True, text=True, check=False
+            )
+            branch_exists = res_check.returncode == 0 and bool(res_check.stdout.strip())
+
             if not branch_exists:
                 if branch == "main":
                     # Try to auto-discover default branch
                     try:
                         cmd_sym = ["git", "ls-remote", "--symref", clone_url, "HEAD"]
-                        res_sym = subprocess.run(cmd_sym, capture_output=True, text=True, check=False)
+                        res_sym = subprocess.run(
+                            cmd_sym, capture_output=True, text=True, check=False
+                        )
                         discovered = None
                         if res_sym.returncode == 0:
                             for line in res_sym.stdout.splitlines():
                                 if line.startswith("ref:"):
                                     parts = line.split()
-                                    if len(parts) >= 2 and parts[1].startswith("refs/heads/"):
+                                    if len(parts) >= 2 and parts[1].startswith(
+                                        "refs/heads/"
+                                    ):
                                         discovered = parts[1].replace("refs/heads/", "")
                                         break
                         if discovered:
                             actual_branch = discovered
-                            logger.info(f"Branch 'main' not found. Auto-discovered default branch: '{actual_branch}'")
+                            logger.info(
+                                f"Branch 'main' not found. Auto-discovered default branch: '{actual_branch}'"
+                            )
                         else:
-                            raise BranchNotFoundError(f"Branch 'main' not found, and failed to auto-discover default branch.")
+                            raise BranchNotFoundError(
+                                "Branch 'main' not found, and failed to auto-discover default branch."
+                            )
                     except Exception as e:
                         if isinstance(e, BranchNotFoundError):
                             raise e
-                        raise BranchNotFoundError(f"Branch 'main' not found for repository {repo_fullName}.")
+                        raise BranchNotFoundError(
+                            f"Branch 'main' not found for repository {repo_fullName}."
+                        )
                 else:
-                    raise BranchNotFoundError(f"Branch '{branch}' does not exist for repository {repo_fullName}.")
+                    raise BranchNotFoundError(
+                        f"Branch '{branch}' does not exist for repository {repo_fullName}."
+                    )
 
         # 6. Clear target directory
         if os.path.exists(dest_dir):
             try:
                 if os.name == "nt":
-                    subprocess.run(["cmd", "/c", "rmdir", "/s", "/q", dest_dir], check=False)
+                    subprocess.run(
+                        ["cmd", "/c", "rmdir", "/s", "/q", dest_dir], check=False
+                    )
                 else:
                     shutil.rmtree(dest_dir, ignore_errors=True)
             except Exception as e:
-                logger.warning(f"Failed to completely remove existing directory {dest_dir}: {e}.")
+                logger.warning(
+                    f"Failed to completely remove existing directory {dest_dir}: {e}."
+                )
 
         os.makedirs(os.path.dirname(dest_dir), exist_ok=True)
 
         # 7. Perform Clone
-        logger.info(f"Cloning repository {repo_fullName} to {dest_dir} (branch={actual_branch})...")
+        logger.info(
+            f"Cloning repository {repo_fullName} to {dest_dir} (branch={actual_branch})..."
+        )
         cmd = ["git", "clone", "--depth", "1", "--single-branch"]
         if actual_branch:
             cmd.extend(["--branch", actual_branch])
@@ -245,7 +303,11 @@ class GitHubService:
 
         result = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if result.returncode != 0:
-            err_msg = result.stderr.replace(self.token, "********") if self.token else result.stderr
+            err_msg = (
+                result.stderr.replace(self.token, "********")
+                if self.token
+                else result.stderr
+            )
             raise RuntimeError(f"Failed to clone repository: {err_msg}")
 
         return dest_dir
@@ -259,45 +321,81 @@ class GitHubService:
         Returns:
             A list of dictionary records containing file paths and contents.
         """
-        ignored_names = {"node_modules", ".git", "dist", "build", ".next", "venv", ".venv", "__pycache__", ".tox", "coverage", "data"}
+        ignored_names = {
+            "node_modules",
+            ".git",
+            "dist",
+            "build",
+            ".next",
+            "venv",
+            ".venv",
+            "__pycache__",
+            ".tox",
+            "coverage",
+            "data",
+        }
         extracted_files = []
-        
+
         for root, dirs, files in os.walk(local_path):
             # Prune ignored directories in-place
             dirs[:] = [d for d in dirs if d not in ignored_names]
-            
+
             for file in files:
                 file_path = os.path.join(root, file)
                 rel_path = os.path.relpath(file_path, local_path)
-                
+
                 # Check if file path parts contain ignored directory names
                 parts = rel_path.split(os.sep)
                 if any(part in ignored_names for part in parts):
                     continue
-                    
+
                 # Skip binary and media formats
                 ext = os.path.splitext(file)[1].lower()
                 if ext in {
-                    ".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf", ".zip", ".tar", ".gz",
-                    ".mp3", ".mp4", ".woff", ".woff2", ".ttf", ".eot", ".svg", ".pyc",
-                    ".db", ".sqlite", ".exe", ".bin", ".dll", ".so", ".dylib", ".pkl", ".h5"
+                    ".png",
+                    ".jpg",
+                    ".jpeg",
+                    ".gif",
+                    ".ico",
+                    ".pdf",
+                    ".zip",
+                    ".tar",
+                    ".gz",
+                    ".mp3",
+                    ".mp4",
+                    ".woff",
+                    ".woff2",
+                    ".ttf",
+                    ".eot",
+                    ".svg",
+                    ".pyc",
+                    ".db",
+                    ".sqlite",
+                    ".exe",
+                    ".bin",
+                    ".dll",
+                    ".so",
+                    ".dylib",
+                    ".pkl",
+                    ".h5",
                 }:
                     continue
-                    
+
                 # Read content as text
                 try:
                     with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                         content = f.read()
-                    extracted_files.append({
-                        "path": rel_path.replace(os.sep, "/"),
-                        "content": content
-                    })
+                    extracted_files.append(
+                        {"path": rel_path.replace(os.sep, "/"), "content": content}
+                    )
                 except Exception as e:
                     logger.debug(f"Skipping file {rel_path} due to read error: {e}")
-                    
+
         return extracted_files
 
-    def fetch_repository_files(self, repo_fullName: str, branch: str = "main") -> List[Dict[str, Any]]:
+    def fetch_repository_files(
+        self, repo_fullName: str, branch: str = "main"
+    ) -> List[Dict[str, Any]]:
         """Queries the local repository clone or fallback API to get all file metadata recursively.
 
         Args:
@@ -308,7 +406,7 @@ class GitHubService:
             A list of dictionary records containing file paths, types, sizes, and URLs.
         """
         dest_dir = self.get_local_repo_path(repo_fullName)
-        
+
         # If not cloned, clone it
         if not os.path.exists(dest_dir):
             repo_url = f"https://github.com/{repo_fullName}.git"
@@ -319,8 +417,20 @@ class GitHubService:
                 raise
 
         files_meta = []
-        ignored_names = {"node_modules", ".git", "dist", "build", ".next", "venv", ".venv", "__pycache__", ".tox", "coverage", "data"}
-        
+        ignored_names = {
+            "node_modules",
+            ".git",
+            "dist",
+            "build",
+            ".next",
+            "venv",
+            ".venv",
+            "__pycache__",
+            ".tox",
+            "coverage",
+            "data",
+        }
+
         for root, dirs, files in os.walk(dest_dir):
             dirs[:] = [d for d in dirs if d not in ignored_names]
             for file in files:
@@ -329,15 +439,19 @@ class GitHubService:
                 if any(part in ignored_names for part in rel_path.split("/")):
                     continue
                 size = os.path.getsize(file_path)
-                files_meta.append({
-                    "path": rel_path,
-                    "type": "blob",
-                    "size": size,
-                    "url": f"https://github.com/{repo_fullName}/blob/{branch}/{rel_path}"
-                })
+                files_meta.append(
+                    {
+                        "path": rel_path,
+                        "type": "blob",
+                        "size": size,
+                        "url": f"https://github.com/{repo_fullName}/blob/{branch}/{rel_path}",
+                    }
+                )
         return files_meta
 
-    def fetch_file_content(self, repo_fullName: str, file_path: str, ref: str = "main") -> str:
+    def fetch_file_content(
+        self, repo_fullName: str, file_path: str, ref: str = "main"
+    ) -> str:
         """Downloads/reads the raw content of a specific file from a GitHub repository clone.
 
         Args:
@@ -350,14 +464,14 @@ class GitHubService:
         """
         dest_dir = self.get_local_repo_path(repo_fullName)
         local_file = os.path.join(dest_dir, file_path.replace("/", os.sep))
-        
+
         if os.path.exists(local_file):
             try:
                 with open(local_file, "r", encoding="utf-8", errors="ignore") as f:
                     return f.read()
             except Exception as e:
                 raise IOError(f"Error reading file {file_path} from local storage: {e}")
-        
+
         # If not found locally, try to fetch via GitHub API
         if not self.token:
             raise RuntimeError("GITHUB_TOKEN is not loaded.")
@@ -368,17 +482,24 @@ class GitHubService:
             data = resp.json()
             if "content" in data and data.get("encoding") == "base64":
                 import base64
-                return base64.b64decode(data["content"]).decode("utf-8", errors="ignore")
+
+                return base64.b64decode(data["content"]).decode(
+                    "utf-8", errors="ignore"
+                )
             elif "download_url" in data:
                 raw_resp = requests.get(data["download_url"])
                 raw_resp.raise_for_status()
                 return raw_resp.text
         except Exception as e:
             logger.error(f"Failed to fetch remote file content for {file_path}: {e}")
-            
-        raise FileNotFoundError(f"File {file_path} not found locally or remotely for repository {repo_fullName}.")
 
-    def fetch_issues(self, repo_fullName: str, state: str = "open") -> List[Dict[str, Any]]:
+        raise FileNotFoundError(
+            f"File {file_path} not found locally or remotely for repository {repo_fullName}."
+        )
+
+    def fetch_issues(
+        self, repo_fullName: str, state: str = "open"
+    ) -> List[Dict[str, Any]]:
         """Queries GitHub Issues API to fetch issues for mapping analysis.
 
         Args:
@@ -392,31 +513,35 @@ class GitHubService:
             raise RuntimeError("GITHUB_TOKEN is not loaded.")
         url = f"https://api.github.com/repos/{repo_fullName}/issues"
         params = {"state": state, "per_page": 100}
-        
+
         try:
             resp = self.session.get(url, params=params)
             resp.raise_for_status()
             issues = resp.json()
-            
+
             result = []
             for issue in issues:
                 # GitHub issues endpoint also returns pull requests, filter them out
                 if "pull_request" in issue:
                     continue
-                result.append({
-                    "number": issue.get("number"),
-                    "title": issue.get("title"),
-                    "body": issue.get("body", ""),
-                    "url": issue.get("html_url"),
-                    "state": issue.get("state")
-                })
+                result.append(
+                    {
+                        "number": issue.get("number"),
+                        "title": issue.get("title"),
+                        "body": issue.get("body", ""),
+                        "url": issue.get("html_url"),
+                        "state": issue.get("state"),
+                    }
+                )
             return result
         except Exception as e:
             logger.error(f"Failed to fetch issues for {repo_fullName}: {e}")
             # Fallback to empty list or raise depending on preferences
             return []
 
-    def fetch_pull_request_metadata(self, owner: str, repo: str, pr_number: int) -> Dict[str, Any]:
+    def fetch_pull_request_metadata(
+        self, owner: str, repo: str, pr_number: int
+    ) -> Dict[str, Any]:
         """Fetch PR metadata from the GitHub API.
 
         Args:
@@ -443,10 +568,14 @@ class GitHubService:
                 "head_sha": data.get("head", {}).get("sha", ""),
             }
         except Exception as e:
-            logger.error(f"Failed to fetch PR metadata for {owner}/{repo}/pulls/{pr_number}: {e}")
+            logger.error(
+                f"Failed to fetch PR metadata for {owner}/{repo}/pulls/{pr_number}: {e}"
+            )
             raise RuntimeError(f"Failed to fetch PR metadata: {e}")
 
-    def fetch_pull_request_files(self, owner: str, repo: str, pr_number: int) -> List[Dict[str, Any]]:
+    def fetch_pull_request_files(
+        self, owner: str, repo: str, pr_number: int
+    ) -> List[Dict[str, Any]]:
         """Fetch files changed in a PR from the GitHub API (handles pagination).
 
         Args:
@@ -463,29 +592,35 @@ class GitHubService:
         result = []
         page = 1
         per_page = 100
-        
+
         while True:
             try:
-                resp = self.session.get(url, params={"page": page, "per_page": per_page})
+                resp = self.session.get(
+                    url, params={"page": page, "per_page": per_page}
+                )
                 resp.raise_for_status()
                 files = resp.json()
                 if not files:
                     break
                 for f in files:
-                    result.append({
-                        "filename": f.get("filename", ""),
-                        "status": f.get("status", ""),
-                        "additions": f.get("additions", 0),
-                        "deletions": f.get("deletions", 0),
-                        "changes": f.get("changes", 0),
-                    })
+                    result.append(
+                        {
+                            "filename": f.get("filename", ""),
+                            "status": f.get("status", ""),
+                            "additions": f.get("additions", 0),
+                            "deletions": f.get("deletions", 0),
+                            "changes": f.get("changes", 0),
+                        }
+                    )
                 if len(files) < per_page:
                     break
                 page += 1
             except Exception as e:
-                logger.error(f"Failed to fetch PR files for {owner}/{repo}/pulls/{pr_number} page {page}: {e}")
+                logger.error(
+                    f"Failed to fetch PR files for {owner}/{repo}/pulls/{pr_number} page {page}: {e}"
+                )
                 raise RuntimeError(f"Failed to fetch PR files: {e}")
-                
+
         return result
 
     def get_rate_limit_info(self) -> Dict[str, Any]:
@@ -514,4 +649,3 @@ class GitHubService:
                 "remaining": 0,
                 "reset": 0,
             }
-

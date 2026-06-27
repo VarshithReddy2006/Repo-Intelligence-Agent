@@ -63,7 +63,9 @@ export const AnimatedNumber: React.FC<AnimatedNumberProps> = ({
     };
   }, [value, duration, prefersReduced]);
 
-  const formatted = display.toFixed(decimals);
+  const formatted = decimals === 0
+    ? Math.round(display).toLocaleString()
+    : display.toFixed(decimals);
 
   return (
     <span className={`animated-number tabular-nums ${className}`} aria-label={`${prefix}${value}${suffix}`}>

@@ -11,20 +11,17 @@ from __future__ import annotations
 
 import json
 import os
-from collections import Counter
-from typing import Any, Dict, List, Optional
-from unittest.mock import MagicMock, patch
+from typing import Dict
+from unittest.mock import MagicMock
 
 import networkx as nx
 import pytest
 
 from models.call_graph import (
-    BlastRadiusResult,
     CallGraphSummary,
-    CallHierarchyNode,
     CallNode,
 )
-from models.symbol import Symbol, SymbolIndex
+from models.symbol import Symbol
 from services.call_graph_service import (
     CallGraphService,
     _node_id,
@@ -35,6 +32,7 @@ from services.call_graph_service import (
 # ---------------------------------------------------------------------------
 # Helpers & fixtures
 # ---------------------------------------------------------------------------
+
 
 def make_symbol(name, sym_type, file_path, line=1, parent_class=None, lang="python"):
     return Symbol(
@@ -87,6 +85,7 @@ function run() {
 # Unit: helper functions
 # ---------------------------------------------------------------------------
 
+
 class TestHelpers:
     def test_node_id_format(self):
         nid = _node_id("services/auth.py", "AuthService.login")
@@ -115,6 +114,7 @@ class TestHelpers:
 # Unit: AST call site extraction
 # ---------------------------------------------------------------------------
 
+
 class TestCallSiteExtraction:
     def setup_method(self):
         self.svc = CallGraphService(call_graphs_dir="/tmp")
@@ -141,13 +141,12 @@ class TestCallSiteExtraction:
             assert line >= 1
 
     def test_no_calls_in_empty_file(self):
-        sites = self.svc._find_call_sites(
-            self._parse("python", "x = 1\n"), "python"
-        )
+        sites = self.svc._find_call_sites(self._parse("python", "x = 1\n"), "python")
         assert sites == []
 
     def _parse(self, lang_name, code):
         from services.tree_sitter_service import _LANGUAGE_REGISTRY
+
         ext_map = {
             "python": ".py",
             "typescript": ".ts",
@@ -164,12 +163,14 @@ class TestCallSiteExtraction:
 # Unit: scope map building
 # ---------------------------------------------------------------------------
 
+
 class TestScopeMap:
     def setup_method(self):
         self.svc = CallGraphService(call_graphs_dir="/tmp")
 
     def _build(self, code, file_path="test.py", lang="python"):
         from services.tree_sitter_service import _LANGUAGE_REGISTRY
+
         ext = os.path.splitext(file_path)[1]
         lang_name, loader = _LANGUAGE_REGISTRY[ext]
         parser = self.svc._ts._get_parser(lang_name, loader)
@@ -180,17 +181,25 @@ class TestScopeMap:
         if lang == "python":
             all_nodes[_node_id(file_path, "helper")] = CallNode(
                 node_id=_node_id(file_path, "helper"),
-                name="helper", qualified="helper",
-                file_path=file_path, line_number=1,
-                language="python", symbol_type="function",
+                name="helper",
+                qualified="helper",
+                file_path=file_path,
+                line_number=1,
+                language="python",
+                symbol_type="function",
             )
             all_nodes[_node_id(file_path, "main")] = CallNode(
                 node_id=_node_id(file_path, "main"),
-                name="main", qualified="main",
-                file_path=file_path, line_number=4,
-                language="python", symbol_type="function",
+                name="main",
+                qualified="main",
+                file_path=file_path,
+                line_number=4,
+                language="python",
+                symbol_type="function",
             )
-        return self.svc._build_scope_map(tree.root_node, file_path, all_nodes, lang_name)
+        return self.svc._build_scope_map(
+            tree.root_node, file_path, all_nodes, lang_name
+        )
 
     def test_python_scope_map_captures_functions(self):
         scopes = self._build(PYTHON_FIXTURE)
@@ -205,12 +214,15 @@ class TestScopeMap:
         # Sort by start byte
         ranges.sort()
         if len(ranges) >= 2:
-            assert ranges[0][1] <= ranges[1][0], "helper and main scopes should not overlap"
+            assert ranges[0][1] <= ranges[1][0], (
+                "helper and main scopes should not overlap"
+            )
 
 
 # ---------------------------------------------------------------------------
 # Unit: callee resolution
 # ---------------------------------------------------------------------------
+
 
 class TestCalleeResolution:
     def setup_method(self):
@@ -222,18 +234,25 @@ class TestCalleeResolution:
         all_nodes = {
             _node_id("utils/helper.py", "helper"): CallNode(
                 node_id=_node_id("utils/helper.py", "helper"),
-                name="helper", qualified="helper",
-                file_path="utils/helper.py", line_number=1,
-                language="python", symbol_type="function",
+                name="helper",
+                qualified="helper",
+                file_path="utils/helper.py",
+                line_number=1,
+                language="python",
+                symbol_type="function",
             ),
             _node_id("other/helper.py", "helper"): CallNode(
                 node_id=_node_id("other/helper.py", "helper"),
-                name="helper", qualified="helper",
-                file_path="other/helper.py", line_number=1,
-                language="python", symbol_type="function",
+                name="helper",
+                qualified="helper",
+                file_path="other/helper.py",
+                line_number=1,
+                language="python",
+                symbol_type="function",
             ),
         }
         from collections import defaultdict
+
         defn_by_name = defaultdict(list)
         defn_by_name["helper"].extend([sym_a, sym_b])
         return all_nodes, defn_by_name
@@ -244,14 +263,20 @@ class TestCalleeResolution:
         sym_same = make_symbol("helper", "function", "caller.py")
         all_nodes[_node_id("caller.py", "helper")] = CallNode(
             node_id=_node_id("caller.py", "helper"),
-            name="helper", qualified="helper",
-            file_path="caller.py", line_number=1,
-            language="python", symbol_type="function",
+            name="helper",
+            qualified="helper",
+            file_path="caller.py",
+            line_number=1,
+            language="python",
+            symbol_type="function",
         )
         defn_by_name["helper"].insert(0, sym_same)
         nid, amb = self.svc._resolve_callee(
-            "helper", _node_id("caller.py", "main"),
-            "caller.py", defn_by_name, all_nodes
+            "helper",
+            _node_id("caller.py", "main"),
+            "caller.py",
+            defn_by_name,
+            all_nodes,
         )
         assert nid == _node_id("caller.py", "helper")
         assert amb is False
@@ -259,32 +284,33 @@ class TestCalleeResolution:
     def test_global_match_marked_ambiguous(self):
         all_nodes, defn_by_name = self._make_nodes_and_defns()
         nid, amb = self.svc._resolve_callee(
-            "helper", _node_id("main.py", "run"),
-            "main.py", defn_by_name, all_nodes
+            "helper", _node_id("main.py", "run"), "main.py", defn_by_name, all_nodes
         )
         assert nid is not None
         assert amb is True  # two global candidates → ambiguous
 
     def test_unknown_callee_returns_none(self):
         from collections import defaultdict
+
         nid, amb = self.svc._resolve_callee(
-            "nonexistent", "main.py::run",
-            "main.py", defaultdict(list), {}
+            "nonexistent", "main.py::run", "main.py", defaultdict(list), {}
         )
         assert nid is None
 
     def test_external_library_calls_not_resolved(self):
         """Calls to names not in symbol index → None (no fabrication)."""
         from collections import defaultdict
+
         nid, _ = self.svc._resolve_callee(
-            "os.path.join", "utils.py::helper", "utils.py",
-            defaultdict(list), {}
+            "os.path.join", "utils.py::helper", "utils.py", defaultdict(list), {}
         )
         assert nid is None
+
 
 # ---------------------------------------------------------------------------
 # Unit: BFS helper
 # ---------------------------------------------------------------------------
+
 
 class TestBFS:
     def _make_graph(self):
@@ -324,6 +350,7 @@ class TestBFS:
 # Unit: blast radius
 # ---------------------------------------------------------------------------
 
+
 class TestBlastRadius:
     def _make_service_with_graph(self, tmp_path):
         G = nx.DiGraph()
@@ -353,8 +380,11 @@ class TestBlastRadius:
         # The chain E→D→C→B→A produces 4 callers → risk = "low" (< 5)
         # Verify the risk is consistent with the thresholds rather than hard-coding "high"
         from services.call_graph_service import _BLAST_MED, _BLAST_HIGH
+
         n = len(br.affected_functions)
-        expected = "high" if n >= _BLAST_HIGH else "medium" if n >= _BLAST_MED else "low"
+        expected = (
+            "high" if n >= _BLAST_HIGH else "medium" if n >= _BLAST_MED else "low"
+        )
         assert br.risk_level == expected
 
     def test_blast_radius_risk_low_for_leaf(self, tmp_path):
@@ -384,12 +414,13 @@ class TestBlastRadius:
 # Unit: SCC / recursion detection
 # ---------------------------------------------------------------------------
 
+
 class TestSCC:
     def test_direct_recursion_detected(self):
         G = nx.DiGraph()
         G.add_node("A")
         G.add_edge("A", "A", relationship="calls")  # self-loop
-        sccs = [c for c in nx.strongly_connected_components(G) if len(c) > 1]
+        [c for c in nx.strongly_connected_components(G) if len(c) > 1]
         # Self-loops don't form SCC > 1 in NetworkX but we detect them via has_edge(n,n)
         assert G.has_edge("A", "A")
 
@@ -412,20 +443,29 @@ class TestSCC:
 # Unit: call hierarchy
 # ---------------------------------------------------------------------------
 
+
 class TestCallHierarchy:
     def _make_service_with_graph(self, tmp_path):
         G = nx.DiGraph()
         G.add_edge("main", "auth", relationship="calls")
-        G.add_edge("main", "db",   relationship="calls")
+        G.add_edge("main", "db", relationship="calls")
         G.add_edge("auth", "hash", relationship="calls")
         for n in G.nodes():
-            G.nodes[n].update({
-                "name": n, "qualified": n, "file_path": f"{n}.py",
-                "fan_in": G.in_degree(n), "fan_out": G.out_degree(n),
-                "is_recursive": False, "is_entry": G.in_degree(n) == 0,
-                "line_number": 1, "language": "python", "symbol_type": "function",
-                "parent_class": "",
-            })
+            G.nodes[n].update(
+                {
+                    "name": n,
+                    "qualified": n,
+                    "file_path": f"{n}.py",
+                    "fan_in": G.in_degree(n),
+                    "fan_out": G.out_degree(n),
+                    "is_recursive": False,
+                    "is_entry": G.in_degree(n) == 0,
+                    "line_number": 1,
+                    "language": "python",
+                    "symbol_type": "function",
+                    "parent_class": "",
+                }
+            )
         svc = make_service(tmp_path)
         svc.graph_service.load_graph.return_value = G
         return svc
@@ -461,22 +501,32 @@ class TestCallHierarchy:
         G.add_edge("A", "B", relationship="calls")
         G.add_edge("B", "A", relationship="calls")  # cycle
         for n in G.nodes():
-            G.nodes[n].update({
-                "name": n, "qualified": n, "file_path": f"{n}.py",
-                "fan_in": G.in_degree(n), "fan_out": G.out_degree(n),
-                "is_recursive": False, "is_entry": False,
-                "line_number": 1, "language": "python", "symbol_type": "function",
-                "parent_class": "",
-            })
+            G.nodes[n].update(
+                {
+                    "name": n,
+                    "qualified": n,
+                    "file_path": f"{n}.py",
+                    "fan_in": G.in_degree(n),
+                    "fan_out": G.out_degree(n),
+                    "is_recursive": False,
+                    "is_entry": False,
+                    "line_number": 1,
+                    "language": "python",
+                    "symbol_type": "function",
+                    "parent_class": "",
+                }
+            )
         svc = make_service(tmp_path)
         svc.graph_service.load_graph.return_value = G
         tree = svc.get_hierarchy("owner/repo", "A", direction="down", max_depth=5)
         # B should appear; back-edge to A should be flagged
         assert tree is not None
 
+
 # ---------------------------------------------------------------------------
 # Unit: graph serialisation
 # ---------------------------------------------------------------------------
+
 
 class TestGraphSerialisation:
     def _make_graph(self):
@@ -484,13 +534,21 @@ class TestGraphSerialisation:
         G.add_edge("f.py::main", "f.py::helper", relationship="calls")
         for n in G.nodes():
             name = n.split("::")[1]
-            G.nodes[n].update({
-                "name": name, "qualified": name, "file_path": "f.py",
-                "fan_in": G.in_degree(n), "fan_out": G.out_degree(n),
-                "is_recursive": False, "is_entry": G.in_degree(n) == 0,
-                "line_number": 1, "language": "python",
-                "symbol_type": "function", "parent_class": "",
-            })
+            G.nodes[n].update(
+                {
+                    "name": name,
+                    "qualified": name,
+                    "file_path": "f.py",
+                    "fan_in": G.in_degree(n),
+                    "fan_out": G.out_degree(n),
+                    "is_recursive": False,
+                    "is_entry": G.in_degree(n) == 0,
+                    "line_number": 1,
+                    "language": "python",
+                    "symbol_type": "function",
+                    "parent_class": "",
+                }
+            )
         return G
 
     def test_serialised_nodes_have_required_fields(self, tmp_path):
@@ -498,9 +556,20 @@ class TestGraphSerialisation:
         G = self._make_graph()
         result = svc._serialise_subgraph(G, set(G.nodes()))
         assert len(result["nodes"]) == 2
-        required = {"id", "label", "category", "degree", "centrality",
-                    "language", "highlighted", "is_focus",
-                    "fan_in", "fan_out", "is_recursive", "file_path"}
+        required = {
+            "id",
+            "label",
+            "category",
+            "degree",
+            "centrality",
+            "language",
+            "highlighted",
+            "is_focus",
+            "fan_in",
+            "fan_out",
+            "is_recursive",
+            "file_path",
+        }
         for node in result["nodes"]:
             assert required.issubset(set(node.keys()))
 
@@ -537,18 +606,27 @@ class TestGraphSerialisation:
 # Unit: stats
 # ---------------------------------------------------------------------------
 
+
 class TestStats:
     def _make_service_with_graph(self, tmp_path):
         G = nx.DiGraph()
         G.add_edges_from([("A", "B"), ("B", "C"), ("C", "B")])  # B↔C cycle
         for n in G.nodes():
-            G.nodes[n].update({
-                "name": n, "qualified": n, "file_path": f"{n}.py",
-                "fan_in": G.in_degree(n), "fan_out": G.out_degree(n),
-                "is_recursive": G.has_edge(n, n), "is_entry": G.in_degree(n) == 0,
-                "line_number": 1, "language": "python",
-                "symbol_type": "function", "parent_class": "",
-            })
+            G.nodes[n].update(
+                {
+                    "name": n,
+                    "qualified": n,
+                    "file_path": f"{n}.py",
+                    "fan_in": G.in_degree(n),
+                    "fan_out": G.out_degree(n),
+                    "is_recursive": G.has_edge(n, n),
+                    "is_entry": G.in_degree(n) == 0,
+                    "line_number": 1,
+                    "language": "python",
+                    "symbol_type": "function",
+                    "parent_class": "",
+                }
+            )
         svc = make_service(tmp_path)
         svc.graph_service.load_graph.return_value = G
         svc.load_summary = MagicMock(return_value=None)
@@ -581,24 +659,52 @@ class TestStats:
 # Unit: search functions
 # ---------------------------------------------------------------------------
 
+
 class TestSearchFunctions:
     def _make_service_with_graph(self, tmp_path):
         G = nx.DiGraph()
-        G.add_node("auth.py::authenticate",
-                   name="authenticate", qualified="authenticate",
-                   file_path="auth.py", fan_in=3, fan_out=1,
-                   is_recursive=False, is_entry=False, line_number=1,
-                   language="python", symbol_type="function", parent_class="")
-        G.add_node("auth.py::hash_password",
-                   name="hash_password", qualified="hash_password",
-                   file_path="auth.py", fan_in=1, fan_out=0,
-                   is_recursive=False, is_entry=False, line_number=10,
-                   language="python", symbol_type="function", parent_class="")
-        G.add_node("db.py::query",
-                   name="query", qualified="query",
-                   file_path="db.py", fan_in=5, fan_out=0,
-                   is_recursive=False, is_entry=False, line_number=5,
-                   language="python", symbol_type="function", parent_class="")
+        G.add_node(
+            "auth.py::authenticate",
+            name="authenticate",
+            qualified="authenticate",
+            file_path="auth.py",
+            fan_in=3,
+            fan_out=1,
+            is_recursive=False,
+            is_entry=False,
+            line_number=1,
+            language="python",
+            symbol_type="function",
+            parent_class="",
+        )
+        G.add_node(
+            "auth.py::hash_password",
+            name="hash_password",
+            qualified="hash_password",
+            file_path="auth.py",
+            fan_in=1,
+            fan_out=0,
+            is_recursive=False,
+            is_entry=False,
+            line_number=10,
+            language="python",
+            symbol_type="function",
+            parent_class="",
+        )
+        G.add_node(
+            "db.py::query",
+            name="query",
+            qualified="query",
+            file_path="db.py",
+            fan_in=5,
+            fan_out=0,
+            is_recursive=False,
+            is_entry=False,
+            line_number=5,
+            language="python",
+            symbol_type="function",
+            parent_class="",
+        )
         svc = make_service(tmp_path)
         svc.graph_service.load_graph.return_value = G
         return svc
@@ -629,11 +735,12 @@ class TestSearchFunctions:
 # Unit: unreachable functions
 # ---------------------------------------------------------------------------
 
+
 class TestUnreachableFunctions:
     def _make_service_with_graph(self, tmp_path):
         G = nx.DiGraph()
         G.add_edge("main", "util")
-        G.add_node("orphan")   # no path from main
+        G.add_node("orphan")  # no path from main
         G.add_node("dead_leaf")  # no path from main
         svc = make_service(tmp_path)
         svc.graph_service.load_graph.return_value = G
@@ -663,6 +770,7 @@ class TestUnreachableFunctions:
 # Persistence
 # ---------------------------------------------------------------------------
 
+
 class TestPersistence:
     def test_summary_save_and_load(self, tmp_path):
         svc = make_service(tmp_path)
@@ -686,24 +794,37 @@ class TestPersistence:
         path = svc._summary_path("owner/repo")
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as f:
-            json.dump({"_schema_version": 0, "repo": "owner/repo",
-                       "generated_at": "", "node_count": 0, "edge_count": 0}, f)
+            json.dump(
+                {
+                    "_schema_version": 0,
+                    "repo": "owner/repo",
+                    "generated_at": "",
+                    "node_count": 0,
+                    "edge_count": 0,
+                },
+                f,
+            )
         assert svc.load_summary("owner/repo") is None
 
     def test_atomic_write_tmp_file_cleaned_up(self, tmp_path):
         svc = make_service(tmp_path)
         summary = CallGraphSummary(
-            repo="owner/repo", generated_at="2024-01-01T00:00:00Z",
-            node_count=1, edge_count=0,
+            repo="owner/repo",
+            generated_at="2024-01-01T00:00:00Z",
+            node_count=1,
+            edge_count=0,
         )
         svc._save_summary("owner/repo", summary)
         tmp_path_str = svc._summary_path("owner/repo") + ".tmp"
-        assert not os.path.exists(tmp_path_str), "tmp file should be removed after atomic rename"
+        assert not os.path.exists(tmp_path_str), (
+            "tmp file should be removed after atomic rename"
+        )
 
 
 # ---------------------------------------------------------------------------
 # API endpoint smoke tests (using FastAPI TestClient)
 # ---------------------------------------------------------------------------
+
 
 class TestCallGraphAPIEndpoints:
     @pytest.fixture(autouse=True)
@@ -715,7 +836,9 @@ class TestCallGraphAPIEndpoints:
         # Seed analysis store so build endpoint finds the repo
         ANALYSIS_STORE["test/repo"] = {
             "analysis": RepositoryAnalysis(
-                structure={}, dependencies=[], tech_stack=[],
+                structure={},
+                dependencies=[],
+                tech_stack=[],
                 metadata={"local_path": str(tmp_path)},
             ),
             "architecture": AS(summary="", reading_order=[], relationships=[]),

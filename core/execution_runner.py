@@ -11,10 +11,20 @@ from typing import Any, Dict, Generator, List, Optional
 from core.analysis_registry import AnalysisRegistry, AnalysisNode
 from core.incremental_build_planner import BuildTask
 from models.build_event import (
-    BuildEvent, TaskQueued, TaskStarted, TaskCompleted, TaskSkipped,
-    TaskFailed, StageCompleted, BuildCompleted, StartEvent, CacheHitEvent,
-    LoadEvent, CacheMissEvent, ProgressEvent, SaveEvent, BuildTimeEvent,
-    EndEvent, ErrorEvent
+    BuildEvent,
+    TaskQueued,
+    TaskStarted,
+    TaskCompleted,
+    TaskSkipped,
+    TaskFailed,
+    StageCompleted,
+    CacheHitEvent,
+    LoadEvent,
+    CacheMissEvent,
+    ProgressEvent,
+    SaveEvent,
+    BuildTimeEvent,
+    ErrorEvent,
 )
 
 logger = logging.getLogger(__name__)
@@ -32,6 +42,7 @@ def execute_single_task(
 ) -> List[BuildEvent]:
     """Execute a single build task and capture all events generated."""
     from backend.logging_config import build_id_var, repository_var, analysis_var
+
     token_build = build_id_var.set(build_id)
     token_repo = repository_var.set(repo_name)
     token_analysis = analysis_var.set(node.name)
@@ -54,6 +65,7 @@ def execute_single_task(
         try:
             # Resolve service singleton
             from backend.dependencies import get_service_by_class
+
             service_instance = get_service_by_class(node.service_class)
 
             if service_instance is not None:
@@ -62,49 +74,99 @@ def execute_single_task(
                 if node.name == "Symbol Index":
                     if has_new_api:
                         if task.mode == "FULL":
-                            service_instance.build_full(repo_name, repo_path=repo_path, files=files)
+                            service_instance.build_full(
+                                repo_name, repo_path=repo_path, files=files
+                            )
                         else:
-                            service_instance.build_partial(repo_name, task.changed_files, repo_path=repo_path, files=files)
+                            service_instance.build_partial(
+                                repo_name,
+                                task.changed_files,
+                                repo_path=repo_path,
+                                files=files,
+                            )
                     else:
-                        service_instance.build(repo_name, repo_path=repo_path, files=files)
+                        service_instance.build(
+                            repo_name, repo_path=repo_path, files=files
+                        )
 
                 elif node.name == "Dependency Graph":
                     if has_new_api:
                         if task.mode == "FULL":
-                            service_instance.build_full(repo_name, repo_path=repo_path, files=files)
+                            service_instance.build_full(
+                                repo_name, repo_path=repo_path, files=files
+                            )
                         else:
-                            service_instance.build_partial(repo_name, task.changed_files, repo_path=repo_path, files=files)
+                            service_instance.build_partial(
+                                repo_name,
+                                task.changed_files,
+                                repo_path=repo_path,
+                                files=files,
+                            )
                     else:
-                        service_instance.build(repo_name, repo_path=repo_path, files=files, force_rebuild=force_rebuild)
+                        service_instance.build(
+                            repo_name,
+                            repo_path=repo_path,
+                            files=files,
+                            force_rebuild=force_rebuild,
+                        )
 
                 elif node.name == "Call Graph":
                     if has_new_api:
                         if task.mode == "FULL":
-                            gen = service_instance.build_full(repo_name, context=context, files=files)
+                            gen = service_instance.build_full(
+                                repo_name, context=context, files=files
+                            )
                         else:
-                            gen = service_instance.build_partial(repo_name, task.changed_files, context=context, files=files)
+                            gen = service_instance.build_partial(
+                                repo_name,
+                                task.changed_files,
+                                context=context,
+                                files=files,
+                            )
                         for progress in gen:
-                            events.append(ProgressEvent(repo_name, node.name, progress.get("message", "")))
+                            events.append(
+                                ProgressEvent(
+                                    repo_name, node.name, progress.get("message", "")
+                                )
+                            )
                     else:
                         service_instance.build(repo_name, context=context)
 
                 elif node.name == "Git History":
                     if has_new_api:
                         if task.mode == "FULL":
-                            gen = service_instance.build_full(repo_name, since_days=30, context=context)
+                            gen = service_instance.build_full(
+                                repo_name, since_days=30, context=context
+                            )
                         else:
-                            gen = service_instance.build_partial(repo_name, task.changed_files, since_days=30, context=context)
+                            gen = service_instance.build_partial(
+                                repo_name,
+                                task.changed_files,
+                                since_days=30,
+                                context=context,
+                            )
                     else:
                         gen = service_instance.build(repo_name, since_days=30)
                     for progress in gen:
-                        events.append(ProgressEvent(repo_name, node.name, progress.get("message", "")))
+                        events.append(
+                            ProgressEvent(
+                                repo_name, node.name, progress.get("message", "")
+                            )
+                        )
 
                 elif node.name == "API Surface":
                     if has_new_api:
                         if task.mode == "FULL":
-                            gen = service_instance.build_full(repo_name, context=context, files=files)
+                            gen = service_instance.build_full(
+                                repo_name, context=context, files=files
+                            )
                         else:
-                            gen = service_instance.build_partial(repo_name, task.changed_files, context=context, files=files)
+                            gen = service_instance.build_partial(
+                                repo_name,
+                                task.changed_files,
+                                context=context,
+                                files=files,
+                            )
                         for progress in gen:
                             pass
                     else:
@@ -113,14 +175,24 @@ def execute_single_task(
                     # Custom/mock service execution fallback
                     if has_new_api:
                         if task.mode == "FULL":
-                            service_instance.build_full(repo_name, repo_path=repo_path, files=files)
+                            service_instance.build_full(
+                                repo_name, repo_path=repo_path, files=files
+                            )
                         else:
-                            service_instance.build_partial(repo_name, task.changed_files, repo_path=repo_path, files=files)
+                            service_instance.build_partial(
+                                repo_name,
+                                task.changed_files,
+                                repo_path=repo_path,
+                                files=files,
+                            )
                     elif hasattr(service_instance, "build"):
-                        service_instance.build(repo_name, repo_path=repo_path, files=files)
+                        service_instance.build(
+                            repo_name, repo_path=repo_path, files=files
+                        )
             else:
                 # Placeholder for future analyses (service_instance is None)
                 from backend.dependencies import snapshot_store
+
                 key = node.outputs[0] if node.outputs else node.name.lower()
                 snapshot_store.save(
                     repo_name,
@@ -134,15 +206,21 @@ def execute_single_task(
             events.append(BuildTimeEvent(repo_name, node.name, duration))
 
             from core.metrics import metrics_registry
-            metrics_registry.record_task_duration(repo_name, node.name, duration / 1000.0)
+
+            metrics_registry.record_task_duration(
+                repo_name, node.name, duration / 1000.0
+            )
 
         except Exception as exc:
             duration = (time.time() - start_time) * 1000
             events.append(TaskFailed(repo_name, node.name, str(exc)))
             events.append(ErrorEvent(repo_name, str(exc), node=node.name))
-            
+
             from core.metrics import metrics_registry
-            metrics_registry.record_task_duration(repo_name, node.name, duration / 1000.0)
+
+            metrics_registry.record_task_duration(
+                repo_name, node.name, duration / 1000.0
+            )
             raise
     finally:
         build_id_var.reset(token_build)
@@ -167,6 +245,7 @@ class ParallelExecutionRunner:
         build_id: Optional[str] = None,
     ) -> None:
         import uuid
+
         self.repo_name = repo_name
         self.repo_path = repo_path
         self.files = files
@@ -180,7 +259,9 @@ class ParallelExecutionRunner:
             max_workers = max(1, (os.cpu_count() or 4) - 1)
         self.max_workers = max_workers
 
-    def run_stages(self, stages: List[List[BuildTask]]) -> Generator[BuildEvent, None, None]:
+    def run_stages(
+        self, stages: List[List[BuildTask]]
+    ) -> Generator[BuildEvent, None, None]:
         """Runs the planned stages sequentially, executing tasks within each stage in parallel."""
         # Yield queued events for all tasks first
         for stage in stages:
@@ -251,7 +332,9 @@ class ParallelExecutionRunner:
                     if exception_to_raise:
                         raise exception_to_raise
                     else:
-                        raise RuntimeError(f"Stage {stage_idx} failed due to worker error.")
+                        raise RuntimeError(
+                            f"Stage {stage_idx} failed due to worker error."
+                        )
 
                 # Stage completed successfully: yield events alphabetically
                 stage_tasks_sorted = sorted(stage, key=lambda t: t.analysis)

@@ -4,6 +4,7 @@ We load the module via importlib because it lives outside the import path,
 then exercise the `GitHub` helper and `fetch_pr_analysis` with `httpx.MockTransport`
 fixtures — no real network and no real `PRIntelligenceService` involvement.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -19,7 +20,10 @@ from services.github_review_renderer import STICKY_MARKER
 
 _ENTRYPOINT_PATH = (
     Path(__file__).resolve().parents[1]
-    / ".github" / "actions" / "repo-intelligence" / "entrypoint.py"
+    / ".github"
+    / "actions"
+    / "repo-intelligence"
+    / "entrypoint.py"
 )
 
 
@@ -38,8 +42,11 @@ entrypoint = _load_entrypoint()
 
 # -- httpx fixtures --------------------------------------------------------
 
-def _mock_client(handler: Callable[[httpx.Request], httpx.Response],
-                 base_url: str = "https://api.github.com") -> httpx.Client:
+
+def _mock_client(
+    handler: Callable[[httpx.Request], httpx.Response],
+    base_url: str = "https://api.github.com",
+) -> httpx.Client:
     return httpx.Client(
         base_url=base_url,
         transport=httpx.MockTransport(handler),
@@ -56,6 +63,7 @@ def _comment(comment_id: int, body: str) -> dict:
 
 
 # -- fetch_pr_analysis -----------------------------------------------------
+
 
 def _pr_analysis_payload() -> dict:
     return {
@@ -100,8 +108,12 @@ def test_fetch_pr_analysis_posts_to_correct_endpoint_with_bearer_token():
 
     client = _mock_client(handler, base_url="https://api.example.com")
     result = entrypoint.fetch_pr_analysis(
-        "https://api.example.com/", "acme", "widgets", 7,
-        api_token="secret", client=client,
+        "https://api.example.com/",
+        "acme",
+        "widgets",
+        7,
+        api_token="secret",
+        client=client,
     )
 
     assert result.risk_level == "LOW"
@@ -117,18 +129,26 @@ def test_fetch_pr_analysis_raises_on_http_error():
     client = _mock_client(handler, base_url="https://api.example.com")
     with pytest.raises(httpx.HTTPStatusError):
         entrypoint.fetch_pr_analysis(
-            "https://api.example.com", "a", "b", 1, client=client,
+            "https://api.example.com",
+            "a",
+            "b",
+            1,
+            client=client,
         )
 
 
 # -- GitHub.find_sticky_comment -------------------------------------------
 
+
 def test_find_sticky_comment_returns_matching_entry():
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=[
-            _comment(1, "no marker here"),
-            _comment(2, f"{STICKY_MARKER}\nbody"),
-        ])
+        return httpx.Response(
+            200,
+            json=[
+                _comment(1, "no marker here"),
+                _comment(2, f"{STICKY_MARKER}\nbody"),
+            ],
+        )
 
     gh = entrypoint.GitHub("tok", client=_mock_client(handler))
     found = gh.find_sticky_comment("o", "r", 1)
@@ -164,6 +184,7 @@ def test_find_sticky_comment_paginates():
 
 
 # -- GitHub.upsert_sticky_comment -----------------------------------------
+
 
 def test_upsert_sticky_comment_patches_existing():
     calls: list[tuple[str, str]] = []
@@ -207,6 +228,7 @@ def test_upsert_sticky_comment_posts_when_none_exists():
 
 # -- GitHub.create_check_run ----------------------------------------------
 
+
 def test_create_check_run_posts_completed_status():
     captured: dict = {}
 
@@ -218,7 +240,9 @@ def test_create_check_run_posts_completed_status():
 
     gh = entrypoint.GitHub("tok", client=_mock_client(handler))
     gh.create_check_run(
-        "o", "r", "abc123",
+        "o",
+        "r",
+        "abc123",
         name="Repository Intelligence",
         conclusion="neutral",
         title="Risk HIGH (72/100)",

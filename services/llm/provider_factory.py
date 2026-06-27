@@ -56,7 +56,8 @@ class ProviderFactory:
         # Invalidate cache if key changed
         if _cached_provider is not None and current_key != _cached_api_key:
             logger.info(
-                "ProviderFactory: API key changed — rebuilding %s provider", provider_name
+                "ProviderFactory: API key changed — rebuilding %s provider",
+                provider_name,
             )
             _cached_provider = None
             _cached_api_key = None
@@ -94,7 +95,11 @@ class ProviderFactory:
     @classmethod
     def reset(cls) -> None:
         """Clear the cached provider (useful for testing or reconfiguration)."""
-        global _cached_provider, _cached_api_key, _last_validation_time, _cached_validation_results
+        global \
+            _cached_provider, \
+            _cached_api_key, \
+            _last_validation_time, \
+            _cached_validation_results
         _cached_provider = None
         _cached_api_key = None
         _last_validation_time = 0.0
@@ -119,12 +124,19 @@ class ProviderFactory:
         """
         import time
         import sys
+
         global _last_validation_time, _cached_validation_results
 
         now = time.time()
         is_testing = "pytest" in sys.modules or "pytest" in sys.argv[0]
-        if not is_testing and _cached_validation_results is not None and (now - _last_validation_time) < _validation_cache_ttl:
-            logger.debug("ProviderFactory: returning cached provider validation results")
+        if (
+            not is_testing
+            and _cached_validation_results is not None
+            and (now - _last_validation_time) < _validation_cache_ttl
+        ):
+            logger.debug(
+                "ProviderFactory: returning cached provider validation results"
+            )
             return _cached_validation_results
 
         current_settings = Settings()
@@ -139,7 +151,8 @@ class ProviderFactory:
         except Exception as exc:
             logger.error(
                 "ProviderFactory.validate: failed to instantiate primary provider %s: %s",
-                primary_name, exc,
+                primary_name,
+                exc,
             )
             results[primary_name] = ProviderHealth(
                 healthy=False,
@@ -163,7 +176,8 @@ class ProviderFactory:
                 results["deepseek"] = health
             except Exception as exc:
                 logger.warning(
-                    "ProviderFactory.validate: secondary provider deepseek failed: %s", exc
+                    "ProviderFactory.validate: secondary provider deepseek failed: %s",
+                    exc,
                 )
                 results["deepseek"] = ProviderHealth(
                     healthy=False,
@@ -184,7 +198,8 @@ class ProviderFactory:
                 results["gemini"] = health
             except Exception as exc:
                 logger.warning(
-                    "ProviderFactory.validate: secondary provider gemini failed: %s", exc
+                    "ProviderFactory.validate: secondary provider gemini failed: %s",
+                    exc,
                 )
                 results["gemini"] = ProviderHealth(
                     healthy=False,

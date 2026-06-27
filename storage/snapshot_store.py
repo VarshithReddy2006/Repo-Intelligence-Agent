@@ -35,16 +35,12 @@ class SnapshotStore(ABC):
         pass
 
     @abstractmethod
-    def exists(
-        self, repo_name: str, key: str, subkey: Optional[str] = None
-    ) -> bool:
+    def exists(self, repo_name: str, key: str, subkey: Optional[str] = None) -> bool:
         """Check if a snapshot exists."""
         pass
 
     @abstractmethod
-    def delete(
-        self, repo_name: str, key: str, subkey: Optional[str] = None
-    ) -> None:
+    def delete(self, repo_name: str, key: str, subkey: Optional[str] = None) -> None:
         """Delete a snapshot."""
         pass
 
@@ -57,7 +53,9 @@ class SnapshotStore(ABC):
 class JsonSnapshotStore(SnapshotStore):
     """File-system based JSON snapshot storage implementation."""
 
-    def __init__(self, base_dir: Optional[str] = None, key_map: Optional[Dict[str, str]] = None) -> None:
+    def __init__(
+        self, base_dir: Optional[str] = None, key_map: Optional[Dict[str, str]] = None
+    ) -> None:
         """Initialise the JSON snapshot store.
 
         Args:
@@ -75,9 +73,7 @@ class JsonSnapshotStore(SnapshotStore):
         self.key_map = key_map or {}
         self._lock = threading.Lock()
 
-    def _get_path(
-        self, repo_name: str, key: str, subkey: Optional[str] = None
-    ) -> str:
+    def _get_path(self, repo_name: str, key: str, subkey: Optional[str] = None) -> str:
         safe_repo = repo_name.replace("/", "_")
         dir_name = self.key_map.get(key, key)
         dir_path = os.path.join(self.base_dir, dir_name)
@@ -126,16 +122,12 @@ class JsonSnapshotStore(SnapshotStore):
                         pass
                 raise
 
-    def exists(
-        self, repo_name: str, key: str, subkey: Optional[str] = None
-    ) -> bool:
+    def exists(self, repo_name: str, key: str, subkey: Optional[str] = None) -> bool:
         with self._lock:
             path = self._get_path(repo_name, key, subkey)
             return os.path.exists(path)
 
-    def delete(
-        self, repo_name: str, key: str, subkey: Optional[str] = None
-    ) -> None:
+    def delete(self, repo_name: str, key: str, subkey: Optional[str] = None) -> None:
         with self._lock:
             path = self._get_path(repo_name, key, subkey)
             if os.path.exists(path):

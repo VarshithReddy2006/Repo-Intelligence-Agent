@@ -1,1 +1,0 @@
-{"version":3,"file":"hoverProvider.d.ts","sourceRoot":"","sources":["../../src/providers/hoverProvider.ts"],"names":[],"mappings":"AAAA;;;;;;GAMG;AAEH,OAAO,KAAK,MAAM,MAAM,QAAQ,CAAC;AAoIjC,qBAAa,6BAA8B,YAAW,MAAM,CAAC,aAAa;IAClE,YAAY,CAChB,QAAQ,EAAE,MAAM,CAAC,YAAY,EAC7B,QAAQ,EAAE,MAAM,CAAC,QAAQ,EACzB,MAAM,EAAE,MAAM,CAAC,iBAAiB,GAC/B,OAAO,CAAC,MAAM,CAAC,KAAK,GAAG,IAAI,CAAC;CAmChC"}

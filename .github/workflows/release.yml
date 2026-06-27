@@ -5,6 +5,10 @@ on:
     tags:
       - 'v*'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   docker-release:
     runs-on: ubuntu-latest
@@ -14,35 +18,40 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Set up QEMU
-      uses: docker/setup-qemu-action@v2
+      uses: docker/setup-qemu-action@v3
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v2
+      uses: docker/setup-buildx-action@v3
 
     - name: Log in to GitHub Container Registry
-      uses: docker/login-action@v2
+      uses: docker/login-action@v3
       with:
         registry: ghcr.io
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Downcase repo name
+      id: downcase
+      run: |
+        echo "REPO_NAME_LC=${GITHUB_REPOSITORY,,}" >> ${GITHUB_ENV}
+
     - name: Build and Push Docker image
-      uses: docker/build-push-action@v4
+      uses: docker/build-push-action@v6
       with:
         context: .
         file: Dockerfile
         push: true
         tags: |
-          ghcr.io/${{ github.repository }}/repo-intel:latest
-          ghcr.io/${{ github.repository }}/repo-intel:${{ github.ref_name }}
+          ghcr.io/${{ env.REPO_NAME_LC }}/repo-intel:latest
+          ghcr.io/${{ env.REPO_NAME_LC }}/repo-intel:${{ github.ref_name }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
     - name: Generate Changelog and Github Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         generate_release_notes: true
         draft: false

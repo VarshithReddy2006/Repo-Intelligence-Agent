@@ -36,7 +36,9 @@ def _get_arch_service() -> ArchitectureService:
 class ArchContextService:
     """Loads architecture summaries and converts them to injection-ready ArchContext objects."""
 
-    def __init__(self, architecture_service: Optional[ArchitectureService] = None) -> None:
+    def __init__(
+        self, architecture_service: Optional[ArchitectureService] = None
+    ) -> None:
         self._arch_service = architecture_service or _get_arch_service()
 
     def get_context(self, repo_name: str) -> ArchContext:
@@ -53,7 +55,8 @@ class ArchContextService:
             summary = self._arch_service.get_summary(repo_name)
             if summary is None:
                 logger.debug(
-                    "No architecture summary for '%s' — context injection disabled.", repo_name
+                    "No architecture summary for '%s' — context injection disabled.",
+                    repo_name,
                 )
                 return ArchContext(available=False)
 

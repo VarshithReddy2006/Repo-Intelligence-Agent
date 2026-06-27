@@ -5,7 +5,6 @@ the Repository Health Score, and returns the unified ReportDataModel.
 """
 
 import math
-import os
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -58,7 +57,9 @@ class ReportComposer:
 
         # 1. Fetch analysis metadata from ANALYSIS_STORE
         if repo_name not in self.store:
-            raise ValueError(f"Repository '{repo_name}' is not indexed. Analyze it first.")
+            raise ValueError(
+                f"Repository '{repo_name}' is not indexed. Analyze it first."
+            )
 
         entry = self.store[repo_name]
         analysis_data = entry["analysis"]
@@ -82,7 +83,9 @@ class ReportComposer:
         cycles: List[List[str]] = []
         strongly_connected_components = 0
         if file_graph is not None and file_graph.number_of_nodes() > 0:
-            strongly_connected_components = nx.number_strongly_connected_components(file_graph)
+            strongly_connected_components = nx.number_strongly_connected_components(
+                file_graph
+            )
             # Find simple cycles
             try:
                 cycles = list(nx.simple_cycles(file_graph))
@@ -134,11 +137,17 @@ class ReportComposer:
         reading_path_completeness = 1.0
         if symbol_index and len(symbol_index.symbols) > 0:
             total_files = len(set(sym.file_path for sym in symbol_index.symbols))
-            reading_path_completeness = len(recommended_reading_path) / max(1, total_files)
+            reading_path_completeness = len(recommended_reading_path) / max(
+                1, total_files
+            )
 
         # 6. Calculate Deterministic Health Scores
         # Formula 1: S_arch
-        s_arch = round(100.0 * math.exp(-0.1 * (cycles_count + 3.0 * strongly_connected_components)), 1)
+        s_arch = round(
+            100.0
+            * math.exp(-0.1 * (cycles_count + 3.0 * strongly_connected_components)),
+            1,
+        )
         s_arch = max(0.0, min(100.0, s_arch))
 
         # Formula 2: S_api
@@ -146,13 +155,17 @@ class ReportComposer:
         s_api = max(0.0, min(100.0, s_api))
 
         # Formula 3: S_hygiene
-        s_hygiene = round(100.0 * (1.0 - dead_code_ratio) * math.exp(-0.05 * len(smells)), 1)
+        s_hygiene = round(
+            100.0 * (1.0 - dead_code_ratio) * math.exp(-0.05 * len(smells)), 1
+        )
         s_hygiene = max(0.0, min(100.0, s_hygiene))
 
         # Formula 4: S_churn
         hotspots_count = len(churn_summary.hotspots) if churn_summary else 0
         total_files_count = len(churn_summary.file_records) if churn_summary else 1
-        s_churn = round(100.0 * math.exp(-5.0 * (hotspots_count / max(1, total_files_count))), 1)
+        s_churn = round(
+            100.0 * math.exp(-5.0 * (hotspots_count / max(1, total_files_count))), 1
+        )
         s_churn = max(0.0, min(100.0, s_churn))
 
         # Formula 5: S_read
@@ -167,12 +180,12 @@ class ReportComposer:
         w_read = 0.15
 
         overall_score = round(
-            w_arch * s_arch +
-            w_api * s_api +
-            w_hygiene * s_hygiene +
-            w_churn * s_churn +
-            w_read * s_read,
-            1
+            w_arch * s_arch
+            + w_api * s_api
+            + w_hygiene * s_hygiene
+            + w_churn * s_churn
+            + w_read * s_read,
+            1,
         )
 
         if overall_score >= 90:
@@ -281,7 +294,11 @@ class ReportComposer:
             with conn:
                 conn.execute(
                     "INSERT OR IGNORE INTO repositories (repo_name, owner, name) VALUES (?, ?, ?)",
-                    (report.metadata.repo_name, report.metadata.owner, report.metadata.name)
+                    (
+                        report.metadata.repo_name,
+                        report.metadata.owner,
+                        report.metadata.name,
+                    ),
                 )
                 conn.execute(
                     """
@@ -301,9 +318,12 @@ class ReportComposer:
                         report.scores.readability,
                         report.metadata.generated_at,
                         report.model_dump_json(),
-                    )
+                    ),
                 )
             conn.close()
         except Exception as exc:
             import logging
-            logging.getLogger(__name__).error("Failed to save report to SQLite: %s", exc)
+
+            logging.getLogger(__name__).error(
+                "Failed to save report to SQLite: %s", exc
+            )

@@ -3,7 +3,7 @@
 Manages query history, repository metadata, mapped issues, and session state.
 """
 
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 
 
 class SQLiteStore:

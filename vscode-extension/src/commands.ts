@@ -173,8 +173,7 @@ export function registerCommands(
       panel.show();
       panel.appendLine(`Starting analysis for: ${repoUrl}`);
 
-      let cancel: (() => void) | undefined;
-      cancel = client.streamSse(
+      const cancel = client.streamSse(
         '/api/analyze',
         { url: repoUrl, branch: 'main' },
         (event) => {

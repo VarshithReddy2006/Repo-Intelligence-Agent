@@ -37,6 +37,7 @@ router = APIRouter(prefix="/api/call-graph", tags=["Call Graph"])
 # Request models
 # ---------------------------------------------------------------------------
 
+
 class CallGraphBuildRequest(BaseModel):
     repo: str = Field(..., description="Repository identifier (owner/repo)")
 
@@ -44,6 +45,7 @@ class CallGraphBuildRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
 
 @router.post("/build")
 async def build_call_graph(request: CallGraphBuildRequest):
@@ -68,8 +70,8 @@ async def build_call_graph(request: CallGraphBuildRequest):
 
     async def event_generator():
         try:
-            local_path = (
-                ANALYSIS_STORE[repo_name]["analysis"].metadata.get("local_path", "")
+            local_path = ANALYSIS_STORE[repo_name]["analysis"].metadata.get(
+                "local_path", ""
             )
             files = await asyncio.to_thread(
                 github_service.extract_source_files, local_path

@@ -101,9 +101,7 @@ class AnalysisCache:
                 to_remove = [k for k in self._cache.keys() if k[0] == repo_name]
             elif subkey is None:
                 to_remove = [
-                    k
-                    for k in self._cache.keys()
-                    if k[0] == repo_name and k[1] == key
+                    k for k in self._cache.keys() if k[0] == repo_name and k[1] == key
                 ]
             else:
                 to_remove = [(repo_name, key, subkey)]

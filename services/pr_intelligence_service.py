@@ -2,7 +2,7 @@ import logging
 import os
 import re
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import List, Optional, Set, Tuple
 
 import networkx as nx
 
@@ -38,7 +38,12 @@ class PRIntelligenceService:
         self.graph_service = graph_service or GraphService()
         self.architecture_service = architecture_service or ArchitectureService()
 
-    def classify_pr_size(self, changed_files_count: int, total_lines_changed: int, changed_symbol_count: int) -> str:
+    def classify_pr_size(
+        self,
+        changed_files_count: int,
+        total_lines_changed: int,
+        changed_symbol_count: int,
+    ) -> str:
         """Determines PR size based on files, symbols, and lines changed.
 
         XS: 0-20, S: 21-40, M: 41-60, L: 61-80, XL: 81-100.
@@ -82,7 +87,9 @@ class PRIntelligenceService:
 
         return base
 
-    def analyze_pull_request(self, owner: str, repo: str, pr_number: int) -> PRAnalysisResult:
+    def analyze_pull_request(
+        self, owner: str, repo: str, pr_number: int
+    ) -> PRAnalysisResult:
         """Runs the 7-stage PR analysis pipeline.
 
         Raises:
@@ -105,7 +112,9 @@ class PRIntelligenceService:
         # -------------------------------------------------------------------
         # 1. Fetch PR metadata and changed files
         # -------------------------------------------------------------------
-        metadata = self.github_service.fetch_pull_request_metadata(owner, repo, pr_number)
+        metadata = self.github_service.fetch_pull_request_metadata(
+            owner, repo, pr_number
+        )
         raw_files = self.github_service.fetch_pull_request_files(owner, repo, pr_number)
 
         changed_files = [
@@ -114,13 +123,17 @@ class PRIntelligenceService:
                 status=f["status"],
                 additions=f["additions"],
                 deletions=f["deletions"],
-                changes=f["changes"]
+                changes=f["changes"],
             )
             for f in raw_files
         ]
 
-        total_additions = metadata.get("additions", sum(cf.additions for cf in changed_files))
-        total_deletions = metadata.get("deletions", sum(cf.deletions for cf in changed_files))
+        total_additions = metadata.get(
+            "additions", sum(cf.additions for cf in changed_files)
+        )
+        total_deletions = metadata.get(
+            "deletions", sum(cf.deletions for cf in changed_files)
+        )
         head_sha = metadata.get("head_sha", "")
 
         # Stage 1 — GitHub Response Diagnostics
@@ -175,8 +188,10 @@ class PRIntelligenceService:
                             file_path=symbol.file_path,
                             line_number=symbol.line_number,
                             language=symbol.language,
-                            change_type=cf.status if cf.status in {"added", "removed", "modified"} else "modified",
-                            parent_class=symbol.parent_class
+                            change_type=cf.status
+                            if cf.status in {"added", "removed", "modified"}
+                            else "modified",
+                            parent_class=symbol.parent_class,
                         )
                         if cf.status == "removed":
                             removed_symbols.append(sc)
@@ -187,8 +202,12 @@ class PRIntelligenceService:
         for cf in changed_files:
             if cf.status == "added":
                 try:
-                    content = self.github_service.fetch_file_content(repo_fullName, cf.filename, ref=head_sha)
-                    parsed_syms = self.symbol_service._extract_file_symbols(cf.filename, content)
+                    content = self.github_service.fetch_file_content(
+                        repo_fullName, cf.filename, ref=head_sha
+                    )
+                    parsed_syms = self.symbol_service._extract_file_symbols(
+                        cf.filename, content
+                    )
                     for sym in parsed_syms:
                         added_symbols.append(
                             SymbolChange(
@@ -198,18 +217,24 @@ class PRIntelligenceService:
                                 line_number=sym.line_number,
                                 language=sym.language,
                                 change_type="added",
-                                parent_class=sym.parent_class
+                                parent_class=sym.parent_class,
                             )
                         )
                 except Exception as e:
-                    logger.warning(f"Could not fetch/parse symbols for added file {cf.filename}: {e}")
+                    logger.warning(
+                        f"Could not fetch/parse symbols for added file {cf.filename}: {e}"
+                    )
 
-        total_changed_symbols = len(added_symbols) + len(modified_symbols) + len(removed_symbols)
+        total_changed_symbols = (
+            len(added_symbols) + len(modified_symbols) + len(removed_symbols)
+        )
 
         # Stage 3 — Symbol Extraction Diagnostics
         logger.info(
             "[PR DIAGNOSTICS] Symbol index size=%d",
-            len(symbol_index.symbols) if (symbol_index and hasattr(symbol_index, "symbols")) else 0,
+            len(symbol_index.symbols)
+            if (symbol_index and hasattr(symbol_index, "symbols"))
+            else 0,
         )
         logger.info(
             "[PR DIAGNOSTICS] Matched symbols: added=%d modified=%d removed=%d",
@@ -222,7 +247,7 @@ class PRIntelligenceService:
         # 3. Traverse dependency graph (BFS) to find affected files (blast radius)
         # -------------------------------------------------------------------
         graph = self.graph_service.load_graph(repo_fullName)
-        
+
         # Stage 4 — Dependency Graph Diagnostics
         logger.info(
             "[PR DIAGNOSTICS] Dependency graph nodes=%d edges=%d",
@@ -241,10 +266,12 @@ class PRIntelligenceService:
                     if node.replace("\\", "/").lower() == norm_fn.lower():
                         matching_node = node
                         break
-                
+
                 if matching_node:
                     # Direction 'reverse' walks backwards (who imports this file)
-                    visited = ImpactAnalysisService._bfs(graph, matching_node, direction="reverse", depth=4)
+                    visited = ImpactAnalysisService._bfs(
+                        graph, matching_node, direction="reverse", depth=4
+                    )
                     affected_files_set.update(visited)
 
             # Exclude the seed files from the affected files list
@@ -278,7 +305,9 @@ class PRIntelligenceService:
                             break
                     if matching_seed:
                         try:
-                            path = nx.shortest_path(graph, source=aff, target=matching_seed)
+                            path = nx.shortest_path(
+                                graph, source=aff, target=matching_seed
+                            )
                             if len(path) >= 2:
                                 depth = len(path) - 1
                                 propagation_paths.append(
@@ -286,7 +315,7 @@ class PRIntelligenceService:
                                         source=matching_seed,
                                         target=aff,
                                         path=path,
-                                        depth=depth
+                                        depth=depth,
                                     )
                                 )
                                 max_depth = max(max_depth, depth)
@@ -301,31 +330,38 @@ class PRIntelligenceService:
         logger.info(
             "[PR DIAGNOSTICS] Graph nodes count=%d affected files=%d",
             graph.number_of_nodes() if graph else 0,
-            len(affected_files) if 'affected_files' in locals() else 0,
+            len(affected_files) if "affected_files" in locals() else 0,
         )
         logger.info(
             "[PR DIAGNOSTICS] Impact radius=%d max_depth=%d",
-            impact_radius if 'impact_radius' in locals() else 0,
-            max_depth if 'max_depth' in locals() else 0,
+            impact_radius if "impact_radius" in locals() else 0,
+            max_depth if "max_depth" in locals() else 0,
         )
 
         # -------------------------------------------------------------------
         # 5. Extract critical graph categories
         # -------------------------------------------------------------------
         arch_summary = self.architecture_service.get_summary(repo_fullName)
-        
+
         changed_entry_points: List[str] = []
         changed_core_files: List[str] = []
         changed_high_coupling_files: List[str] = []
-        
+
         core_set = set()
         coupling_set = set()
         entry_set = set()
 
         if arch_summary:
-            core_set = {f.replace("\\", "/").lower() for f in (arch_summary.core_modules or [])}
-            coupling_set = {f.replace("\\", "/").lower() for f in (arch_summary.high_coupling_modules or [])}
-            entry_set = {f.replace("\\", "/").lower() for f in (arch_summary.entry_points or [])}
+            core_set = {
+                f.replace("\\", "/").lower() for f in (arch_summary.core_modules or [])
+            }
+            coupling_set = {
+                f.replace("\\", "/").lower()
+                for f in (arch_summary.high_coupling_modules or [])
+            }
+            entry_set = {
+                f.replace("\\", "/").lower() for f in (arch_summary.entry_points or [])
+            }
 
             for cf in changed_files:
                 cf_lower = cf.filename.replace("\\", "/").lower()
@@ -339,16 +375,18 @@ class PRIntelligenceService:
         # -------------------------------------------------------------------
         # 6. Compute 0-100 risk score and top risks
         # -------------------------------------------------------------------
-        risk_score, risk_level, risk_breakdown, top_risks = self._compute_risk_and_explanations(
-            changed_files=changed_files,
-            changed_symbols_count=total_changed_symbols,
-            changed_entry_points=changed_entry_points,
-            changed_core_files=changed_core_files,
-            changed_high_coupling_files=changed_high_coupling_files,
-            impact_radius=impact_radius,
-            max_depth=max_depth,
-            removed_symbols_count=len(removed_symbols),
-            total_graph_nodes=graph.number_of_nodes() if graph else 1
+        risk_score, risk_level, risk_breakdown, top_risks = (
+            self._compute_risk_and_explanations(
+                changed_files=changed_files,
+                changed_symbols_count=total_changed_symbols,
+                changed_entry_points=changed_entry_points,
+                changed_core_files=changed_core_files,
+                changed_high_coupling_files=changed_high_coupling_files,
+                impact_radius=impact_radius,
+                max_depth=max_depth,
+                removed_symbols_count=len(removed_symbols),
+                total_graph_nodes=graph.number_of_nodes() if graph else 1,
+            )
         )
 
         # -------------------------------------------------------------------
@@ -357,7 +395,7 @@ class PRIntelligenceService:
         pr_size = self.classify_pr_size(
             changed_files_count=len(changed_files),
             total_lines_changed=total_additions + total_deletions,
-            changed_symbol_count=total_changed_symbols
+            changed_symbol_count=total_changed_symbols,
         )
 
         blast_radius = self.classify_blast_radius(impact_radius, max_depth)
@@ -366,7 +404,9 @@ class PRIntelligenceService:
         # 8. Component and focus area detection
         # -------------------------------------------------------------------
         all_touched_files = [cf.filename for cf in changed_files] + affected_files
-        affected_components = ImpactAnalysisService._detect_components(all_touched_files)
+        affected_components = ImpactAnalysisService._detect_components(
+            all_touched_files
+        )
 
         review_focus_areas = self._generate_review_focus_areas(
             changed_files=changed_files,
@@ -374,13 +414,15 @@ class PRIntelligenceService:
             changed_core_files=changed_core_files,
             changed_high_coupling_files=changed_high_coupling_files,
             removed_symbols=removed_symbols,
-            pr_size=pr_size
+            pr_size=pr_size,
         )
 
         return PRAnalysisResult(
             repo=repo_fullName,
             pr_number=pr_number,
-            pr_url=metadata.get("html_url", f"https://github.com/{repo_fullName}/pull/{pr_number}"),
+            pr_url=metadata.get(
+                "html_url", f"https://github.com/{repo_fullName}/pull/{pr_number}"
+            ),
             pr_title=metadata.get("title", ""),
             pr_state=metadata.get("state", "open"),
             pr_size=pr_size,
@@ -404,7 +446,7 @@ class PRIntelligenceService:
             changed_core_files=changed_core_files,
             changed_high_coupling_files=changed_high_coupling_files,
             review_focus_areas=review_focus_areas,
-            analyzed_at=datetime.now(timezone.utc).isoformat()
+            analyzed_at=datetime.now(timezone.utc).isoformat(),
         )
 
     def _compute_risk_and_explanations(
@@ -417,7 +459,7 @@ class PRIntelligenceService:
         impact_radius: int,
         max_depth: int,
         removed_symbols_count: int,
-        total_graph_nodes: int
+        total_graph_nodes: int,
     ) -> Tuple[int, str, List[RiskBreakdown], List[str]]:
         """Computes deterministic 0-100 risk score, breakdown, and top risks."""
         breakdown: List[RiskBreakdown] = []
@@ -433,9 +475,17 @@ class PRIntelligenceService:
             file_pts = 8
         else:
             file_pts = 3
-        breakdown.append(RiskBreakdown(factor="Changed file count", score=file_pts, detail=f"{files_count} files changed"))
+        breakdown.append(
+            RiskBreakdown(
+                factor="Changed file count",
+                score=file_pts,
+                detail=f"{files_count} files changed",
+            )
+        )
         if file_pts >= 8:
-            raw_top_risks.append((f"Large number of changed files ({files_count})", file_pts))
+            raw_top_risks.append(
+                (f"Large number of changed files ({files_count})", file_pts)
+            )
 
         # 2. Changed symbol count (Max 10)
         if changed_symbols_count >= 31:
@@ -446,37 +496,91 @@ class PRIntelligenceService:
             sym_pts = 5
         else:
             sym_pts = 2
-        breakdown.append(RiskBreakdown(factor="Changed symbol count", score=sym_pts, detail=f"{changed_symbols_count} symbols changed"))
+        breakdown.append(
+            RiskBreakdown(
+                factor="Changed symbol count",
+                score=sym_pts,
+                detail=f"{changed_symbols_count} symbols changed",
+            )
+        )
         if sym_pts >= 8:
-            raw_top_risks.append((f"Large number of symbol modifications ({changed_symbols_count})", sym_pts))
+            raw_top_risks.append(
+                (
+                    f"Large number of symbol modifications ({changed_symbols_count})",
+                    sym_pts,
+                )
+            )
 
         # 3. Core module modified (Max 20)
         core_count = len(changed_core_files)
         core_pts = min(core_count * 10, 20)
-        breakdown.append(RiskBreakdown(factor="Core module modified", score=core_pts, detail=f"{core_count} core files modified"))
+        breakdown.append(
+            RiskBreakdown(
+                factor="Core module modified",
+                score=core_pts,
+                detail=f"{core_count} core files modified",
+            )
+        )
         if core_pts > 0:
-            raw_top_risks.append((f"Core module modified ({', '.join(map(os.path.basename, changed_core_files[:2]))})", core_pts))
+            raw_top_risks.append(
+                (
+                    f"Core module modified ({', '.join(map(os.path.basename, changed_core_files[:2]))})",
+                    core_pts,
+                )
+            )
 
         # 4. Entry point modified (Max 15)
         entry_pts = 15 if changed_entry_points else 0
-        breakdown.append(RiskBreakdown(factor="Entry point modified", score=entry_pts, detail=f"{len(changed_entry_points)} entry points modified"))
+        breakdown.append(
+            RiskBreakdown(
+                factor="Entry point modified",
+                score=entry_pts,
+                detail=f"{len(changed_entry_points)} entry points modified",
+            )
+        )
         if entry_pts > 0:
-            raw_top_risks.append((f"Entry point modified ({', '.join(map(os.path.basename, changed_entry_points[:2]))})", entry_pts))
+            raw_top_risks.append(
+                (
+                    f"Entry point modified ({', '.join(map(os.path.basename, changed_entry_points[:2]))})",
+                    entry_pts,
+                )
+            )
 
         # 5. High coupling file modified (Max 10)
         coupling_count = len(changed_high_coupling_files)
         coupling_pts = min(coupling_count * 5, 10)
-        breakdown.append(RiskBreakdown(factor="High-coupling file modified", score=coupling_pts, detail=f"{coupling_count} high-coupling files modified"))
+        breakdown.append(
+            RiskBreakdown(
+                factor="High-coupling file modified",
+                score=coupling_pts,
+                detail=f"{coupling_count} high-coupling files modified",
+            )
+        )
         if coupling_pts > 0:
-            raw_top_risks.append((f"High-coupling file modified ({', '.join(map(os.path.basename, changed_high_coupling_files[:2]))})", coupling_pts))
+            raw_top_risks.append(
+                (
+                    f"High-coupling file modified ({', '.join(map(os.path.basename, changed_high_coupling_files[:2]))})",
+                    coupling_pts,
+                )
+            )
 
         # 6. Impact radius (Max 15)
         # (impact_radius / total_files_in_repo) * 15, capped at 15
-        impact_ratio = (impact_radius / total_graph_nodes) if total_graph_nodes > 0 else 0
+        impact_ratio = (
+            (impact_radius / total_graph_nodes) if total_graph_nodes > 0 else 0
+        )
         impact_pts = min(int(impact_ratio * 15), 15)
-        breakdown.append(RiskBreakdown(factor="Impact radius", score=impact_pts, detail=f"{impact_radius} downstream files affected ({int(impact_ratio * 100)}%)"))
+        breakdown.append(
+            RiskBreakdown(
+                factor="Impact radius",
+                score=impact_pts,
+                detail=f"{impact_radius} downstream files affected ({int(impact_ratio * 100)}%)",
+            )
+        )
         if impact_pts >= 5:
-            raw_top_risks.append((f"{impact_radius} downstream files affected", impact_pts))
+            raw_top_risks.append(
+                (f"{impact_radius} downstream files affected", impact_pts)
+            )
 
         # 7. Dependency depth (Max 10)
         if max_depth >= 4:
@@ -487,13 +591,27 @@ class PRIntelligenceService:
             depth_pts = 4
         else:
             depth_pts = 0
-        breakdown.append(RiskBreakdown(factor="Dependency depth", score=depth_pts, detail=f"Max propagation depth: {max_depth}"))
+        breakdown.append(
+            RiskBreakdown(
+                factor="Dependency depth",
+                score=depth_pts,
+                detail=f"Max propagation depth: {max_depth}",
+            )
+        )
         if depth_pts > 0:
-            raw_top_risks.append((f"Deep dependency propagation (depth {max_depth})", depth_pts))
+            raw_top_risks.append(
+                (f"Deep dependency propagation (depth {max_depth})", depth_pts)
+            )
 
         # 8. Symbol removal (Max 5)
         removal_pts = 5 if removed_symbols_count > 0 else 0
-        breakdown.append(RiskBreakdown(factor="Symbol removal", score=removal_pts, detail=f"{removed_symbols_count} symbols removed"))
+        breakdown.append(
+            RiskBreakdown(
+                factor="Symbol removal",
+                score=removal_pts,
+                detail=f"{removed_symbols_count} symbols removed",
+            )
+        )
         if removal_pts > 0:
             raw_top_risks.append(("Public symbol removal detected", removal_pts))
 
@@ -523,7 +641,7 @@ class PRIntelligenceService:
         changed_core_files: List[str],
         changed_high_coupling_files: List[str],
         removed_symbols: List[SymbolChange],
-        pr_size: str
+        pr_size: str,
     ) -> List[ReviewFocusArea]:
         """Generates rule-based ReviewFocusArea checklists."""
         areas: List[ReviewFocusArea] = []
@@ -534,7 +652,7 @@ class PRIntelligenceService:
                     area="API Backward Compatibility",
                     reason="Modified entry point files can break consumer integrations. Verify API contracts, payload formats, and query parameters.",
                     files=changed_entry_points,
-                    priority="HIGH"
+                    priority="HIGH",
                 )
             )
 
@@ -544,7 +662,7 @@ class PRIntelligenceService:
                     area="Core Business Logic Check",
                     reason="Modifications to core modules affect multiple subsystem components. Review side-effects and run integration test suites.",
                     files=changed_core_files,
-                    priority="HIGH"
+                    priority="HIGH",
                 )
             )
 
@@ -554,7 +672,7 @@ class PRIntelligenceService:
                     area="Coupling Dependency Cascade",
                     reason="High coupling files can trigger cascading changes. Check if changes require updates in importing components.",
                     files=changed_high_coupling_files,
-                    priority="MEDIUM"
+                    priority="MEDIUM",
                 )
             )
 
@@ -564,7 +682,7 @@ class PRIntelligenceService:
                     area="Removed Symbol Contract Check",
                     reason="Removed public functions, classes, or methods can break import calls in importing files. Confirm no references remain.",
                     files=sorted(list({s.file_path for s in removed_symbols})),
-                    priority="HIGH"
+                    priority="HIGH",
                 )
             )
 
@@ -574,13 +692,14 @@ class PRIntelligenceService:
                     area="Large PR Review Partitioning",
                     reason=f"PR size is {pr_size}. Reviewing large PRs increases bug slip-through. Consider splitting into smaller commits or PRs.",
                     files=[cf.filename for cf in changed_files],
-                    priority="MEDIUM"
+                    priority="MEDIUM",
                 )
             )
 
         # Check for model/schema changes
         model_files = [
-            cf.filename for cf in changed_files
+            cf.filename
+            for cf in changed_files
             if re.search(r"model|schema|pydantic|dto", cf.filename.lower())
         ]
         if model_files:
@@ -589,13 +708,14 @@ class PRIntelligenceService:
                     area="Database Schema & Model Migrations",
                     reason="Data models or schemas changed. Verify serialization, database migrations, and backward compatibility with cached payloads.",
                     files=model_files,
-                    priority="HIGH"
+                    priority="HIGH",
                 )
             )
 
         # Frontend changes check
         frontend_files = [
-            cf.filename for cf in changed_files
+            cf.filename
+            for cf in changed_files
             if re.search(r"front|ui|\.tsx|\.jsx|\.html|\.css", cf.filename.lower())
         ]
         if frontend_files:
@@ -604,19 +724,21 @@ class PRIntelligenceService:
                     area="Frontend UI Visual Verification",
                     reason="User interface layouts or components changed. Perform visual regression checking and check responsive layout views.",
                     files=frontend_files,
-                    priority="LOW"
+                    priority="LOW",
                 )
             )
 
         # Test coverage warning
-        has_tests = any(re.search(r"test|spec|mock", cf.filename.lower()) for cf in changed_files)
+        has_tests = any(
+            re.search(r"test|spec|mock", cf.filename.lower()) for cf in changed_files
+        )
         if changed_files and not has_tests:
             areas.append(
                 ReviewFocusArea(
                     area="Missing Unit/Integration Tests",
                     reason="Source code files changed but no corresponding test files were modified. Ensure coverage is added for new behavior.",
                     files=[],
-                    priority="MEDIUM"
+                    priority="MEDIUM",
                 )
             )
 

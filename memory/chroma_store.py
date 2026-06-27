@@ -47,7 +47,7 @@ class ChromaStore:
             return
 
         ids = [f"{file_path}_{i}" for i in range(len(chunks))]
-        
+
         # Clean metadata to contain only allowed types (str, int, float, bool)
         cleaned_metadata = []
         for meta in metadata:
@@ -60,10 +60,7 @@ class ChromaStore:
             cleaned_metadata.append(cleaned)
 
         self.collection.add(
-            ids=ids,
-            documents=chunks,
-            embeddings=embeddings,
-            metadatas=cleaned_metadata
+            ids=ids, documents=chunks, embeddings=embeddings, metadatas=cleaned_metadata
         )
 
     def add_code_chunks_bulk(
@@ -98,10 +95,10 @@ class ChromaStore:
         batch_size = 2000
         for i in range(0, len(ids), batch_size):
             self.collection.add(
-                ids=ids[i:i + batch_size],
-                documents=documents[i:i + batch_size],
-                embeddings=embeddings[i:i + batch_size],
-                metadatas=cleaned_metadata[i:i + batch_size],
+                ids=ids[i : i + batch_size],
+                documents=documents[i : i + batch_size],
+                embeddings=embeddings[i : i + batch_size],
+                metadatas=cleaned_metadata[i : i + batch_size],
             )
 
     def search_similar(
@@ -121,25 +118,32 @@ class ChromaStore:
             A list of dictionary objects representing the matched chunks and their metadata.
         """
         results = self.collection.query(
-            query_embeddings=[query_embedding],
-            n_results=limit,
-            where=where_filter
+            query_embeddings=[query_embedding], n_results=limit, where=where_filter
         )
 
         formatted_results = []
         if results and "documents" in results and results["documents"]:
             docs = results["documents"][0]
-            metas = results["metadatas"][0] if "metadatas" in results and results["metadatas"] else [{}] * len(docs)
-            ids = results["ids"][0] if "ids" in results and results["ids"] else [""] * len(docs)
-            distances = results["distances"][0] if "distances" in results and results["distances"] else [0.0] * len(docs)
+            metas = (
+                results["metadatas"][0]
+                if "metadatas" in results and results["metadatas"]
+                else [{}] * len(docs)
+            )
+            ids = (
+                results["ids"][0]
+                if "ids" in results and results["ids"]
+                else [""] * len(docs)
+            )
+            distances = (
+                results["distances"][0]
+                if "distances" in results and results["distances"]
+                else [0.0] * len(docs)
+            )
 
             for doc, meta, idx, dist in zip(docs, metas, ids, distances):
-                formatted_results.append({
-                    "id": idx,
-                    "content": doc,
-                    "metadata": meta,
-                    "distance": dist
-                })
+                formatted_results.append(
+                    {"id": idx, "content": doc, "metadata": meta, "distance": dist}
+                )
 
         return formatted_results
 
@@ -152,7 +156,12 @@ class ChromaStore:
             pass
         self.collection = self.client.get_or_create_collection(name="repository_chunks")
 
-    def index_repository(self, repo_name: str, chunks: List[Dict[str, Any]], embeddings: List[List[float]]) -> None:
+    def index_repository(
+        self,
+        repo_name: str,
+        chunks: List[Dict[str, Any]],
+        embeddings: List[List[float]],
+    ) -> None:
         """Indexes a full list of repository chunks with their embeddings in ChromaDB."""
         if not chunks:
             return
@@ -207,7 +216,9 @@ class ChromaStore:
         for out_idx, chunk in enumerate(filtered_chunks):
             path = chunk.get("path", "")
             chunk_id = chunk.get("chunk_id", out_idx)
-            unique_id = f"{repo_name}_{path}_{chunk_id}".replace("/", "_").replace(".", "_")
+            unique_id = f"{repo_name}_{path}_{chunk_id}".replace("/", "_").replace(
+                ".", "_"
+            )
 
             ids.append(unique_id)
             documents.append(chunk.get("content", ""))
@@ -236,10 +247,10 @@ class ChromaStore:
             bi = i // batch_size
             t_batch = time.perf_counter()
             self.collection.add(
-                ids=ids[i:i + batch_size],
-                documents=documents[i:i + batch_size],
-                embeddings=filtered_embeddings[i:i + batch_size],
-                metadatas=metadatas[i:i + batch_size],
+                ids=ids[i : i + batch_size],
+                documents=documents[i : i + batch_size],
+                embeddings=filtered_embeddings[i : i + batch_size],
+                metadatas=metadatas[i : i + batch_size],
             )
             logger.info(
                 "[PIPELINE:%s] CHROMA add batch %d/%d elapsed=%.2fs batch_items=%d",
@@ -257,9 +268,13 @@ class ChromaStore:
             len(ids),
         )
 
-        logger.info(f"Successfully indexed {len(ids)} chunks for repository {repo_name}.")
+        logger.info(
+            f"Successfully indexed {len(ids)} chunks for repository {repo_name}."
+        )
 
-    def search_repository(self, repo_name: str, query_embedding: List[float], limit: int = 5) -> List[Dict[str, Any]]:
+    def search_repository(
+        self, repo_name: str, query_embedding: List[float], limit: int = 5
+    ) -> List[Dict[str, Any]]:
         """Searches for chunks in a specific repository similar to the query embedding.
 
         Args:
@@ -273,7 +288,7 @@ class ChromaStore:
         return self.search_similar(
             query_embedding=query_embedding,
             limit=limit,
-            where_filter={"repo_name": repo_name}
+            where_filter={"repo_name": repo_name},
         )
 
     def delete_repository(self, repo_name: str) -> None:
@@ -286,5 +301,7 @@ class ChromaStore:
             self.collection.delete(where={"repo_name": repo_name})
             logger.info(f"Deleted vector index for repository: {repo_name}")
         except Exception as e:
-            logger.debug(f"Repository {repo_name} could not be deleted from Chroma: {e}")
+            logger.debug(
+                f"Repository {repo_name} could not be deleted from Chroma: {e}"
+            )
             pass

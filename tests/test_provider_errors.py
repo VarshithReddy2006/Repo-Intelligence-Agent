@@ -4,8 +4,6 @@ Tests every error category for both Gemini and DeepSeek classifiers.
 All external API calls are mocked — these tests run offline.
 """
 
-import pytest
-
 from services.llm.provider_errors import (
     ProviderErrorType,
     classify_gemini_error,
@@ -17,8 +15,10 @@ from services.llm.provider_errors import (
 # Helper: build a mock exception with a given string representation
 # ---------------------------------------------------------------------------
 
+
 class _MockException(Exception):
     """Stand-in for SDK exceptions that carry status codes in their message."""
+
     pass
 
 
@@ -40,8 +40,8 @@ class _MockHTTPException(Exception):
 # Gemini error classification
 # ===========================================================================
 
-class TestClassifyGeminiError:
 
+class TestClassifyGeminiError:
     def test_missing_credential(self):
         exc = _mock_exc("api_key is not set")
         result = classify_gemini_error(exc)
@@ -72,12 +72,17 @@ class TestClassifyGeminiError:
         assert result.error_type == ProviderErrorType.AUTHENTICATION_ERROR
 
     def test_429_rate_limit(self):
-        exc = _mock_exc("ClientError 429 RESOURCE_EXHAUSTED rate limit", class_name="ClientError")
+        exc = _mock_exc(
+            "ClientError 429 RESOURCE_EXHAUSTED rate limit", class_name="ClientError"
+        )
         result = classify_gemini_error(exc)
         assert result.error_type == ProviderErrorType.RATE_LIMIT_ERROR
 
     def test_429_quota_exceeded(self):
-        exc = _mock_exc("ClientError 429 RESOURCE_EXHAUSTED quota exceeded", class_name="ClientError")
+        exc = _mock_exc(
+            "ClientError 429 RESOURCE_EXHAUSTED quota exceeded",
+            class_name="ClientError",
+        )
         result = classify_gemini_error(exc)
         assert result.error_type == ProviderErrorType.QUOTA_EXCEEDED
 
@@ -114,7 +119,9 @@ class TestClassifyGeminiError:
 
     def test_message_never_exposes_api_key(self):
         """Ensure the classified message never leaks credential values."""
-        exc = _mock_exc("401 api_key=AIzaSyFAKEKEY123 is invalid", class_name="ClientError")
+        exc = _mock_exc(
+            "401 api_key=AIzaSyFAKEKEY123 is invalid", class_name="ClientError"
+        )
         result = classify_gemini_error(exc)
         assert "AIzaSyFAKEKEY123" not in result.message
         assert "AIzaSyFAKEKEY123" not in result.recommendation
@@ -124,8 +131,8 @@ class TestClassifyGeminiError:
 # DeepSeek / NVIDIA NIM error classification
 # ===========================================================================
 
-class TestClassifyDeepSeekError:
 
+class TestClassifyDeepSeekError:
     def test_missing_credential(self):
         exc = _mock_exc("api_key is not set")
         result = classify_deepseek_error(exc)
@@ -187,16 +194,21 @@ class TestClassifyDeepSeekError:
 # ProviderErrorType — enum contract
 # ===========================================================================
 
+
 class TestProviderErrorType:
     """Ensure enum values are stable strings (used in logs and API responses)."""
 
     def test_value_strings(self):
         assert ProviderErrorType.MISSING_CREDENTIAL.value == "missing_credential"
         assert ProviderErrorType.AUTHENTICATION_ERROR.value == "authentication_error"
-        assert ProviderErrorType.INVALID_CREDENTIAL_TYPE.value == "invalid_credential_type"
+        assert (
+            ProviderErrorType.INVALID_CREDENTIAL_TYPE.value == "invalid_credential_type"
+        )
         assert ProviderErrorType.RATE_LIMIT_ERROR.value == "rate_limit_error"
         assert ProviderErrorType.QUOTA_EXCEEDED.value == "quota_exceeded"
         assert ProviderErrorType.TIMEOUT.value == "timeout"
         assert ProviderErrorType.NETWORK_ERROR.value == "network_error"
         assert ProviderErrorType.CONFIGURATION_ERROR.value == "configuration_error"
-        assert ProviderErrorType.UNKNOWN_PROVIDER_ERROR.value == "unknown_provider_error"
+        assert (
+            ProviderErrorType.UNKNOWN_PROVIDER_ERROR.value == "unknown_provider_error"
+        )

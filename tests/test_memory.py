@@ -1,7 +1,6 @@
 """Unit tests verifying real implementations and interface for memory storage classes."""
 
 import pytest
-import os
 from memory import ChromaStore, SQLiteStore, FileCache
 
 
@@ -16,7 +15,7 @@ def test_chroma_store_real(tmp_path) -> None:
         file_path="src/utils.py",
         chunks=["def add(a, b): return a + b", "def sub(a, b): return a - b"],
         embeddings=[[0.1] * 3072, [0.2] * 3072],
-        metadata=[{"line": 1, "fn": "add"}, {"line": 2, "fn": "sub"}]
+        metadata=[{"line": 1, "fn": "add"}, {"line": 2, "fn": "sub"}],
     )
 
     # 2. Search similar
@@ -27,21 +26,35 @@ def test_chroma_store_real(tmp_path) -> None:
 
     # 3. Test index_repository
     dummy_chunks = [
-        {"path": "auth.py", "chunk_id": 1, "content": "def login(): pass", "language": "python"},
-        {"path": "auth.py", "chunk_id": 2, "content": "def logout(): pass", "language": "python"}
+        {
+            "path": "auth.py",
+            "chunk_id": 1,
+            "content": "def login(): pass",
+            "language": "python",
+        },
+        {
+            "path": "auth.py",
+            "chunk_id": 2,
+            "content": "def logout(): pass",
+            "language": "python",
+        },
     ]
     dummy_embeddings = [[0.5] * 3072, [0.6] * 3072]
     store.index_repository("test/repo", dummy_chunks, dummy_embeddings)
 
     # 4. Search repository
-    repo_results = store.search_repository("test/repo", query_embedding=[0.5] * 3072, limit=1)
+    repo_results = store.search_repository(
+        "test/repo", query_embedding=[0.5] * 3072, limit=1
+    )
     assert len(repo_results) == 1
     assert repo_results[0]["metadata"]["repo_name"] == "test/repo"
     assert repo_results[0]["metadata"]["file_path"] == "auth.py"
 
     # 5. Delete repository
     store.delete_repository("test/repo")
-    repo_results_after = store.search_repository("test/repo", query_embedding=[0.5] * 3072, limit=1)
+    repo_results_after = store.search_repository(
+        "test/repo", query_embedding=[0.5] * 3072, limit=1
+    )
     assert len(repo_results_after) == 0
 
     # 6. Clear database

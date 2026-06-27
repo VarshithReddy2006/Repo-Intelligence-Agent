@@ -36,10 +36,11 @@ logger = logging.getLogger(__name__)
 # Circuit breaker
 # ---------------------------------------------------------------------------
 
+
 class CircuitState(Enum):
-    CLOSED = "closed"       # Normal — requests allowed
-    OPEN = "open"           # Failed — requests blocked
-    HALF_OPEN = "half_open" # Testing recovery — one request allowed
+    CLOSED = "closed"  # Normal — requests allowed
+    OPEN = "open"  # Failed — requests blocked
+    HALF_OPEN = "half_open"  # Testing recovery — one request allowed
 
 
 @dataclass
@@ -51,6 +52,7 @@ class CircuitBreaker:
         recovery_timeout:   Seconds before trying again (OPEN → HALF_OPEN).
         half_open_timeout:  Seconds to stay in HALF_OPEN before deciding.
     """
+
     provider_name: str
     failure_threshold: int = 3
     recovery_timeout: float = 60.0
@@ -68,9 +70,7 @@ class CircuitBreaker:
             if now - self._last_failure_time >= self.recovery_timeout:
                 self._state = CircuitState.HALF_OPEN
                 self._half_open_time = now
-                logger.info(
-                    "CircuitBreaker[%s]: OPEN → HALF_OPEN", self.provider_name
-                )
+                logger.info("CircuitBreaker[%s]: OPEN → HALF_OPEN", self.provider_name)
         elif self._state == CircuitState.HALF_OPEN:
             if now - self._half_open_time >= self.half_open_timeout:
                 # Stayed HALF_OPEN too long without resolution — re-open
@@ -83,9 +83,7 @@ class CircuitBreaker:
 
     def record_success(self) -> None:
         if self._state != CircuitState.CLOSED:
-            logger.info(
-                "CircuitBreaker[%s]: recovered → CLOSED", self.provider_name
-            )
+            logger.info("CircuitBreaker[%s]: recovered → CLOSED", self.provider_name)
         self._state = CircuitState.CLOSED
         self._failure_count = 0
 
@@ -111,11 +109,12 @@ class CircuitBreaker:
 # Provider entry
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ProviderEntry:
     name: str
     provider: object  # BaseLLMProvider
-    priority: int     # lower = tried first
+    priority: int  # lower = tried first
     circuit_breaker: CircuitBreaker = field(init=False)
     timeout: float = 60.0
 
@@ -126,6 +125,7 @@ class ProviderEntry:
 # ---------------------------------------------------------------------------
 # ProviderManager
 # ---------------------------------------------------------------------------
+
 
 class ProviderManager:
     """Manages multiple LLM providers with automatic fallback and circuit breaking.
@@ -164,12 +164,14 @@ class ProviderManager:
         # Primary provider (from config)
         try:
             primary = ProviderFactory.get_provider()
-            entries.append(ProviderEntry(
-                name=provider_name,
-                provider=primary,
-                priority=1,
-                timeout=60.0,
-            ))
+            entries.append(
+                ProviderEntry(
+                    name=provider_name,
+                    provider=primary,
+                    priority=1,
+                    timeout=60.0,
+                )
+            )
         except Exception as exc:
             logger.error("ProviderManager: failed to load primary provider: %s", exc)
 
@@ -177,25 +179,33 @@ class ProviderManager:
         if provider_name == "gemini" and settings.deepseek_api_key:
             try:
                 from services.llm.deepseek_provider import DeepSeekProvider
-                entries.append(ProviderEntry(
-                    name="deepseek",
-                    provider=DeepSeekProvider(),
-                    priority=2,
-                    timeout=120.0,
-                ))
-                logger.info("ProviderManager: DeepSeek registered as secondary provider")
+
+                entries.append(
+                    ProviderEntry(
+                        name="deepseek",
+                        provider=DeepSeekProvider(),
+                        priority=2,
+                        timeout=120.0,
+                    )
+                )
+                logger.info(
+                    "ProviderManager: DeepSeek registered as secondary provider"
+                )
             except Exception as exc:
                 logger.debug("ProviderManager: DeepSeek secondary unavailable: %s", exc)
 
         elif provider_name == "deepseek" and settings.gemini_api_key:
             try:
                 from services.llm.gemini_provider import GeminiProvider
-                entries.append(ProviderEntry(
-                    name="gemini",
-                    provider=GeminiProvider(),
-                    priority=2,
-                    timeout=60.0,
-                ))
+
+                entries.append(
+                    ProviderEntry(
+                        name="gemini",
+                        provider=GeminiProvider(),
+                        priority=2,
+                        timeout=60.0,
+                    )
+                )
                 logger.info("ProviderManager: Gemini registered as secondary provider")
             except Exception as exc:
                 logger.debug("ProviderManager: Gemini secondary unavailable: %s", exc)
@@ -226,17 +236,39 @@ class ProviderManager:
         Raises:
             RuntimeError if all providers fail.
         """
+        from services.llm.provider_errors import (
+            classify_gemini_error,
+            classify_deepseek_error,
+            ProviderErrorType,
+        )
+
         last_exc: Optional[Exception] = None
         tried: List[str] = []
+        prev_provider: Optional[str] = None
 
         for attempt_idx, entry in enumerate(self._providers, 1):
+            cb_state = entry.circuit_breaker.state.value
             if not entry.circuit_breaker.is_allowed():
                 logger.info(
-                    "ProviderManager.generate: skipping %s (circuit OPEN)",
+                    "ProviderManager.generate: skipping %s (circuit %s)",
                     entry.name,
+                    cb_state,
                 )
                 continue
 
+            logger.info(
+                "Provider selected: %s, model: %s, circuit breaker state: %s",
+                entry.name,
+                entry.provider.model,
+                cb_state,
+            )
+
+            if prev_provider is not None:
+                logger.info(
+                    "Provider switched from %s to %s", prev_provider, entry.name
+                )
+
+            prev_provider = entry.name
             tried.append(entry.name)
             t0 = time.perf_counter()
             try:
@@ -248,36 +280,69 @@ class ProviderManager:
                     ),
                     timeout=entry.timeout,
                 )
-                entry.circuit_breaker.record_success()
-                logger.info("ProviderManager.generate: success provider=%s", entry.name)
-                return result, entry.name
 
-            except asyncio.TimeoutError as exc:
                 latency = (time.perf_counter() - t0) * 1000
-                last_exc = exc
-                entry.circuit_breaker.record_failure()
-                logger.error(
-                    "ProviderManager.generate failure: provider=%s model=%s attempt=%d latency_ms=%.1f "
-                    "exception_type=TimeoutError fallback_reason=timeout",
-                    entry.name, entry.provider.model, attempt_idx, latency,
-                    exc_info=True
+                logger.info(
+                    "Provider succeeded: %s, model: %s, total latency: %.1f ms, retry count: 0",
+                    entry.name,
+                    entry.provider.model,
+                    latency,
                 )
+                entry.circuit_breaker.record_success()
+                return result, entry.name
 
             except Exception as exc:
                 latency = (time.perf_counter() - t0) * 1000
                 last_exc = exc
-                entry.circuit_breaker.record_failure()
+
+                # Check for quota exhausted
+                is_quota = False
+                fallback_reason = "exception"
+                if entry.name == "gemini":
+                    err = classify_gemini_error(exc, "gemini")
+                    fallback_reason = err.error_type.value
+                    if err.error_type in (
+                        ProviderErrorType.QUOTA_EXCEEDED,
+                        ProviderErrorType.RATE_LIMIT_ERROR,
+                    ):
+                        is_quota = True
+                elif entry.name == "deepseek":
+                    err = classify_deepseek_error(exc, "deepseek")
+                    fallback_reason = err.error_type.value
+                    if err.error_type in (
+                        ProviderErrorType.QUOTA_EXCEEDED,
+                        ProviderErrorType.RATE_LIMIT_ERROR,
+                    ):
+                        is_quota = True
+
+                if is_quota:
+                    logger.warning(
+                        "%s quota exhausted. Error: %s",
+                        entry.name.capitalize(),
+                        str(exc),
+                    )
+                    # Mark temporarily unavailable by force opening the circuit breaker
+                    entry.circuit_breaker._state = CircuitState.OPEN
+                    entry.circuit_breaker._last_failure_time = time.time()
+                    entry.circuit_breaker._failure_count = max(
+                        entry.circuit_breaker._failure_count,
+                        entry.circuit_breaker.failure_threshold,
+                    )
+                    fallback_reason = "quota_exhausted"
+                else:
+                    entry.circuit_breaker.record_failure()
+
                 logger.error(
-                    "ProviderManager.generate failure: provider=%s model=%s attempt=%d latency_ms=%.1f "
-                    "exception_type=%s fallback_reason=exception",
-                    entry.name, entry.provider.model, attempt_idx, latency,
-                    type(exc).__name__,
-                    exc_info=True
+                    "Provider failed: %s, model: %s, fallback reason: %s, total latency: %.1f ms, retry count: 1, circuit breaker state: %s",
+                    entry.name,
+                    entry.provider.model,
+                    fallback_reason,
+                    latency,
+                    entry.circuit_breaker.state.value,
+                    exc_info=True,
                 )
 
-        raise RuntimeError(
-            f"All LLM providers failed after trying {tried}: {last_exc}"
-        )
+        raise RuntimeError(f"All LLM providers failed after trying {tried}: {last_exc}")
 
     async def stream(
         self,
@@ -294,20 +359,43 @@ class ProviderManager:
           - If 0 tokens have been yielded, retry with next provider on error.
           - If tokens already yielded, NEVER retry — terminate gracefully.
         """
+        from services.llm.provider_errors import (
+            classify_gemini_error,
+            classify_deepseek_error,
+            ProviderErrorType,
+        )
+
         last_exc: Optional[Exception] = None
         tried: List[str] = []
+        prev_provider: Optional[str] = None
 
         for attempt_idx, entry in enumerate(self._providers, 1):
+            cb_state = entry.circuit_breaker.state.value
             if not entry.circuit_breaker.is_allowed():
                 logger.info(
-                    "ProviderManager.stream: skipping %s (circuit OPEN)",
+                    "ProviderManager.stream: skipping %s (circuit %s)",
                     entry.name,
+                    cb_state,
                 )
                 continue
 
+            logger.info(
+                "Provider selected: %s, model: %s, circuit breaker state: %s",
+                entry.name,
+                entry.provider.model,
+                cb_state,
+            )
+
+            if prev_provider is not None:
+                logger.info(
+                    "Provider switched from %s to %s", prev_provider, entry.name
+                )
+
+            prev_provider = entry.name
             tried.append(entry.name)
             tokens_yielded = 0
             t0 = time.perf_counter()
+            first_token_time: Optional[float] = None
 
             try:
                 async for token in entry.provider.stream(
@@ -315,58 +403,106 @@ class ProviderManager:
                     system_instruction=system_instruction,
                     history=history,
                 ):
+                    if tokens_yielded == 0:
+                        first_token_time = time.perf_counter()
+                        first_token_latency = (first_token_time - t0) * 1000
+                        logger.info(
+                            "Provider first token received: %s, first token latency: %.1f ms",
+                            entry.name,
+                            first_token_latency,
+                        )
                     tokens_yielded += 1
                     yield token, entry.name
 
                 # Stream completed successfully
-                entry.circuit_breaker.record_success()
+                latency = (time.perf_counter() - t0) * 1000
                 logger.info(
-                    "ProviderManager.stream: complete provider=%s tokens=%d",
-                    entry.name, tokens_yielded,
+                    "Provider succeeded: %s, model: %s, total latency: %.1f ms, tokens: %d, retry count: 0",
+                    entry.name,
+                    entry.provider.model,
+                    latency,
+                    tokens_yielded,
                 )
+                entry.circuit_breaker.record_success()
                 return  # success — do not try other providers
 
             except asyncio.CancelledError:
                 # Client disconnected — never retry, just stop
+                latency = (time.perf_counter() - t0) * 1000
                 logger.info(
                     "ProviderManager.stream: client disconnected provider=%s "
-                    "tokens_yielded=%d",
-                    entry.name, tokens_yielded,
+                    "tokens_yielded=%d, total latency=%.1f ms",
+                    entry.name,
+                    tokens_yielded,
+                    latency,
                 )
                 return
 
             except Exception as exc:
                 latency = (time.perf_counter() - t0) * 1000
                 last_exc = exc
-                entry.circuit_breaker.record_failure()
+
+                # Check for quota exhausted
+                is_quota = False
+                fallback_reason = "exception"
+                if entry.name == "gemini":
+                    err = classify_gemini_error(exc, "gemini")
+                    fallback_reason = err.error_type.value
+                    if err.error_type in (
+                        ProviderErrorType.QUOTA_EXCEEDED,
+                        ProviderErrorType.RATE_LIMIT_ERROR,
+                    ):
+                        is_quota = True
+                elif entry.name == "deepseek":
+                    err = classify_deepseek_error(exc, "deepseek")
+                    fallback_reason = err.error_type.value
+                    if err.error_type in (
+                        ProviderErrorType.QUOTA_EXCEEDED,
+                        ProviderErrorType.RATE_LIMIT_ERROR,
+                    ):
+                        is_quota = True
+
+                if is_quota:
+                    logger.warning(
+                        "%s quota exhausted. Error: %s",
+                        entry.name.capitalize(),
+                        str(exc),
+                    )
+                    # Mark temporarily unavailable
+                    entry.circuit_breaker._state = CircuitState.OPEN
+                    entry.circuit_breaker._last_failure_time = time.time()
+                    entry.circuit_breaker._failure_count = max(
+                        entry.circuit_breaker._failure_count,
+                        entry.circuit_breaker.failure_threshold,
+                    )
+                    fallback_reason = "quota_exhausted"
+                else:
+                    entry.circuit_breaker.record_failure()
+
+                first_token_lat_str = (
+                    f"{((first_token_time - t0) * 1000):.1f} ms"
+                    if first_token_time
+                    else "N/A"
+                )
+
+                logger.error(
+                    "Provider failed: %s, model: %s, fallback reason: %s, tokens yielded: %d, first token latency: %s, total latency: %.1f ms, retry count: 1, circuit breaker state: %s",
+                    entry.name,
+                    entry.provider.model,
+                    fallback_reason,
+                    tokens_yielded,
+                    first_token_lat_str,
+                    latency,
+                    entry.circuit_breaker.state.value,
+                    exc_info=True,
+                )
 
                 if tokens_yielded > 0:
                     # Phase 9: tokens already streamed — NEVER retry
                     # Terminate gracefully without duplicate output
-                    logger.error(
-                        "ProviderManager.stream failure (mid-stream): provider=%s model=%s attempt=%d latency_ms=%.1f "
-                        "exception_type=%s tokens_yielded=%d fallback_reason=mid_stream_failure",
-                        entry.name,
-                        entry.provider.model,
-                        attempt_idx,
-                        latency,
-                        type(exc).__name__,
-                        tokens_yielded,
-                        exc_info=True,
-                    )
-                    return
+                    raise exc
 
                 # 0 tokens yielded — safe to try next provider
-                logger.error(
-                    "ProviderManager.stream failure (pre-stream): provider=%s model=%s attempt=%d latency_ms=%.1f "
-                    "exception_type=%s fallback_reason=pre_stream_failure_trying_next",
-                    entry.name,
-                    entry.provider.model,
-                    attempt_idx,
-                    latency,
-                    type(exc).__name__,
-                    exc_info=True,
-                )
                 continue
 
         # All providers exhausted (with 0 tokens)

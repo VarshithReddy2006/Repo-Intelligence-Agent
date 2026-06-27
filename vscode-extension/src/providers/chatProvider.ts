@@ -7,14 +7,7 @@
 
 import * as vscode from 'vscode';
 import { RepoIntelligenceClient, extractErrorMessage } from '../api';
-import { getNonce, getWebviewUri } from '../utils/webview';
-
-type ChatMessage = {
-  role: 'user' | 'assistant';
-  content: string;
-  sources?: string[];
-  confidence?: number;
-};
+import { getNonce } from '../utils/webview';
 
 export class ChatProvider {
   private static _panels = new Map<string, ChatProvider>();

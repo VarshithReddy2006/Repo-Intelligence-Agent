@@ -27,6 +27,7 @@ router = APIRouter(prefix="/api", tags=["Git History"])
 # Request models
 # ---------------------------------------------------------------------------
 
+
 class ChurnAnalyzeRequest(BaseModel):
     repo: str = Field(..., description="Repository identifier (owner/repo)")
     since_days: int = Field(365, ge=7, le=3650, description="Days of history to mine")
@@ -35,6 +36,7 @@ class ChurnAnalyzeRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
 
 @router.post("/churn/analyze")
 async def analyze_churn(request: ChurnAnalyzeRequest):
@@ -81,9 +83,7 @@ async def get_churn_summary(
 ):
     """Return the full churn summary for a repository."""
     full_name = f"{owner}/{repo_name}"
-    summary = await asyncio.to_thread(
-        git_history_service.load, full_name, since_days
-    )
+    summary = await asyncio.to_thread(git_history_service.load, full_name, since_days)
     if summary is None:
         raise HTTPException(
             status_code=404,
@@ -147,9 +147,7 @@ async def get_churn_timeline(
 ):
     """Return the weekly commit activity timeline."""
     full_name = f"{owner}/{repo_name}"
-    summary = await asyncio.to_thread(
-        git_history_service.load, full_name, since_days
-    )
+    summary = await asyncio.to_thread(git_history_service.load, full_name, since_days)
     if summary is None:
         raise HTTPException(
             status_code=404,

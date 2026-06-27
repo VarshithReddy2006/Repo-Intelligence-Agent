@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { apiUrl } from '../../lib/api';
 import {
   Send,
@@ -11,6 +13,9 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronUp,
+  Copy,
+  CheckCircle2,
+  StopCircle,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -21,6 +26,7 @@ interface Message {
   id: string;
   sender: 'user' | 'assistant';
   text: string;
+  timestamp?: string;
   /** Sources attached to this assistant message (from the done event). */
   sources?: string[];
   /** 0-100 confidence score attached to this assistant message. */
@@ -32,161 +38,265 @@ interface Message {
 }
 
 interface ChatInterfaceProps {
-  /**
-   * When non-empty (embedded in AnalysisDashboard), this value is used
-   * directly and all resolution fallbacks are skipped.
-   *
-   * When empty (standalone /chat page), the component resolves the repo
-   * via: URL params → localStorage → /api/repos/recent.
-   */
   repoName: string;
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Custom Sub-components for Markdown & Layout
 // ---------------------------------------------------------------------------
 
-/** Collapsible source citation block rendered under each assistant message. */
-const SourcesPanel: React.FC<{
-  sources: string[];
-  confidence: number;
-  fallbackMode: boolean;
-}> = ({ sources, confidence, fallbackMode }) => {
-  const [open, setOpen] = useState(false);
+/** Custom helper to inject a blinking cursor element where %%CURSOR%% is found */
+const renderChildrenWithCursor = (children: React.ReactNode): React.ReactNode => {
+  if (typeof children === 'string' && children.includes('%%CURSOR%%')) {
+    const parts = children.split('%%CURSOR%%');
+    return (
+      <>
+        {parts[0]}
+        <span className="inline-block h-3.5 w-1.5 ml-1 bg-primary animate-blink align-middle" />
+        {parts[1]}
+      </>
+    );
+  }
+  if (Array.isArray(children)) {
+    return React.Children.map(children, (child) => renderChildrenWithCursor(child));
+  }
+  return children;
+}
 
-  if (sources.length === 0) return null;
+/** Premium CodeBlock with syntax highlighting, copy button, and wrap options */
+const CodeBlock: React.FC<{ inline?: boolean; className?: string; children: React.ReactNode }> = ({
+  inline,
+  className,
+  children,
+}) => {
+  const [copied, setCopied] = useState(false);
+  const [wrapLines, setWrapLines] = useState(false);
+  const match = /language-(\w+)/.exec(className || '');
+  const lang = match ? match[1] : '';
+  const codeText = String(children).replace(/\n$/, '');
+
+  if (inline) {
+    return (
+      <code className="bg-surface-3 px-1.5 py-0.5 rounded text-xs text-primary font-mono select-all">
+        {children}
+      </code>
+    );
+  }
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(codeText.includes('%%CURSOR%%') ? codeText.split('%%CURSOR%%')[0] : codeText);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const highlightCode = (txt: string) => {
+    const cleanText = txt.includes('%%CURSOR%%') ? txt.split('%%CURSOR%%')[0] : txt;
+    const hasCursor = txt.includes('%%CURSOR%%');
+
+    // High-performance token/keyword syntax highlighting via regex
+    let escaped = cleanText
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    // 1. Comments
+    escaped = escaped.replace(/(\/\/.*|#.*)/g, '<span class="text-text-subtle italic">$1</span>');
+    // 2. Keywords
+    const keywords = /\b(class|def|return|const|let|function|import|from|export|default|interface|extends|as|async|await|if|else|for|while|try|catch|finally|raise|throw|new|typeof|instanceof|public|private|protected|readonly|type|void|any|string|number|boolean|symbol|list|dict|tuple|set|import_statement|import_from_statement|class_definition|function_definition|decorator)\b/g;
+    escaped = escaped.replace(keywords, '<span class="text-indigo-400 font-semibold">$1</span>');
+    // 3. Strings
+    escaped = escaped.replace(/(['"`])(.*?)\1/g, '<span class="text-emerald-400">$1$2$1</span>');
+    // 4. Numbers
+    escaped = escaped.replace(/\b(\d+)\b/g, '<span class="text-amber-400">$1</span>');
+
+    return (
+      <>
+        <span dangerouslySetInnerHTML={{ __html: escaped }} />
+        {hasCursor && <span className="inline-block h-3.5 w-1.5 ml-1 bg-primary animate-blink align-middle" />}
+      </>
+    );
+  };
 
   return (
-    <div className="mt-2 border border-border/60 rounded-md overflow-hidden text-xs font-mono">
-      {/* Toggle header */}
+    <div className="my-3 border border-border rounded-xl overflow-hidden bg-surface-1 shadow-card flex flex-col w-full fade-up">
+      <div className="flex items-center justify-between px-4 py-2.5 bg-surface-2 border-b border-border/80 text-[10px] font-mono text-text-muted select-none shrink-0">
+        <div className="flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-primary/70 animate-pulse"></span>
+          <span>{lang || 'code'}</span>
+        </div>
+        <div className="flex items-center gap-3.5">
+          <button
+            type="button"
+            onClick={() => setWrapLines((v) => !v)}
+            className="hover:text-text transition-colors"
+          >
+            {wrapLines ? 'unwrap' : 'wrap'}
+          </button>
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="flex items-center gap-1 hover:text-text transition-colors font-semibold"
+          >
+            {copied ? (
+              <>
+                <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                <span className="text-emerald-500">Copied!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="h-3 w-3" />
+                <span>Copy</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+      <pre className={`p-4 overflow-x-auto text-xs font-mono leading-relaxed bg-surface-1/40 ${wrapLines ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'}`}>
+        <code>{highlightCode(codeText)}</code>
+      </pre>
+    </div>
+  );
+};
+
+/** Markdown Component mapping GFM styles to Tailwind classes */
+const Markdown: React.FC<{ content: string; isStreaming: boolean }> = ({ content, isStreaming }) => {
+  const textWithCursor = isStreaming ? content + ' %%CURSOR%%' : content;
+
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        code: ({ className, children }) => {
+          const match = /language-(\w+)/.exec(className || '');
+          const isInline = !match;
+          return (
+            <CodeBlock inline={isInline} className={className}>
+              {children}
+            </CodeBlock>
+          );
+        },
+        table: ({ children }) => (
+          <div className="overflow-x-auto my-3 border border-border rounded-xl bg-surface-1/25 shadow-card max-w-full">
+            <table className="w-full text-left text-xs border-collapse font-sans leading-relaxed">{children}</table>
+          </div>
+        ),
+        thead: ({ children }) => <thead className="bg-surface-2 border-b border-border text-[9px] font-mono font-bold text-text-muted uppercase tracking-wider select-none">{children}</thead>,
+        tbody: ({ children }) => <tbody className="divide-y divide-border/40 bg-surface-1/10">{children}</tbody>,
+        tr: ({ children }) => <tr className="hover:bg-primary/5 transition-colors">{children}</tr>,
+        th: ({ children }) => <th className="p-3 font-semibold text-text-muted">{children}</th>,
+        td: ({ children }) => <td className="p-3 text-text/90 font-mono break-all">{children}</td>,
+        ul: ({ children }) => <ul className="list-disc pl-5 my-2 space-y-1.5 font-sans">{children}</ul>,
+        ol: ({ children }) => <ol className="list-decimal pl-5 my-2 space-y-1.5 font-sans">{children}</ol>,
+        li: ({ children }) => <li className="leading-relaxed">{renderChildrenWithCursor(children)}</li>,
+        p: ({ children }) => <p className="leading-relaxed mb-3.5 break-words text-text/95 last:mb-0">{renderChildrenWithCursor(children)}</p>,
+        h1: ({ children }) => <h1 className="text-base font-bold border-b border-border/50 pb-1.5 mt-5 mb-2.5 text-text font-mono uppercase tracking-wider">{children}</h1>,
+        h2: ({ children }) => <h2 className="text-sm font-bold mt-4.5 mb-2 text-text font-mono">{children}</h2>,
+        h3: ({ children }) => <h3 className="text-xs font-bold mt-4 mb-1.5 text-text-muted font-mono">{children}</h3>,
+        blockquote: ({ children }) => <blockquote className="border-l-4 border-primary/40 bg-primary/5 pl-4 py-2.5 my-3 rounded-r-lg italic text-text-muted">{children}</blockquote>,
+        a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-semibold">{children}</a>,
+      }}
+    >
+      {textWithCursor}
+    </ReactMarkdown>
+  );
+};
+
+/** Streaming Typing indicator */
+const TypingIndicator: React.FC = () => (
+  <div className="flex items-center gap-1 py-1 select-none text-text-muted shrink-0" aria-label="Thinking">
+    <span className="h-1.5 w-1.5 rounded-full bg-primary animate-bounce-slow" />
+    <span className="h-1.5 w-1.5 rounded-full bg-primary animate-bounce-slow [animation-delay:0.2s]" />
+    <span className="h-1.5 w-1.5 rounded-full bg-primary animate-bounce-slow [animation-delay:0.4s]" />
+  </div>
+);
+
+/** Citations and sources container */
+const SourcesPanel: React.FC<{ sources: string[]; confidence: number; fallbackMode: boolean }> = ({
+  sources,
+  confidence,
+  fallbackMode,
+}) => {
+  const [open, setOpen] = useState(false);
+
+  const displayConfidence = Math.min(Math.max(Math.round(confidence), 0), 100);
+
+  return (
+    <div className="border border-border/80 rounded-xl overflow-hidden bg-surface-1/40 text-[10px] font-sans shadow-card fade-up select-none">
       <button
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between px-3 py-1.5 bg-canvas/40 hover:bg-canvas/60 transition-colors text-text-muted"
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-3.5 py-2.5 hover:bg-canvas/50 transition-colors focus-visible:outline-none"
       >
-        <span className="flex items-center gap-1.5">
-          <FileCode className="h-3 w-3 text-primary" />
-          <span>
-            {sources.length} source{sources.length !== 1 ? 's' : ''}
+        <div className="flex items-center gap-3">
+          <span className="font-mono font-bold text-text flex items-center gap-1.5">
+            <FileCode className="h-3.5 w-3.5 text-primary" /> Sources ({sources.length})
           </span>
-          {fallbackMode && (
-            <span className="ml-2 flex items-center gap-1 text-amber-400">
-              <AlertTriangle className="h-3 w-3" />
-              <span>fallback mode</span>
+          {fallbackMode ? (
+            <span className="text-amber-500 font-mono font-semibold">Fallback Mode</span>
+          ) : (
+            <span className="text-text-muted">
+              Confidence:{' '}
+              <span className="font-mono font-bold text-primary">{displayConfidence}%</span>
             </span>
           )}
-          {!fallbackMode && confidence > 0 && (
-            <span className="ml-2 text-emerald-500">{confidence}% confidence</span>
-          )}
-        </span>
-        {open ? (
-          <ChevronUp className="h-3 w-3" />
-        ) : (
-          <ChevronDown className="h-3 w-3" />
-        )}
+        </div>
+        {open ? <ChevronUp className="h-3.5 w-3.5 text-text-muted" /> : <ChevronDown className="h-3.5 w-3.5 text-text-muted" />}
       </button>
 
-      {/* Source list */}
       {open && (
-        <ul className="px-3 py-2 space-y-1 bg-canvas/20">
-          {sources.map((src) => (
-            <li key={src} className="text-text-muted truncate">
-              • {src}
-            </li>
+        <div className="p-3 bg-canvas/30 border-t border-border/40 grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-40 overflow-y-auto">
+          {sources.map((src, i) => (
+            <div
+              key={i}
+              className="flex items-center gap-2 p-2 bg-card rounded-lg border border-border/50 truncate hover:border-primary/20 transition-all"
+            >
+              <FileCode className="h-3 w-3 text-text-muted shrink-0" />
+              <span className="font-mono text-text-muted truncate select-all" title={src}>
+                {src.split('/').pop() || src}
+              </span>
+            </div>
           ))}
-        </ul>
+        </div>
       )}
     </div>
   );
 };
 
 // ---------------------------------------------------------------------------
-// Main component
+// Main Component
 // ---------------------------------------------------------------------------
 
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({ repoName }) => {
-  /**
-   * Repo resolution strategy:
-   *
-   * EMBEDDED MODE  (repoName prop is non-empty — inside AnalysisDashboard)
-   *   → use prop directly, skip all fallbacks.
-   *
-   * STANDALONE MODE (repoName prop is empty — /chat page)
-   *   Priority 1: URL params ?owner=...&repo=...
-   *   Priority 2: localStorage.activeRepo
-   *   Priority 3: async GET /api/repos/recent → data[0].name
-   */
-  const [activeRepo, setActiveRepo] = useState<string>(() => {
-    // Embedded mode: prop is the direct, authoritative value.
-    if (repoName) return repoName;
-
-    // Standalone mode fallbacks (synchronous part).
-    if (typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search);
-      const owner = urlParams.get('owner');
-      const repo = urlParams.get('repo');
-      if (owner && repo) return `${owner}/${repo}`;
-
-      const stored = localStorage.getItem('activeRepo');
-      if (stored) return stored;
-    }
-
-    // Will be resolved async (Priority 3).
-    return '';
-  });
-
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
-  /** Shown when the component is in standalone mode and has no repo at all. */
+  const [activeRepo, setActiveRepo] = useState(repoName);
+  const [copiedAnswerId, setCopiedAnswerId] = useState<string | null>(null);
   const [noRepoError, setNoRepoError] = useState(false);
+
   const bottomRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const suggestedQuestions = [
-    'What are the main entry points of this codebase?',
-    'Are there any circular dependencies?',
-    'Which files are most risky to change?',
-    'How do I onboard to this codebase?',
+    'What does this codebase do, and what are its main entry points?',
+    'Show me any circular dependencies in this project.',
+    'Are there any dead/unused functions, and where are they located?',
+    'What is the architectural overview of this repository?',
   ];
 
-  // ── Priority 3: async fallback — only runs in standalone mode when prop was empty ──
+  // Sync active repo changes
   useEffect(() => {
-    // Skip if prop was provided (embedded) or already resolved.
-    if (repoName || activeRepo) return;
-
-    fetch(apiUrl('/api/repos/recent'))
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
-          const name: string = data[0].name;
-          setActiveRepo(name);
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('activeRepo', name);
-          }
-        } else {
-          // Backend has no recent repos — show the "no repo" state.
-          setNoRepoError(true);
-        }
-      })
-      .catch((err) => {
-        console.error('Failed to fetch recent repos for chat', err);
-        setNoRepoError(true);
-      });
-    // intentionally only on mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // ── Sync prop changes into activeRepo (e.g. user switches repos in dashboard) ──
-  useEffect(() => {
-    if (repoName && repoName !== activeRepo) {
+    if (repoName) {
       setActiveRepo(repoName);
+      setNoRepoError(false);
     }
-  }, [repoName, activeRepo]);
+  }, [repoName]);
 
-  // ── Sync global active-repo events (for standalone /chat page cross-island updates) ──
+  // Window events
   useEffect(() => {
     const handleRepoChanged = (e: Event) => {
       const customEvent = e as CustomEvent<string>;
-      if (customEvent.detail && customEvent.detail !== activeRepo) {
+      if (customEvent.detail) {
         setActiveRepo(customEvent.detail);
       }
     };
@@ -203,37 +313,39 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ repoName }) => {
     };
   }, [activeRepo]);
 
-  // ── Reset greeting whenever the active repo changes ──
+  // Reset conversation on active repo change
   useEffect(() => {
     if (!activeRepo) {
       setMessages([]);
       return;
     }
     setNoRepoError(false);
-    setMessages([
-      {
-        id: 'init',
-        sender: 'assistant',
-        text: `Hello! I've indexed \`${activeRepo}\`. Ask me anything about its architecture, endpoints, or file structures.`,
-      },
-    ]);
+    setMessages([]);
   }, [activeRepo]);
 
-  // ── Auto-scroll ──
+  // Scroll bottom
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // ── Stream a response from /api/chat ──
-  const triggerStreamResponse = async (userPrompt: string) => {
+  const handleCopyAnswer = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedAnswerId(id);
+    setTimeout(() => setCopiedAnswerId(null), 2000);
+  };
+
+  const triggerStreamResponse = async (userPrompt: string, updatedHistory: Message[]) => {
     setIsStreaming(true);
     const assistantId = Math.random().toString();
+    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    // Add empty placeholder for the streaming assistant message.
     setMessages((prev) => [
       ...prev,
-      { id: assistantId, sender: 'assistant', text: '' },
+      { id: assistantId, sender: 'assistant', text: '', timestamp },
     ]);
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     try {
       const response = await fetch(apiUrl('/api/chat'), {
@@ -242,29 +354,26 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ repoName }) => {
         body: JSON.stringify({
           repo: activeRepo,
           message: userPrompt,
-          history: messages.slice(1).map((m) => ({
+          history: updatedHistory.map((m) => ({
             role: m.sender === 'user' ? 'user' : 'model',
             parts: [m.text],
           })),
         }),
+        signal: controller.signal,
       });
 
-      // Handle non-SSE errors (422 Pydantic validation, 500, etc.)
       if (!response.ok) {
         let detail = `Backend error ${response.status}`;
         try {
           const errBody = await response.json();
           if (errBody?.detail) {
-            // Pydantic 422 wraps details in an array
             if (Array.isArray(errBody.detail)) {
               detail = errBody.detail.map((d: any) => d.msg).join('; ');
             } else {
               detail = String(errBody.detail);
             }
           }
-        } catch {
-          /* ignore parse error */
-        }
+        } catch { /* ignore */ }
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === assistantId
@@ -294,7 +403,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ repoName }) => {
           try {
             const data = JSON.parse(line.slice(6));
 
-            // Inline SSE error from the backend (no_repo_selected, etc.)
             if (data.error) {
               setMessages((prev) =>
                 prev.map((msg) =>
@@ -306,7 +414,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ repoName }) => {
               continue;
             }
 
-            // Streaming text token
             if (data.text) {
               setMessages((prev) =>
                 prev.map((msg) =>
@@ -317,7 +424,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ repoName }) => {
               );
             }
 
-            // Terminal done event — attach sources, confidence, fallback flag
             if (data.status === 'done') {
               setMessages((prev) =>
                 prev.map((msg) =>
@@ -333,86 +439,153 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ repoName }) => {
               );
             }
           } catch {
-            // Ignore malformed / partial SSE lines
+            /* ignore partial lines */
           }
         }
       }
-    } catch (error) {
-      console.error('Chat stream error:', error);
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === assistantId
-            ? {
-                ...msg,
-                text: 'Could not reach the agent backend. Please verify that api.py is running on port 8001.',
-                isError: true,
-              }
-            : msg,
-        ),
-      );
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantId
+              ? { ...msg, text: msg.text + '\n\n*Stream generation stopped.*' }
+              : msg,
+          ),
+        );
+      } else {
+        console.error('Chat stream error:', error);
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantId
+              ? {
+                  ...msg,
+                  text: 'Could not reach the agent backend. Please verify that api.py is running on port 8001.',
+                  isError: true,
+                }
+              : msg,
+          ),
+        );
+      }
     } finally {
       setIsStreaming(false);
+      abortControllerRef.current = null;
     }
   };
 
   const handleSend = async (textToSend: string) => {
     if (!textToSend.trim() || isStreaming) return;
 
-    setMessages((prev) => [
-      ...prev,
-      { id: Math.random().toString(), sender: 'user', text: textToSend },
-    ]);
+    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const userMessage: Message = {
+      id: Math.random().toString(),
+      sender: 'user',
+      text: textToSend,
+      timestamp,
+    };
+    const nextHistory = [...messages, userMessage];
+    
+    setMessages(nextHistory);
     setInput('');
 
-    await triggerStreamResponse(textToSend);
+    await triggerStreamResponse(textToSend, nextHistory);
   };
 
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
+  const handleStop = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+  };
+
+  const handleRegenerate = async () => {
+    const userMsgs = messages.filter((m) => m.sender === 'user');
+    if (userMsgs.length === 0) return;
+    const lastUserMsg = userMsgs[userMsgs.length - 1];
+
+    let nextMsgs = [...messages];
+    if (nextMsgs[nextMsgs.length - 1].sender === 'assistant') {
+      nextMsgs.pop();
+    }
+
+    setMessages(nextMsgs);
+    await triggerStreamResponse(lastUserMsg.text, nextMsgs);
+  };
 
   return (
-    <div className="flex flex-col min-h-[550px] h-full border border-border bg-card/10 rounded-lg overflow-hidden w-full">
+    <div className="flex flex-col min-h-[550px] h-full border border-border bg-card/10 rounded-xl overflow-hidden w-full shadow-float">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card/40 shrink-0">
+      <div className="flex items-center justify-between px-5 py-3.5 border-b border-border bg-card/45 shrink-0 select-none">
         <div className="flex items-center gap-2">
-          <MessageSquareCode className="h-4 w-4 text-primary" />
-          <span className="font-mono text-sm font-semibold text-text">
-            Repository Chat Assistant
+          <MessageSquareCode className="h-4 w-4 text-primary animate-pulse" />
+          <span className="font-mono text-xs font-bold text-text uppercase tracking-wider">
+            Codebase Companion
           </span>
         </div>
-        <span className="text-[10px] font-mono border border-primary/30 text-primary px-2 py-0.5 rounded bg-primary/5 truncate max-w-[180px]">
-          {activeRepo || 'no repo selected'}
+        <span className="text-[10px] font-mono border border-primary/25 text-primary px-2.5 py-0.5 rounded-md bg-primary/5 truncate max-w-[200px]">
+          {activeRepo || 'no repo'}
         </span>
       </div>
 
-      {/* No-repo state (standalone mode, no resolution succeeded) */}
+      {/* No-repo state */}
       {noRepoError && (
-        <div className="flex-grow flex flex-col items-center justify-center p-8 gap-3 text-center">
-          <AlertTriangle className="h-8 w-8 text-amber-400" />
-          <p className="text-sm font-mono text-text-muted">
-            No repository selected.
+        <div className="flex-grow flex flex-col items-center justify-center p-8 gap-3.5 text-center fade-up">
+          <div className="h-12 w-12 rounded-full bg-amber-500/10 border border-amber-500/25 flex items-center justify-center text-amber-500 select-none">
+            <AlertTriangle className="h-6 w-6" />
+          </div>
+          <p className="text-sm font-semibold text-text">
+            No active repository found
           </p>
-          <p className="text-xs text-text-muted max-w-xs">
-            Analyse a repository first, then return here to chat with its
-            codebase.
+          <p className="text-xs text-text-muted max-w-xs leading-relaxed font-sans">
+            Please analyze a repository on the homepage to start asking questions about its codebase.
           </p>
         </div>
       )}
 
+      {/* Empty State Welcome Dashboard */}
+      {!noRepoError && messages.length === 0 && (
+        <div className="flex-grow flex flex-col items-center justify-center p-6 gap-6 text-center max-w-xl mx-auto my-auto fade-up">
+          <div className="h-12 w-12 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary animate-pulse select-none">
+            <Sparkles className="h-6 w-6" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-base font-bold text-text font-mono">Chat with {activeRepo}</h2>
+            <p className="text-xs text-text-muted leading-relaxed font-sans max-w-sm">
+              Ask about function callers, class inheritances, endpoints, or planned code refactors.
+            </p>
+          </div>
+
+          <div className="w-full text-left mt-3 select-none">
+            <p className="text-[10px] uppercase font-mono tracking-widest text-text-subtle font-semibold mb-3 flex items-center gap-1.5 justify-center">
+              Suggested Prompts
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {suggestedQuestions.map((q) => (
+                <button
+                  key={q}
+                  onClick={() => handleSend(q)}
+                  className="card p-3 text-left hover:border-primary/40 hover:bg-primary/5 transition-all text-xs font-sans text-text-muted hover:text-text duration-200 group flex items-start gap-2.5"
+                >
+                  <MessageSquareCode className="h-4 w-4 text-primary/70 shrink-0 mt-0.5 group-hover:text-primary transition-colors" />
+                  <span className="leading-relaxed">{q}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Message thread */}
-      {!noRepoError && (
-        <div className="flex-grow overflow-y-auto p-4 space-y-4 font-sans text-sm">
-          {messages.map((msg) => (
+      {!noRepoError && messages.length > 0 && (
+        <div className="flex-grow overflow-y-auto p-5 space-y-5 font-sans text-xs">
+          {messages.map((msg, idx) => (
             <div
               key={msg.id}
-              className={`flex gap-3 ${
+              className={`flex gap-3 fade-up ${
                 msg.sender === 'user' ? 'ml-auto flex-row-reverse max-w-[85%]' : 'max-w-[92%]'
               }`}
             >
               {/* Avatar */}
               <div
-                className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 border ${
+                className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 border select-none ${
                   msg.sender === 'user'
                     ? 'bg-primary/10 border-primary/30 text-primary'
                     : msg.isError
@@ -427,25 +600,76 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ repoName }) => {
                 )}
               </div>
 
-              {/* Bubble + sources */}
-              <div className="flex flex-col gap-1 min-w-0">
+              {/* Bubble + Citations */}
+              <div className="flex flex-col gap-1.5 min-w-0">
                 <div
-                  className={`p-3 rounded-lg border ${
+                  className={`p-3.5 rounded-xl border leading-relaxed break-words shadow-card ${
                     msg.sender === 'user'
                       ? 'bg-primary/10 border-primary/20 text-text'
                       : msg.isError
-                      ? 'bg-red-500/5 border-red-500/20 text-red-400'
+                      ? 'bg-red-500/5 border-red-500/20 text-red-400 font-mono'
                       : msg.fallbackMode
-                      ? 'bg-amber-500/5 border-amber-500/20 text-text opacity-95'
-                      : 'bg-card/30 border-border text-text opacity-95'
+                      ? 'bg-amber-500/5 border-amber-500/20 text-text'
+                      : 'bg-card/40 border-border text-text'
                   }`}
                 >
-                  <p className="whitespace-pre-wrap leading-relaxed break-words">
-                    {msg.text}
-                  </p>
+                  {msg.sender === 'user' ? (
+                    <p className="whitespace-pre-wrap leading-relaxed break-words text-text/95">
+                      {msg.text}
+                    </p>
+                  ) : msg.text === '' ? (
+                    <TypingIndicator />
+                  ) : (
+                    <div className="markdown-body font-sans text-[12px] overflow-hidden">
+                      <Markdown content={msg.text} isStreaming={isStreaming && idx === messages.length - 1} />
+                    </div>
+                  )}
                 </div>
 
-                {/* Sources panel — only for assistant messages with sources */}
+                {/* Message Timestamp */}
+                {msg.timestamp && (
+                  <span className={`text-[8px] font-mono text-text-muted mt-0.5 px-1 select-none ${
+                    msg.sender === 'user' ? 'self-end' : 'self-start'
+                  }`}>
+                    {msg.timestamp}
+                  </span>
+                )}
+
+                {/* Toolbar under assistant bubble */}
+                {msg.sender === 'assistant' && msg.text !== '' && (
+                  <div className="flex items-center gap-3.5 mt-0.5 pl-1.5 text-[10px] text-text-muted select-none">
+                    <button
+                      type="button"
+                      onClick={() => handleCopyAnswer(msg.text, msg.id)}
+                      className="flex items-center gap-1 hover:text-text transition-colors"
+                    >
+                      {copiedAnswerId === msg.id ? (
+                        <>
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                          <span className="text-emerald-500 font-semibold">Copied answer</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3.5 w-3.5" />
+                          <span>Copy answer</span>
+                        </>
+                      )}
+                    </button>
+                    
+                    {idx === messages.length - 1 && !isStreaming && (
+                      <button
+                        type="button"
+                        onClick={handleRegenerate}
+                        className="flex items-center gap-1 hover:text-text transition-colors font-semibold"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        <span>Regenerate</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Collapsible citations grid card */}
                 {msg.sender === 'assistant' &&
                   msg.sources &&
                   msg.sources.length > 0 && (
@@ -459,39 +683,27 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ repoName }) => {
             </div>
           ))}
 
+          {/* Inline Stop button while streaming */}
           {isStreaming && (
-            <div className="flex items-center gap-2 text-xs text-text-muted font-mono pl-11">
-              <RefreshCw className="h-3 w-3 animate-spin text-primary" />
-              <span>Agent is thinking...</span>
+            <div className="flex items-center justify-center py-2 fade-up select-none">
+              <button
+                type="button"
+                onClick={handleStop}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/25 bg-red-500/5 text-red-500 hover:bg-red-500/10 text-[10px] font-mono uppercase tracking-wider font-bold transition-all focus-visible:outline-none"
+              >
+                <StopCircle className="h-3.5 w-3.5 animate-pulse" />
+                Stop Generation
+              </button>
             </div>
           )}
-          <div ref={bottomRef} />
-        </div>
-      )}
 
-      {/* Suggested questions — shown only after the greeting message */}
-      {!noRepoError && messages.length === 1 && (
-        <div className="px-4 py-2 bg-canvas/30 border-t border-border shrink-0">
-          <p className="text-[10px] uppercase font-mono tracking-wider text-text-muted font-semibold mb-1.5 flex items-center gap-1">
-            <Sparkles className="h-3 w-3 text-primary" /> Suggested Questions
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {suggestedQuestions.map((q) => (
-              <button
-                key={q}
-                onClick={() => handleSend(q)}
-                className="text-xs bg-card/60 hover:bg-border/60 text-text-muted hover:text-text border border-border px-2.5 py-1 rounded transition-colors font-sans"
-              >
-                {q}
-              </button>
-            ))}
-          </div>
+          <div ref={bottomRef} />
         </div>
       )}
 
       {/* Input bar */}
       {!noRepoError && (
-        <div className="p-3 border-t border-border bg-card/25 shrink-0">
+        <div className="p-3.5 border-t border-border bg-card/25 shrink-0">
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -504,12 +716,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ repoName }) => {
               rows={1}
               onChange={(e) => {
                 setInput(e.target.value);
-                // Auto-grow
                 e.target.style.height = 'auto';
                 e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px';
               }}
               onKeyDown={(e) => {
-                // Cmd/Ctrl+Enter or plain Enter without Shift submits
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
                   handleSend(input);
@@ -522,16 +732,20 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ repoName }) => {
                   : 'Waiting for repository...'
               }
               aria-label="Chat message"
-              className="flex-grow bg-canvas border border-border rounded px-3 py-2 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary font-sans text-text placeholder:text-text-muted/50 resize-none overflow-hidden leading-relaxed"
-              style={{ minHeight: '38px' }}
+              className="flex-grow bg-canvas border border-border rounded-lg px-3.5 py-2.5 text-xs focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary font-sans text-text placeholder:text-text-muted/40 resize-none overflow-hidden leading-relaxed"
+              style={{ minHeight: '40px' }}
             />
             <button
               type="submit"
               disabled={isStreaming || !input.trim() || !activeRepo}
               aria-label="Send message"
-              className="bg-primary hover:bg-primary-hover text-primary-foreground font-medium px-3.5 py-2 rounded flex items-center gap-1.5 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:shadow-ring shrink-0"
+              className="bg-primary hover:bg-primary-hover text-text font-medium px-4 py-2.5 rounded-lg flex items-center gap-1.5 text-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:shadow-ring shrink-0 hover:scale-[1.02] active:scale-[0.98] duration-150"
             >
-              <Send className="h-4 w-4" aria-hidden="true" />
+              {isStreaming ? (
+                <RefreshCw className="h-4 w-4 animate-spin text-text" aria-hidden="true" />
+              ) : (
+                <Send className="h-4 w-4" aria-hidden="true" />
+              )}
             </button>
           </form>
         </div>

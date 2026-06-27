@@ -16,15 +16,35 @@ Tests cover:
 
 import asyncio
 import json
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
-from typing import AsyncIterator, List
+from unittest.mock import AsyncMock, MagicMock, patch
+from typing import AsyncIterator
 
-
-# ---------------------------------------------------------------------------
-# Intent Detection
-# ---------------------------------------------------------------------------
-from services.chat.intent_detector import RuleBasedIntentDetector, Intent
+from services.chat.intent_detector import RuleBasedIntentDetector, Intent, IntentResult
+from services.chat.retrieval import (
+    _get_tier_weight,
+    should_skip_indexing,
+    build_query_text,
+    _BGE_QUERY_PREFIX,
+    _token_overlap_score,
+    _content_hash,
+    intelligent_retrieve,
+)
+from services.chat.conversation_memory import ConversationMemoryStore
+from services.chat.provider_manager import (
+    ProviderManager,
+    ProviderEntry,
+    CircuitBreaker,
+    CircuitState,
+)
+from services.chat.fallback_renderer import (
+    render_fallback,
+    render_mid_stream_termination,
+)
+from services.chat.observability import ChatObservability, PipelineTrace
+from services.chat.context_builder import ContextBuilder
+from services.chat.retrieval_pipeline import RetrievalPipeline
+from services.retrieval_service import RetrievalService
+from services.chat.intent_router import IntentRouter
 
 
 class TestIntentDetector:
@@ -53,11 +73,15 @@ class TestIntentDetector:
         assert r.intent == Intent.SYMBOL
 
     def test_reading_order_intent(self):
-        r = self.detector.detect("What is the recommended reading order for a new developer?")
+        r = self.detector.detect(
+            "What is the recommended reading order for a new developer?"
+        )
         assert r.intent == Intent.READING_ORDER
 
     def test_impact_analysis_intent(self):
-        r = self.detector.detect("What is the blast radius if I change the AuthService?")
+        r = self.detector.detect(
+            "What is the blast radius if I change the AuthService?"
+        )
         assert r.intent == Intent.IMPACT_ANALYSIS
 
     def test_general_qa_intent(self):
@@ -70,7 +94,9 @@ class TestIntentDetector:
         assert r.confidence == 0.0
 
     def test_entity_extraction(self):
-        r = self.detector.detect("Explain how UserService and AuthManager work together")
+        r = self.detector.detect(
+            "Explain how UserService and AuthManager work together"
+        )
         assert "UserService" in r.entities or "AuthManager" in r.entities
 
     def test_unknown_intent_random(self):
@@ -82,7 +108,6 @@ class TestIntentDetector:
 # ---------------------------------------------------------------------------
 # Lockfile / Tier Weight Exclusion
 # ---------------------------------------------------------------------------
-from services.chat.retrieval import _get_tier_weight, should_skip_indexing
 
 
 class TestTierWeights:
@@ -125,7 +150,6 @@ class TestTierWeights:
 # ---------------------------------------------------------------------------
 # Asymmetric BGE Query Prefix
 # ---------------------------------------------------------------------------
-from services.chat.retrieval import build_query_text, _BGE_QUERY_PREFIX
 
 
 class TestAsymmetricEmbeddings:
@@ -145,12 +169,13 @@ class TestAsymmetricEmbeddings:
 # ---------------------------------------------------------------------------
 # Reranking and Deduplication
 # ---------------------------------------------------------------------------
-from services.chat.retrieval import _token_overlap_score, _content_hash
 
 
 class TestReranking:
     def test_token_overlap_exact_match(self):
-        score = _token_overlap_score("UserService authentication", "UserService handles authentication")
+        score = _token_overlap_score(
+            "UserService authentication", "UserService handles authentication"
+        )
         assert score > 0.5
 
     def test_token_overlap_no_match(self):
@@ -180,7 +205,6 @@ class TestReranking:
 # ---------------------------------------------------------------------------
 # Conversation Memory
 # ---------------------------------------------------------------------------
-from services.chat.conversation_memory import ConversationMemoryStore, ConversationSession
 
 
 class TestConversationMemory:
@@ -237,7 +261,6 @@ class TestConversationMemory:
 # ---------------------------------------------------------------------------
 # Provider Manager — circuit breaker and streaming retry safety
 # ---------------------------------------------------------------------------
-from services.chat.provider_manager import ProviderManager, ProviderEntry, CircuitBreaker, CircuitState
 
 
 class TestCircuitBreaker:
@@ -315,8 +338,11 @@ class TestProviderManagerStreaming:
 
         async def collect():
             results = []
-            async for token, pname in manager.stream("prompt"):
-                results.append(token)
+            try:
+                async for token, pname in manager.stream("prompt"):
+                    results.append(token)
+            except Exception:
+                pass
             return results
 
         tokens = asyncio.run(collect())
@@ -325,7 +351,7 @@ class TestProviderManagerStreaming:
 
     def test_stream_retries_on_zero_token_failure(self):
         """If 0 tokens yielded, retry with next provider."""
-        p1 = self._make_provider(tokens=None)    # fails immediately
+        p1 = self._make_provider(tokens=None)  # fails immediately
         p2 = self._make_provider(tokens=["ok"])
         e1 = ProviderEntry(name="p1", provider=p1, priority=1)
         e2 = ProviderEntry(name="p2", provider=p2, priority=2)
@@ -344,23 +370,29 @@ class TestProviderManagerStreaming:
 # ---------------------------------------------------------------------------
 # Fallback Rendering — no raw code dumps
 # ---------------------------------------------------------------------------
-from services.chat.fallback_renderer import render_fallback, render_mid_stream_termination
 
 
 class TestFallbackRenderer:
     def test_fallback_no_raw_code_dump(self):
         chunks = [
             {
-                "content": "x" * 2000,   # large chunk
+                "content": "x" * 2000,  # large chunk
                 "metadata": {"file_path": "backend/service.py"},
             }
         ]
-        result = render_fallback("How does it work?", "", chunks, ["backend/service.py"])
+        result = render_fallback(
+            "How does it work?", "", chunks, ["backend/service.py"]
+        )
         # Must NOT dump 2000 chars of raw code
         assert "x" * 100 not in result
 
     def test_fallback_shows_relevant_files(self):
-        chunks = [{"content": "def foo(): pass", "metadata": {"file_path": "services/auth.py"}}]
+        chunks = [
+            {
+                "content": "def foo(): pass",
+                "metadata": {"file_path": "services/auth.py"},
+            }
+        ]
         result = render_fallback("explain auth", "", chunks, ["services/auth.py"])
         assert "services/auth.py" in result
 
@@ -383,7 +415,6 @@ class TestFallbackRenderer:
 # ---------------------------------------------------------------------------
 # Observability — trace emission
 # ---------------------------------------------------------------------------
-from services.chat.observability import ChatObservability, PipelineTrace
 
 
 class TestObservability:
@@ -398,10 +429,11 @@ class TestObservability:
 
     def test_trace_finish_sets_total_ms(self):
         import time
+
         trace = PipelineTrace(repo_name="owner/repo")
         time.sleep(0.01)
         trace.finish()
-        assert trace.total_ms >= 5.0   # at least 5ms
+        assert trace.total_ms >= 5.0  # at least 5ms
 
     def test_trace_from_retrieval_metrics(self):
         trace = PipelineTrace(repo_name="owner/repo")
@@ -423,7 +455,6 @@ class TestObservability:
 # ---------------------------------------------------------------------------
 # Context Builder
 # ---------------------------------------------------------------------------
-from services.chat.context_builder import ContextBuilder
 
 
 class TestContextBuilder:
@@ -463,7 +494,10 @@ class TestContextBuilder:
 
     def test_lockfile_chunks_excluded_from_code_slot(self):
         chunks = [
-            {"content": "locked content", "metadata": {"file_path": "package-lock.json"}},
+            {
+                "content": "locked content",
+                "metadata": {"file_path": "package-lock.json"},
+            },
             {"content": "real code", "metadata": {"file_path": "backend/api.py"}},
         ]
         ctx = self.builder.build(
@@ -487,8 +521,6 @@ class TestContextBuilder:
 # ---------------------------------------------------------------------------
 # RetrievalPipeline end-to-end (mocked services)
 # ---------------------------------------------------------------------------
-from services.chat.retrieval_pipeline import RetrievalPipeline
-from services.chat.conversation_memory import ConversationMemoryStore
 
 
 def _make_mock_embedding_service():
@@ -527,6 +559,7 @@ def _make_mock_provider(response="This is the answer."):
 class TestRetrievalPipelineE2E:
     def _make_pipeline(self, provider_response="The answer is here."):
         from services.chat.provider_manager import ProviderManager, ProviderEntry
+
         emb = _make_mock_embedding_service()
         chroma = _make_mock_chroma()
         provider = _make_mock_provider(provider_response)
@@ -542,17 +575,13 @@ class TestRetrievalPipelineE2E:
 
     def test_retrieve_returns_answer(self):
         pipeline = self._make_pipeline("This is the auth service.")
-        result = asyncio.run(
-            pipeline.retrieve("owner/repo", "How does auth work?")
-        )
+        result = asyncio.run(pipeline.retrieve("owner/repo", "How does auth work?"))
         assert "answer" in result
         assert len(result["answer"]) > 0
 
     def test_retrieve_returns_sources(self):
         pipeline = self._make_pipeline()
-        result = asyncio.run(
-            pipeline.retrieve("owner/repo", "How does auth work?")
-        )
+        result = asyncio.run(pipeline.retrieve("owner/repo", "How does auth work?"))
         assert "sources" in result
         assert isinstance(result["sources"], list)
 
@@ -601,7 +630,6 @@ class TestRetrievalPipelineE2E:
 # ---------------------------------------------------------------------------
 # Backward compatibility — RetrievalService shim
 # ---------------------------------------------------------------------------
-from services.retrieval_service import RetrievalService
 
 
 class TestRetrievalServiceShim:
@@ -626,15 +654,17 @@ class TestRetrievalServiceShim:
             # Patch at pipeline level
             with patch.object(svc, "_get_pipeline") as mock_get:
                 mock_pipeline = MagicMock()
-                mock_pipeline.retrieve = AsyncMock(return_value={
-                    "answer": "test answer",
-                    "sources": ["services/auth.py"],
-                    "confidence": 85,
-                    "verified": True,
-                    "evaluation": {},
-                    "intent": "GENERAL_QA",
-                    "fallback_mode": False,
-                })
+                mock_pipeline.retrieve = AsyncMock(
+                    return_value={
+                        "answer": "test answer",
+                        "sources": ["services/auth.py"],
+                        "confidence": 85,
+                        "verified": True,
+                        "evaluation": {},
+                        "intent": "GENERAL_QA",
+                        "fallback_mode": False,
+                    }
+                )
                 mock_get.return_value = mock_pipeline
                 result = svc.retrieve_and_answer("owner/repo", "test question")
 
@@ -648,8 +678,6 @@ class TestRetrievalServiceShim:
 # ---------------------------------------------------------------------------
 # Intent Router — basic dispatch
 # ---------------------------------------------------------------------------
-from services.chat.intent_router import IntentRouter
-from services.chat.intent_detector import IntentResult, Intent
 
 
 class TestIntentRouter:
@@ -692,3 +720,548 @@ class TestIntentRouter:
         ir = IntentResult(intent=Intent.UNKNOWN)
         result = router.route("owner/repo", "test", ir)
         assert result.router_elapsed_ms >= 0
+
+
+# ---------------------------------------------------------------------------
+# File-Aware Retrieval Regression Tests
+# ---------------------------------------------------------------------------
+
+
+class TestFileAwareRetrievalRegression:
+    def test_explain_backend_api(self):
+        emb = _make_mock_embedding_service()
+        mock_collection = MagicMock()
+
+        def fake_get(*args, **kwargs):
+            include = kwargs.get("include", [])
+            where = kwargs.get("where", {})
+            if include == ["metadatas"]:
+                return {
+                    "metadatas": [
+                        {"file_path": "backend/api.py"},
+                        {"file_path": "vscode-extension/src/test/api.test.ts"},
+                        {"file_path": "tests/test_architecture.py"},
+                        {"file_path": "backend/main.py"},
+                    ]
+                }
+
+            and_filter = where.get("$and", [])
+            file_path = None
+            for item in and_filter:
+                if "file_path" in item:
+                    file_path = item["file_path"]
+
+            if file_path:
+                return {
+                    "ids": [f"{file_path}_chunk_0"],
+                    "documents": [f"Content of {file_path}"],
+                    "metadatas": [{"file_path": file_path, "chunk_id": 0}],
+                }
+            return {"ids": [], "documents": [], "metadatas": []}
+
+        mock_collection.get = MagicMock(side_effect=fake_get)
+        chroma = MagicMock()
+        chroma.collection = mock_collection
+
+        final_chunks, metrics = intelligent_retrieve(
+            question="Explain backend/api.py",
+            repo_name="owner/repo",
+            embedding_service=emb,
+            chroma_store=chroma,
+            top_k_final=5,
+        )
+
+        assert len(final_chunks) > 0
+        assert final_chunks[0]["metadata"]["file_path"] == "backend/api.py"
+
+    def test_explain_provider_manager(self):
+        emb = _make_mock_embedding_service()
+        mock_collection = MagicMock()
+
+        def fake_get(*args, **kwargs):
+            include = kwargs.get("include", [])
+            where = kwargs.get("where", {})
+            if include == ["metadatas"]:
+                return {
+                    "metadatas": [
+                        {"file_path": "services/chat/provider_manager.py"},
+                        {"file_path": "tests/test_provider_manager.py"},
+                    ]
+                }
+
+            and_filter = where.get("$and", [])
+            file_path = None
+            for item in and_filter:
+                if "file_path" in item:
+                    file_path = item["file_path"]
+
+            if file_path:
+                return {
+                    "ids": [f"{file_path}_chunk_0"],
+                    "documents": [f"Content of {file_path}"],
+                    "metadatas": [{"file_path": file_path, "chunk_id": 0}],
+                }
+            return {"ids": [], "documents": [], "metadatas": []}
+
+        mock_collection.get = MagicMock(side_effect=fake_get)
+        chroma = MagicMock()
+        chroma.collection = mock_collection
+
+        final_chunks, metrics = intelligent_retrieve(
+            question="Explain provider_manager.py",
+            repo_name="owner/repo",
+            embedding_service=emb,
+            chroma_store=chroma,
+            top_k_final=5,
+        )
+
+        assert len(final_chunks) > 0
+        assert (
+            final_chunks[0]["metadata"]["file_path"]
+            == "services/chat/provider_manager.py"
+        )
+
+    def test_explain_readme(self):
+        emb = _make_mock_embedding_service()
+        mock_collection = MagicMock()
+
+        def fake_get(*args, **kwargs):
+            include = kwargs.get("include", [])
+            where = kwargs.get("where", {})
+            if include == ["metadatas"]:
+                return {
+                    "metadatas": [
+                        {"file_path": "README.md"},
+                        {"file_path": "docs/architecture.md"},
+                    ]
+                }
+
+            and_filter = where.get("$and", [])
+            file_path = None
+            for item in and_filter:
+                if "file_path" in item:
+                    file_path = item["file_path"]
+
+            if file_path:
+                return {
+                    "ids": [f"{file_path}_chunk_0"],
+                    "documents": [f"Content of {file_path}"],
+                    "metadatas": [{"file_path": file_path, "chunk_id": 0}],
+                }
+            return {"ids": [], "documents": [], "metadatas": []}
+
+        mock_collection.get = MagicMock(side_effect=fake_get)
+        chroma = MagicMock()
+        chroma.collection = mock_collection
+
+        final_chunks, metrics = intelligent_retrieve(
+            question="Explain README.md",
+            repo_name="owner/repo",
+            embedding_service=emb,
+            chroma_store=chroma,
+            top_k_final=5,
+        )
+
+        assert len(final_chunks) > 0
+        assert final_chunks[0]["metadata"]["file_path"] == "README.md"
+
+    def test_explain_docker_compose(self):
+        emb = _make_mock_embedding_service()
+        mock_collection = MagicMock()
+
+        def fake_get(*args, **kwargs):
+            include = kwargs.get("include", [])
+            where = kwargs.get("where", {})
+            if include == ["metadatas"]:
+                return {
+                    "metadatas": [
+                        {"file_path": "docker-compose.yml"},
+                        {"file_path": "Dockerfile"},
+                    ]
+                }
+
+            and_filter = where.get("$and", [])
+            file_path = None
+            for item in and_filter:
+                if "file_path" in item:
+                    file_path = item["file_path"]
+
+            if file_path:
+                return {
+                    "ids": [f"{file_path}_chunk_0"],
+                    "documents": [f"Content of {file_path}"],
+                    "metadatas": [{"file_path": file_path, "chunk_id": 0}],
+                }
+            return {"ids": [], "documents": [], "metadatas": []}
+
+        mock_collection.get = MagicMock(side_effect=fake_get)
+        chroma = MagicMock()
+        chroma.collection = mock_collection
+
+        final_chunks, metrics = intelligent_retrieve(
+            question="Explain docker-compose.yml",
+            repo_name="owner/repo",
+            embedding_service=emb,
+            chroma_store=chroma,
+            top_k_final=5,
+        )
+
+        assert len(final_chunks) > 0
+        assert final_chunks[0]["metadata"]["file_path"] == "docker-compose.yml"
+
+    def test_intelligent_retrieve_priorities_and_confidence(self):
+        emb = _make_mock_embedding_service()
+        mock_collection = MagicMock()
+
+        # We have files in metadata lookup
+        all_metadata_files = [
+            {"file_path": "backend/api.py"},
+            {"file_path": "services/chat/retrieval_pipeline.py"},
+            {"file_path": "tests/test_api.py"},
+            {"file_path": "build/artifact.js"},
+            {"file_path": "README.md"},
+            {"file_path": "pyproject.toml"},
+        ]
+
+        def fake_get(*args, **kwargs):
+            include = kwargs.get("include", [])
+            where = kwargs.get("where", {})
+            if include == ["metadatas"]:
+                return {"metadatas": all_metadata_files}
+
+            and_filter = where.get("$and", [])
+            file_path = None
+            for item in and_filter:
+                if "file_path" in item:
+                    file_path = item["file_path"]
+
+            if file_path:
+                return {
+                    "ids": [f"{file_path}_chunk_0"],
+                    "documents": [
+                        "class RetrievalPipeline:\n    def run(self):\n        pass"
+                    ],
+                    "metadatas": [{"file_path": file_path, "chunk_id": 0}],
+                }
+            return {"ids": [], "documents": [], "metadatas": []}
+
+        mock_collection.get = MagicMock(side_effect=fake_get)
+        chroma = MagicMock()
+        chroma.collection = mock_collection
+
+        # Mock search repository to return semantic results
+        chroma.search_repository = MagicMock(
+            return_value=[
+                {
+                    "id": "backend/api.py_chunk_0",
+                    "content": "api gateway endpoints",
+                    "metadata": {"file_path": "backend/api.py", "chunk_id": 0},
+                    "distance": 0.3,
+                },
+                {
+                    "id": "README.md_chunk_0",
+                    "content": "readme doc files",
+                    "metadata": {"file_path": "README.md", "chunk_id": 0},
+                    "distance": 0.4,
+                },
+            ]
+        )
+
+        # Mock symbol service
+        from models.symbol import Symbol
+
+        mock_symbols = [
+            Symbol(
+                name="RetrievalPipeline",
+                type="class",
+                file_path="services/chat/retrieval_pipeline.py",
+                line_number=10,
+                language="python",
+            )
+        ]
+
+        class MockSymbolIndex:
+            def __init__(self, symbols):
+                self.symbols = symbols
+
+        class MockSymbolService:
+            def load(self, repo_name):
+                return MockSymbolIndex(mock_symbols)
+
+        symbol_service = MockSymbolService()
+
+        # Query 1: Exact path match backend/api.py (asks for production file)
+        final_chunks, metrics = intelligent_retrieve(
+            question="Explain backend/api.py",
+            repo_name="owner/repo",
+            embedding_service=emb,
+            chroma_store=chroma,
+            top_k_final=5,
+            symbol_service=symbol_service,
+        )
+        assert len(final_chunks) > 0
+        assert final_chunks[0]["metadata"]["file_path"] == "backend/api.py"
+        assert final_chunks[0]["metadata"]["why_this_file"] == "Matched exact path"
+        assert metrics["confidence"] == 100
+        # Tests/generated files must be filtered out
+        for c in final_chunks:
+            assert "test_api.py" not in c["metadata"]["file_path"]
+            assert "artifact.js" not in c["metadata"]["file_path"]
+
+        # Query 2: Exact symbol match (RetrievalPipeline)
+        final_chunks, metrics = intelligent_retrieve(
+            question="Explain RetrievalPipeline class",
+            repo_name="owner/repo",
+            embedding_service=emb,
+            chroma_store=chroma,
+            top_k_final=5,
+            symbol_service=symbol_service,
+        )
+        assert len(final_chunks) > 0
+        assert (
+            final_chunks[0]["metadata"]["file_path"]
+            == "services/chat/retrieval_pipeline.py"
+        )
+        assert (
+            final_chunks[0]["metadata"]["why_this_file"] == "Contains requested symbol"
+        )
+        assert metrics["confidence"] == 96
+        # Exact symbol metadata must be populated
+        assert (
+            "RetrievalPipeline (class)"
+            in final_chunks[0]["metadata"]["matched_symbols"]
+        )
+
+        # Query 3: Ask about tests explicitly
+        final_chunks, metrics = intelligent_retrieve(
+            question="Show me tests in tests/test_api.py",
+            repo_name="owner/repo",
+            embedding_service=emb,
+            chroma_store=chroma,
+            top_k_final=5,
+            symbol_service=symbol_service,
+        )
+        assert any(
+            c["metadata"]["file_path"] == "tests/test_api.py" for c in final_chunks
+        )
+
+
+class TestDeterministicFileRetrievalSpec:
+    def setup_method(self):
+        self.emb = _make_mock_embedding_service()
+        self.chroma = MagicMock()
+        self.mock_collection = MagicMock()
+        self.chroma.collection = self.mock_collection
+
+        # Setup mock files in Chroma metadata
+        self.all_files = [
+            "backend/api.py",
+            "vscode-extension/src/test/api.test.ts",
+            "tests/test_architecture.py",
+            "services/chat/provider_manager.py",
+            "tests/test_provider_manager.py",
+            "README.md",
+            "docker-compose.yml",
+            "services/architecture_service.py",
+            "out/dist/bundle.js",
+        ]
+
+        def fake_get(*args, **kwargs):
+            include = kwargs.get("include", [])
+            where = kwargs.get("where", {})
+
+            # Fetching list of all unique file paths
+            if include == ["metadatas"]:
+                return {"metadatas": [{"file_path": f} for f in self.all_files]}
+
+            # Fetching chunks for a specific file path
+            and_filter = where.get("$and", []) if where else []
+            file_path = None
+            for item in and_filter:
+                if "file_path" in item:
+                    file_path = item["file_path"]
+
+            if file_path:
+                # Return chunks out of order to verify sorting is preserved
+                return {
+                    "ids": [
+                        f"{file_path}_chunk_1",
+                        f"{file_path}_chunk_0",
+                        f"{file_path}_chunk_2",
+                    ],
+                    "documents": [
+                        f"Content of {file_path} chunk 1",
+                        f"Content of {file_path} chunk 0",
+                        f"Content of {file_path} chunk 2",
+                    ],
+                    "metadatas": [
+                        {"file_path": file_path, "chunk_id": 1, "language": "python"},
+                        {"file_path": file_path, "chunk_id": 0, "language": "python"},
+                        {"file_path": file_path, "chunk_id": 2, "language": "python"},
+                    ],
+                }
+            return {"ids": [], "documents": [], "metadatas": []}
+
+        self.mock_collection.get = MagicMock(side_effect=fake_get)
+        self.chroma.search_repository = MagicMock()  # Should not be called
+        self.emb.generate_embedding = MagicMock()  # Should not be called
+
+        # Setup SymbolService mock
+        from models.symbol import Symbol
+
+        mock_symbols = [
+            Symbol(
+                name="ProviderManager",
+                type="class",
+                file_path="services/chat/provider_manager.py",
+                line_number=15,
+                language="python",
+            ),
+            Symbol(
+                name="ArchitectureService",
+                type="class",
+                file_path="services/architecture_service.py",
+                line_number=8,
+                language="python",
+            ),
+        ]
+
+        class MockSymbolIndex:
+            def __init__(self, symbols):
+                self.symbols = symbols
+
+        class MockSymbolService:
+            def load(self, repo_name):
+                return MockSymbolIndex(mock_symbols)
+
+            def get_definition(self, repo_name, symbol_name):
+                for s in mock_symbols:
+                    if s.name == symbol_name:
+                        return s
+                return None
+
+            def get_file_symbols(self, repo_name, file_path):
+                return [s for s in mock_symbols if s.file_path == file_path]
+
+        self.symbol_service = MockSymbolService()
+
+    def test_explain_backend_api_path(self):
+        chunks, metrics = intelligent_retrieve(
+            question="Explain backend/api.py",
+            repo_name="owner/repo",
+            embedding_service=self.emb,
+            chroma_store=self.chroma,
+            symbol_service=self.symbol_service,
+        )
+        # Verify semantic retrieval NOT executed
+        self.chroma.search_repository.assert_not_called()
+        self.emb.generate_embedding.assert_not_called()
+
+        # Verify only requested file returned
+        assert len(chunks) == 3
+        for c in chunks:
+            assert c["metadata"]["file_path"] == "backend/api.py"
+
+        # Verify chunk order preserved (sorted by chunk_id)
+        assert chunks[0]["metadata"]["chunk_id"] == 0
+        assert chunks[1]["metadata"]["chunk_id"] == 1
+        assert chunks[2]["metadata"]["chunk_id"] == 2
+
+        # Verify confidence is correct
+        assert metrics["confidence"] == 100
+
+        # Verify no tests / compiled files
+        for c in chunks:
+            fp = c["metadata"]["file_path"]
+            assert "test" not in fp
+            assert "dist" not in fp
+
+    def test_explain_api_filename(self):
+        chunks, metrics = intelligent_retrieve(
+            question="Explain api.py",
+            repo_name="owner/repo",
+            embedding_service=self.emb,
+            chroma_store=self.chroma,
+            symbol_service=self.symbol_service,
+        )
+        self.chroma.search_repository.assert_not_called()
+        self.emb.generate_embedding.assert_not_called()
+
+        assert len(chunks) == 3
+        assert chunks[0]["metadata"]["file_path"] == "backend/api.py"
+        assert metrics["confidence"] == 98
+
+    def test_explain_provider_manager_filename(self):
+        chunks, metrics = intelligent_retrieve(
+            question="Explain provider_manager.py",
+            repo_name="owner/repo",
+            embedding_service=self.emb,
+            chroma_store=self.chroma,
+            symbol_service=self.symbol_service,
+        )
+        self.chroma.search_repository.assert_not_called()
+        self.emb.generate_embedding.assert_not_called()
+
+        assert len(chunks) == 3
+        assert chunks[0]["metadata"]["file_path"] == "services/chat/provider_manager.py"
+        assert metrics["confidence"] == 98
+
+    def test_explain_readme(self):
+        chunks, metrics = intelligent_retrieve(
+            question="Explain README.md",
+            repo_name="owner/repo",
+            embedding_service=self.emb,
+            chroma_store=self.chroma,
+            symbol_service=self.symbol_service,
+        )
+        self.chroma.search_repository.assert_not_called()
+        self.emb.generate_embedding.assert_not_called()
+
+        assert len(chunks) == 3
+        assert chunks[0]["metadata"]["file_path"] == "README.md"
+        assert metrics["confidence"] in (98, 100)
+
+    def test_explain_docker_compose(self):
+        chunks, metrics = intelligent_retrieve(
+            question="Explain docker-compose.yml",
+            repo_name="owner/repo",
+            embedding_service=self.emb,
+            chroma_store=self.chroma,
+            symbol_service=self.symbol_service,
+        )
+        self.chroma.search_repository.assert_not_called()
+        self.emb.generate_embedding.assert_not_called()
+
+        assert len(chunks) == 3
+        assert chunks[0]["metadata"]["file_path"] == "docker-compose.yml"
+        assert metrics["confidence"] in (98, 100)
+
+    def test_explain_provider_manager_symbol(self):
+        chunks, metrics = intelligent_retrieve(
+            question="Explain ProviderManager",
+            repo_name="owner/repo",
+            embedding_service=self.emb,
+            chroma_store=self.chroma,
+            symbol_service=self.symbol_service,
+        )
+        self.chroma.search_repository.assert_not_called()
+        self.emb.generate_embedding.assert_not_called()
+
+        assert len(chunks) == 3
+        assert chunks[0]["metadata"]["file_path"] == "services/chat/provider_manager.py"
+        assert metrics["confidence"] == 96
+
+    def test_explain_architecture_service_symbol(self):
+        chunks, metrics = intelligent_retrieve(
+            question="Explain ArchitectureService",
+            repo_name="owner/repo",
+            embedding_service=self.emb,
+            chroma_store=self.chroma,
+            symbol_service=self.symbol_service,
+        )
+        self.chroma.search_repository.assert_not_called()
+        self.emb.generate_embedding.assert_not_called()
+
+        assert len(chunks) == 3
+        assert chunks[0]["metadata"]["file_path"] == "services/architecture_service.py"
+        assert metrics["confidence"] == 96

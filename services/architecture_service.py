@@ -10,7 +10,6 @@ Orchestrates the full Architecture Intelligence pipeline:
 All computations are local — no Gemini calls are made in this service.
 """
 
-import json
 import logging
 import os
 import time
@@ -80,9 +79,13 @@ class ArchitectureService:
                 parent_dir = os.path.dirname(arch_dir)
                 dir_name = os.path.basename(arch_dir)
                 from storage.snapshot_store import JsonSnapshotStore
-                self.snapshot_store = JsonSnapshotStore(base_dir=parent_dir, key_map={"architecture": dir_name})
+
+                self.snapshot_store = JsonSnapshotStore(
+                    base_dir=parent_dir, key_map={"architecture": dir_name}
+                )
             else:
                 from backend.dependencies import snapshot_store as default_store
+
                 self.snapshot_store = default_store
         else:
             self.snapshot_store = snapshot_store
@@ -90,7 +93,9 @@ class ArchitectureService:
         self.analysis_cache = analysis_cache or AnalysisCache()
 
         self.tree_sitter = TreeSitterService()
-        self.graph_service = GraphService(**({"graphs_dir": graphs_dir} if graphs_dir else {}))
+        self.graph_service = GraphService(
+            **({"graphs_dir": graphs_dir} if graphs_dir else {})
+        )
         self.entry_point_service = EntryPointService()
 
     # ------------------------------------------------------------------
@@ -140,9 +145,7 @@ class ArchitectureService:
         self.analysis_cache.set(repo_name, "parsed_files", parsed_files_payload, 1)
 
         all_paths = (
-            [f["path"] for f in files]
-            if files
-            else self._walk_repo_paths(repo_path)
+            [f["path"] for f in files] if files else self._walk_repo_paths(repo_path)
         )
         ep_result = self.entry_point_service.detect(all_paths, parsed)
         entry_points: List[str] = ep_result["entry_points"]
@@ -181,7 +184,10 @@ class ArchitectureService:
                 self.analysis_cache.set(repo_name, "parsed_files", old_parsed_data, 1)
 
         if old_parsed_data is None:
-            logger.info("No existing parsed_files cache found for %s, running full build.", repo_name)
+            logger.info(
+                "No existing parsed_files cache found for %s, running full build.",
+                repo_name,
+            )
             return self.build_full(repo_name, repo_path=repo_path, files=files)
 
         if repo_path is None and files is None:
@@ -192,8 +198,7 @@ class ArchitectureService:
         # 1. Filter out parsed metadata for modified/deleted files
         old_parsed_list = old_parsed_data.get("parsed", [])
         retained_parsed = [
-            p for p in old_parsed_list
-            if p.get("file_path") not in changed_files
+            p for p in old_parsed_list if p.get("file_path") not in changed_files
         ]
 
         # 2. Parse only the added/modified files
@@ -210,7 +215,9 @@ class ArchitectureService:
                 full_path = os.path.join(repo_path, path)
                 if os.path.exists(full_path):
                     try:
-                        with open(full_path, "r", encoding="utf-8", errors="ignore") as fh:
+                        with open(
+                            full_path, "r", encoding="utf-8", errors="ignore"
+                        ) as fh:
                             content = fh.read()
                         res = self.tree_sitter.parse_file(path, content)
                         if res:
@@ -226,9 +233,7 @@ class ArchitectureService:
 
         # 4. Detect entry points using the merged parsed files
         all_paths = (
-            [f["path"] for f in files]
-            if files
-            else self._walk_repo_paths(repo_path)
+            [f["path"] for f in files] if files else self._walk_repo_paths(repo_path)
         )
         ep_result = self.entry_point_service.detect(all_paths, merged_parsed)
         entry_points: List[str] = ep_result["entry_points"]
@@ -271,7 +276,9 @@ class ArchitectureService:
         Returns:
             An ArchitectureSummary Pydantic model, or None if not found.
         """
-        cached = self.analysis_cache.get(repo_name, "architecture", _SUMMARY_SCHEMA_VERSION)
+        cached = self.analysis_cache.get(
+            repo_name, "architecture", _SUMMARY_SCHEMA_VERSION
+        )
         if cached is not None:
             return cached
 
@@ -283,14 +290,18 @@ class ArchitectureService:
         if stored_version < _SUMMARY_SCHEMA_VERSION:
             logger.warning(
                 "Discarding stale architecture summary for %s (schema v%d < current v%d)",
-                repo_name, stored_version, _SUMMARY_SCHEMA_VERSION
+                repo_name,
+                stored_version,
+                _SUMMARY_SCHEMA_VERSION,
             )
             return None
 
         try:
             filtered = {k: v for k, v in data.items() if not k.startswith("_")}
             summary = ArchSummary(**filtered)
-            self.analysis_cache.set(repo_name, "architecture", summary, _SUMMARY_SCHEMA_VERSION)
+            self.analysis_cache.set(
+                repo_name, "architecture", summary, _SUMMARY_SCHEMA_VERSION
+            )
             return summary
         except Exception as exc:
             logger.error("Failed to deserialise architecture summary: %s", exc)
@@ -338,16 +349,24 @@ class ArchitectureService:
 
         # Degree centrality — identifies nodes that are most connected overall
         centrality = nx.degree_centrality(graph)
-        sorted_by_centrality = sorted(centrality.items(), key=lambda x: x[1], reverse=True)
-        core_modules = [node for node, _ in sorted_by_centrality[:top_n] if centrality[node] > 0]
+        sorted_by_centrality = sorted(
+            centrality.items(), key=lambda x: x[1], reverse=True
+        )
+        core_modules = [
+            node for node, _ in sorted_by_centrality[:top_n] if centrality[node] > 0
+        ]
 
         # High coupling: nodes with highest combined in-degree + out-degree
         coupling_scores = {
             node: graph.in_degree(node) + graph.out_degree(node)
             for node in graph.nodes()
         }
-        sorted_by_coupling = sorted(coupling_scores.items(), key=lambda x: x[1], reverse=True)
-        high_coupling = [node for node, score in sorted_by_coupling[:top_n] if score > 1]
+        sorted_by_coupling = sorted(
+            coupling_scores.items(), key=lambda x: x[1], reverse=True
+        )
+        high_coupling = [
+            node for node, score in sorted_by_coupling[:top_n] if score > 1
+        ]
 
         return {
             "entry_points": entry_points,
@@ -378,8 +397,14 @@ class ArchitectureService:
     # ------------------------------------------------------------------
 
     _IGNORED_DIRS = {
-        "node_modules", ".git", "dist", "build", ".next",
-        "venv", "__pycache__", ".venv",
+        "node_modules",
+        ".git",
+        "dist",
+        "build",
+        ".next",
+        "venv",
+        "__pycache__",
+        ".venv",
     }
 
     def _walk_repo_paths(self, repo_path: str) -> List[str]:

@@ -18,48 +18,56 @@ from pydantic import BaseModel, Field
 # Enumerations
 # ---------------------------------------------------------------------------
 
+
 class Visibility(str, Enum):
     """How broadly a symbol is accessible."""
-    PUBLIC   = "public"    # exported / part of the module's public interface
+
+    PUBLIC = "public"  # exported / part of the module's public interface
     INTERNAL = "internal"  # used within the package but not exported
-    PRIVATE  = "private"   # convention-private (underscore prefix, etc.)
-    UNKNOWN  = "unknown"   # could not be determined with sufficient confidence
+    PRIVATE = "private"  # convention-private (underscore prefix, etc.)
+    UNKNOWN = "unknown"  # could not be determined with sufficient confidence
 
 
 class ApiKind(str, Enum):
     """What role the API plays in the system."""
-    EXPORTED        = "exported"        # explicit export statement (JS/TS)
-    ROUTE           = "route"           # HTTP route handler (FastAPI, Flask, Express)
-    CLI_ENTRY       = "cli_entry"       # CLI command entry point
-    MAIN_ENTRY      = "main_entry"      # __main__ or if __name__ == '__main__'
-    PUBLIC_CLASS    = "public_class"    # exported / non-private class
-    PUBLIC_FUNCTION = "public_function" # exported / non-private top-level function
-    PUBLIC_METHOD   = "public_method"   # non-private method of a public class
-    INTERFACE       = "interface"       # TypeScript interface
-    ENUM_TYPE       = "enum_type"       # TypeScript / Python enum
-    INTERNAL_HELPER = "internal_helper" # internal function/method not part of public surface
-    UNKNOWN         = "unknown"
+
+    EXPORTED = "exported"  # explicit export statement (JS/TS)
+    ROUTE = "route"  # HTTP route handler (FastAPI, Flask, Express)
+    CLI_ENTRY = "cli_entry"  # CLI command entry point
+    MAIN_ENTRY = "main_entry"  # __main__ or if __name__ == '__main__'
+    PUBLIC_CLASS = "public_class"  # exported / non-private class
+    PUBLIC_FUNCTION = "public_function"  # exported / non-private top-level function
+    PUBLIC_METHOD = "public_method"  # non-private method of a public class
+    INTERFACE = "interface"  # TypeScript interface
+    ENUM_TYPE = "enum_type"  # TypeScript / Python enum
+    INTERNAL_HELPER = (
+        "internal_helper"  # internal function/method not part of public surface
+    )
+    UNKNOWN = "unknown"
 
 
 class ApiStatus(str, Enum):
     """Lifecycle status of an API."""
-    STABLE       = "stable"
-    DEPRECATED   = "deprecated"   # annotated as deprecated
-    EXPERIMENTAL = "experimental" # annotated as experimental / beta
-    UNKNOWN      = "unknown"
+
+    STABLE = "stable"
+    DEPRECATED = "deprecated"  # annotated as deprecated
+    EXPERIMENTAL = "experimental"  # annotated as experimental / beta
+    UNKNOWN = "unknown"
 
 
 class BreakingChangeKind(str, Enum):
     """Type of breaking change detected."""
-    REMOVED_EXPORT    = "removed_export"    # public symbol removed entirely
-    RENAMED_EXPORT    = "renamed_export"    # likely rename (remove + add with similar name)
-    SIGNATURE_CHANGED = "signature_changed" # param count changed
-    VISIBILITY_REDUCED = "visibility_reduced" # was public, now private/internal
+
+    REMOVED_EXPORT = "removed_export"  # public symbol removed entirely
+    RENAMED_EXPORT = "renamed_export"  # likely rename (remove + add with similar name)
+    SIGNATURE_CHANGED = "signature_changed"  # param count changed
+    VISIBILITY_REDUCED = "visibility_reduced"  # was public, now private/internal
 
 
 # ---------------------------------------------------------------------------
 # Core classification unit
 # ---------------------------------------------------------------------------
+
 
 class ClassifiedSymbol(BaseModel):
     """A symbol from the Symbol Index enriched with API surface metadata.
@@ -110,6 +118,7 @@ class ClassifiedSymbol(BaseModel):
 # Breaking change record
 # ---------------------------------------------------------------------------
 
+
 class BreakingChange(BaseModel):
     """A single breaking API change between two surface snapshots.
 
@@ -135,6 +144,7 @@ class BreakingChange(BaseModel):
 # ---------------------------------------------------------------------------
 # Summary / persisted report
 # ---------------------------------------------------------------------------
+
 
 class APISurfaceStats(BaseModel):
     """Aggregate statistics for one API surface report."""

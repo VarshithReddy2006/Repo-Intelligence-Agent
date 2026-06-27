@@ -20,11 +20,13 @@ class RateLimiter:
     def is_allowed(self, client_ip: str) -> bool:
         if self.limit <= 0:
             return True
-        
+
         now = time.time()
         with self.lock:
             # Prune requests older than 60 seconds
-            self.requests[client_ip] = [t for t in self.requests[client_ip] if now - t < 60]
+            self.requests[client_ip] = [
+                t for t in self.requests[client_ip] if now - t < 60
+            ]
 
             if len(self.requests[client_ip]) < self.limit:
                 self.requests[client_ip].append(now)
@@ -43,16 +45,23 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.limiter = RateLimiter(limit)
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         # Bypass rate limit on health/metrics routes
-        if request.url.path in ["/health", "/metrics", "/api/v1/health", "/api/v1/metrics"]:
+        if request.url.path in [
+            "/health",
+            "/metrics",
+            "/api/v1/health",
+            "/api/v1/metrics",
+        ]:
             return await call_next(request)
 
         client_ip = request.client.host if request.client else "unknown"
         if not self.limiter.is_allowed(client_ip):
             return JSONResponse(
                 status_code=429,
-                content={"detail": "Too many requests. Rate limit exceeded."}
+                content={"detail": "Too many requests. Rate limit exceeded."},
             )
 
         return await call_next(request)

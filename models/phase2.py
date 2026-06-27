@@ -9,13 +9,14 @@ These models are intentionally separate from models/schemas.py and
 models/architecture.py to keep phase boundaries clean.
 """
 
-from typing import List, Optional
+from typing import List
 from pydantic import BaseModel, Field
 
 
 # ---------------------------------------------------------------------------
 # Reading Order
 # ---------------------------------------------------------------------------
+
 
 class ReadingOrderEntry(BaseModel):
     """A single file in the recommended reading sequence.
@@ -31,7 +32,10 @@ class ReadingOrderEntry(BaseModel):
     rank: int = Field(..., description="1-based position in the reading order.")
     file_path: str = Field(..., description="Relative file path.")
     reason: str = Field("", description="Why this file appears at this rank.")
-    tier: str = Field("other", description="Tier category: entry_point, core, service, utility, other.")
+    tier: str = Field(
+        "other",
+        description="Tier category: entry_point, core, service, utility, other.",
+    )
     score: float = Field(0.0, description="Internal ranking score.")
 
 
@@ -68,6 +72,7 @@ class ReadingOrder(BaseModel):
 # ---------------------------------------------------------------------------
 # Impact Analysis
 # ---------------------------------------------------------------------------
+
 
 class DependencyPath(BaseModel):
     """A chain of files linking the changed file to an affected file.
@@ -137,6 +142,7 @@ class ImpactAnalysis(BaseModel):
 # ---------------------------------------------------------------------------
 # Architecture Context (used for LLM prompt injection)
 # ---------------------------------------------------------------------------
+
 
 class ArchContext(BaseModel):
     """Architecture context payload injected into LLM prompts.

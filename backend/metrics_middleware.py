@@ -10,22 +10,22 @@ from core.metrics import metrics_registry
 class MetricsMiddleware(BaseHTTPMiddleware):
     """Middleware collecting HTTP request telemetry."""
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         # Exclude metrics scraping itself from metrics collection to avoid noise
         if request.url.path in ["/metrics", "/api/v1/metrics"]:
             return await call_next(request)
 
         metrics_registry.increment_active_requests()
         start_time = time.time()
-        
+
         try:
             response = await call_next(request)
-            duration = time.time() - start_time
+            time.time() - start_time
             # Increment request counter labeled by method, path, and status code
             metrics_registry.increment_request(
-                request.method,
-                request.url.path,
-                response.status_code
+                request.method, request.url.path, response.status_code
             )
             return response
         finally:

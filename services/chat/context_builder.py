@@ -21,7 +21,7 @@ the system instruction so the LLM always produces structured replies.
 from __future__ import annotations
 
 import logging
-import textwrap
+import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -31,11 +31,11 @@ logger = logging.getLogger(__name__)
 # Token budget constants
 # ---------------------------------------------------------------------------
 
-_CHARS_PER_TOKEN = 4          # approximation
+_CHARS_PER_TOKEN = 4  # approximation
 _TARGET_MIN_TOKENS = 3_000
 _TARGET_MAX_TOKENS = 5_000
-_TARGET_MAX_CHARS = _TARGET_MAX_TOKENS * _CHARS_PER_TOKEN   # 20_000 chars
-_TARGET_MIN_CHARS = _TARGET_MIN_TOKENS * _CHARS_PER_TOKEN   # 12_000 chars
+_TARGET_MAX_CHARS = _TARGET_MAX_TOKENS * _CHARS_PER_TOKEN  # 20_000 chars
+_TARGET_MIN_CHARS = _TARGET_MIN_TOKENS * _CHARS_PER_TOKEN  # 12_000 chars
 
 # Maximum characters for a single chunk to prevent one large file dominating
 _MAX_CHUNK_CHARS = 2_000
@@ -55,6 +55,7 @@ class BuiltContext:
         source_files:       All files referenced in the context.
         slot_breakdown:     Per-slot character counts for observability.
     """
+
     system_instruction: str
     prompt: str
     estimated_tokens: int
@@ -106,6 +107,7 @@ class ContextBuilder:
         code_chunks: Optional[List[Dict[str, Any]]] = None,
         conversation_history: Optional[List[Dict[str, Any]]] = None,
         intent_name: str = "GENERAL_QA",
+        deterministic_file_path: Optional[str] = None,
     ) -> BuiltContext:
         """Assemble the full context prompt.
 
@@ -117,6 +119,7 @@ class ContextBuilder:
             code_chunks:             Retrieved + reranked code chunks.
             conversation_history:    Prior turns (for history-aware building).
             intent_name:             Detected intent for format tuning.
+            deterministic_file_path: Optional path of matched deterministic file.
 
         Returns:
             BuiltContext with assembled prompt and metadata.
@@ -133,14 +136,127 @@ class ContextBuilder:
         if structured_intelligence and structured_intelligence.strip():
             slots["structured_intelligence"] = structured_intelligence.strip()
 
-        # ── Slot 3: Code chunks (split by tier)
-        code_slot, doc_slot, cfg_slot = self._split_chunks_by_tier(code_chunks)
-        if code_slot:
-            slots["code"] = code_slot
-        if doc_slot:
-            slots["docs"] = doc_slot
-        if cfg_slot:
-            slots["config"] = cfg_slot
+        # ── Slot 3: Code chunks (split by type/tier or formatted deterministically)
+        if deterministic_file_path:
+            # Deterministic Retrieval Active
+            # We retrieve symbols, imports, repository root, language, etc.
+            # 1. Repository Root
+            from services.github_service import GitHubService
+
+            repo_root = GitHubService().get_local_repo_path(repo_name)
+
+            # 2. File metadata
+            language = "unknown"
+            imports = []
+            symbols = []
+
+            # Let's read file content from disk to get imports if possible
+            full_path = os.path.join(repo_root, deterministic_file_path)
+            file_content = ""
+            if os.path.exists(full_path):
+                try:
+                    with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
+                        file_content = f.read()
+                except Exception as e:
+                    logger.warning("Failed to read file %s: %s", full_path, e)
+
+            # Use TreeSitterService to parse imports and language
+            from services.tree_sitter_service import TreeSitterService
+
+            try:
+                if file_content:
+                    ts_info = TreeSitterService().parse_file(
+                        deterministic_file_path, file_content
+                    )
+                    if ts_info:
+                        language = ts_info.get("language", "unknown")
+                        imports = ts_info.get("imports", [])
+            except Exception as e:
+                logger.warning("Failed to parse file imports with TreeSitter: %s", e)
+
+            # If language not detected, get it from chunks or ext
+            if language == "unknown" and code_chunks:
+                language = code_chunks[0].get("metadata", {}).get("language", "unknown")
+            if language == "unknown":
+                ext = os.path.splitext(deterministic_file_path)[1].lower()
+                if ext in (".py",):
+                    language = "python"
+                elif ext in (".js",):
+                    language = "javascript"
+                elif ext in (".ts",):
+                    language = "typescript"
+                elif ext in (".tsx",):
+                    language = "tsx"
+
+            # Get symbols from SymbolService
+            from services.symbol_service import SymbolService
+
+            try:
+                sym_svc = SymbolService()
+                file_symbols = (
+                    sym_svc.get_file_symbols(repo_name, deterministic_file_path) or []
+                )
+                symbols = [
+                    f"{s.name} ({s.type}) at line {s.line_number}" for s in file_symbols
+                ]
+            except Exception as e:
+                logger.warning("Failed to get symbols from SymbolService: %s", e)
+
+            # Now build the deterministic context block
+            det_parts = [
+                "### Deterministic File Information",
+                f"- **File Path:** {deterministic_file_path}",
+                f"- **Language:** {language}",
+                f"- **Repository Root:** {repo_root}",
+            ]
+
+            # Format imports
+            if imports:
+                det_parts.append("- **Imports:**")
+                det_parts.extend(f"  - `{imp}`" for imp in imports)
+            else:
+                det_parts.append("- **Imports:** None or unable to parse")
+
+            # Format symbol table
+            if symbols:
+                det_parts.append("- **Symbol Table:**")
+                det_parts.extend(f"  - `{sym}`" for sym in symbols)
+            else:
+                det_parts.append("- **Symbol Table:** None or no symbols defined")
+
+            # Format chunk sequence
+            det_parts.append("\n### Chunk Sequence")
+            for chunk in code_chunks:
+                meta = chunk.get("metadata", {})
+                chunk_id = meta.get("chunk_id", "unknown")
+                start_line = meta.get("start_line", 0)
+                end_line = meta.get("end_line", 0)
+                line_range = (
+                    f" (lines {start_line}-{end_line})"
+                    if start_line and end_line
+                    else ""
+                )
+                content = chunk.get("content", "")
+                det_parts.append(
+                    f"--- Chunk {chunk_id}{line_range} ---\n```\n{content}\n```"
+                )
+
+            det_block = "\n".join(det_parts)
+            slots["requested_file"] = det_block
+        else:
+            requested_slot, related_slot, code_slot, doc_slot, cfg_slot = (
+                self._split_chunks_by_tier(code_chunks)
+            )
+            if requested_slot:
+                slots["requested_file"] = requested_slot
+            if related_slot:
+                slots["related_files"] = related_slot
+            if code_slot:
+                slots["code"] = code_slot
+            if doc_slot:
+                slots["docs"] = doc_slot
+            if cfg_slot:
+                slots["config"] = cfg_slot
 
         # ── Budget enforcement: trim from lowest priority upward
         slots = self._enforce_budget(slots)
@@ -159,6 +275,12 @@ class ContextBuilder:
             breakdown["structured_intelligence"] = len(slots["structured_intelligence"])
 
         context_parts: List[str] = []
+        if "requested_file" in slots:
+            context_parts.append(slots["requested_file"])
+            breakdown["requested_file"] = len(slots["requested_file"])
+        if "related_files" in slots:
+            context_parts.append(slots["related_files"])
+            breakdown["related_files"] = len(slots["related_files"])
         if "code" in slots:
             context_parts.append(slots["code"])
             breakdown["code"] = len(slots["code"])
@@ -185,10 +307,10 @@ class ContextBuilder:
             "## Response Format\n"
             "Structure your response with these sections (use only what is relevant):\n"
             "1. **Summary** — 1–2 sentence direct answer\n"
-            "2. **Explanation** — technical detail with file/function references\n"
-            "3. **Evidence** — relevant code excerpts (only if present in context above)\n"
+            "2. **Explanation** — technical detail with file/function references. Always cite the exact file, line numbers, chunk ID, and exact symbols when discussing code parts.\n"
+            "3. **Evidence** — relevant code excerpts (only if present in context above, with exact file path and line numbers)\n"
             "4. **Repository Insights** — patterns, risks, or architecture notes\n"
-            "5. **Relevant Files** — bullet list of key files\n"
+            "5. **Relevant Files** — bullet list of key files with line ranges and symbols defined\n"
             "6. **Suggested Next Questions** — 2–3 natural follow-ups\n\n"
             "Keep code blocks accurate — only show code from the context above."
         )
@@ -236,10 +358,12 @@ class ContextBuilder:
 
     def _split_chunks_by_tier(
         self, chunks: List[Dict[str, Any]]
-    ) -> tuple[str, str, str]:
-        """Split code chunks into code/docs/config text blocks."""
+    ) -> tuple[str, str, str, str, str]:
+        """Split code chunks into requested/related/code/docs/config text blocks."""
         from .retrieval import _get_tier_weight
 
+        requested_blocks: List[str] = []
+        related_blocks: List[str] = []
         code_blocks: List[str] = []
         doc_blocks: List[str] = []
         cfg_blocks: List[str] = []
@@ -263,20 +387,50 @@ class ContextBuilder:
             score = chunk.get("_rerank_score", 0.0)
             score_label = f" (score: {score:.3f})" if score else ""
 
+            # Citation fields
+            chunk_id = meta.get("chunk_id", "unknown")
+            start_line = meta.get("start_line", 0)
+            end_line = meta.get("end_line", 0)
+            line_label = (
+                f", lines: {start_line}-{end_line}" if start_line and end_line else ""
+            )
+
+            why_this_file = meta.get("why_this_file", "")
+            why_label = f"\nWhy this file: {why_this_file}" if why_this_file else ""
+
+            matched_symbols = meta.get("matched_symbols", "")
+            symbol_label = (
+                f"\nSymbols defined here: {matched_symbols}" if matched_symbols else ""
+            )
+
             block = (
-                f"--- File: `{file_path}`{score_label} ---\n"
+                f"--- File: `{file_path}` (chunk: {chunk_id}{line_label}){score_label}{why_label}{symbol_label} ---\n"
                 f"```\n{content}\n```"
             )
 
-            weight = _get_tier_weight(file_path)
-            if weight >= 1.0:
-                code_blocks.append(block)
-            elif weight >= 0.5:
-                doc_blocks.append(block)
+            # Categorize the chunk
+            why_this_file_lower = why_this_file.lower()
+            if (
+                "matched exact path" in why_this_file_lower
+                or "matched exact filename" in why_this_file_lower
+            ):
+                requested_blocks.append(block)
+            elif (
+                "contains requested symbol" in why_this_file_lower
+                or "referenced by architecture graph" in why_this_file_lower
+            ):
+                related_blocks.append(block)
             else:
-                cfg_blocks.append(block)
+                if weight >= 1.0:
+                    code_blocks.append(block)
+                elif weight >= 0.5:
+                    doc_blocks.append(block)
+                else:
+                    cfg_blocks.append(block)
 
         return (
+            "\n\n".join(requested_blocks),
+            "\n\n".join(related_blocks),
             "\n\n".join(code_blocks),
             "\n\n".join(doc_blocks),
             "\n\n".join(cfg_blocks),
@@ -287,6 +441,8 @@ class ContextBuilder:
         priority_order = [
             "architecture",
             "structured_intelligence",
+            "requested_file",
+            "related_files",
             "code",
             "docs",
             "config",
@@ -310,15 +466,16 @@ class ContextBuilder:
                     logger.debug("ContextBuilder: removed slot '%s' (budget)", key)
                 else:
                     # Truncate
-                    slots[key] = current[: len(current) - excess] + "\n... [context trimmed for token budget]"
+                    slots[key] = (
+                        current[: len(current) - excess]
+                        + "\n... [context trimmed for token budget]"
+                    )
                     total = sum(len(v) for v in slots.values())
                     logger.debug("ContextBuilder: trimmed slot '%s' (budget)", key)
 
         return slots
 
-    def _collect_source_files(
-        self, chunks: List[Dict[str, Any]]
-    ) -> List[str]:
+    def _collect_source_files(self, chunks: List[Dict[str, Any]]) -> List[str]:
         """Deduplicated list of file paths from chunks."""
         seen: Dict[str, None] = {}
         for chunk in chunks:

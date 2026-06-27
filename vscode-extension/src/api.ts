@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/ban-types */
 /**
  * API client for the Repo Intelligence Agent backend.
  *
