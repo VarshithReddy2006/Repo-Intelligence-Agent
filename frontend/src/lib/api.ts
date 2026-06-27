@@ -1,0 +1,93 @@
+/**
+ * Centralized API configuration for the Repo Intelligence Agent frontend.
+ *
+ * Every backend request must go through this module so the base URL is defined
+ * in exactly one place. In development the FastAPI backend runs on a different
+ * origin (port 8001) than the Astro dev server (port 4321), so requests are
+ * issued as absolute URLs and rely on the backend's permissive CORS policy.
+ *
+ * Override the target by setting `PUBLIC_API_URL` in `frontend/.env`.
+ */
+
+const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8001';
+
+/** Resolved backend origin, e.g. `http://127.0.0.1:8001` (no trailing slash). */
+export const API_BASE_URL: string = (
+  import.meta.env.PUBLIC_API_URL || DEFAULT_API_BASE_URL
+).replace(/\/$/, '');
+
+/**
+ * Build a fully-qualified backend URL from an `/api/...` path.
+ *
+ * @param path - A path beginning with `/` (e.g. `/api/analyze`). A leading
+ *   slash is added if missing.
+ */
+export function apiUrl(path: string): string {
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  return `${API_BASE_URL}${normalized}`;
+}
+
+/**
+ * Lightweight backend liveness probe used by the navbar status indicator.
+ *
+ * Returns `true` only when the backend answers `GET /health` with a 2xx
+ * response before the timeout elapses; never throws.
+ */
+export async function checkBackendHealth(timeoutMs = 4000): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(apiUrl('/health'), {
+      signal: controller.signal,
+    });
+    return response.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Safely extracts a user-friendly error message from any given error object/response.
+ * Conforms to Priority 3: handles FastAPI detail arrays, object fields, HTTP status codes,
+ * and falls back gracefully so that `[object Object]` never appears in the UI.
+ */
+export function extractErrorMessage(error: any): string {
+  if (!error) return 'An unknown error occurred.';
+  if (typeof error === 'string') return error;
+
+  // Handle FastAPI detail array or object
+  if (error.detail) {
+    if (typeof error.detail === 'string') {
+      return error.detail;
+    }
+    if (Array.isArray(error.detail)) {
+      return error.detail
+        .map((e: any) => {
+          const locStr = e.loc ? e.loc.join('.') : '';
+          return `${locStr ? locStr + ': ' : ''}${e.msg || JSON.stringify(e)}`;
+        })
+        .join('; ');
+    }
+    if (typeof error.detail === 'object') {
+      return error.detail.message || JSON.stringify(error.detail);
+    }
+  }
+
+  // Handle standard JS Error message or custom response messages
+  if (error.message && typeof error.message === 'string') {
+    return error.message;
+  }
+
+  // Handle generic object payload
+  try {
+    const stringified = JSON.stringify(error);
+    if (stringified === '{}') {
+      return String(error);
+    }
+    return stringified;
+  } catch {
+    return String(error);
+  }
+}
