@@ -31,6 +31,7 @@ class _GeminiClientProxy:
             # Placeholders exist only so `provider.client.aio.models.X` can be assigned.
             pass
 
+
 _HEALTH_CHECK_TIMEOUT = 10.0  # seconds — list models is cheap, 10s is generous
 _HEALTH_CHECK_PROMPT = "Reply with the single word: ready"
 
@@ -87,7 +88,9 @@ class GeminiProvider(BaseLLMProvider):
                 return self.client  # type: ignore[return-value]
 
             if getattr(self.client, "_is_proxy", False):
-                proxy_models = getattr(getattr(self.client, "aio", None), "models", None)
+                proxy_models = getattr(
+                    getattr(self.client, "aio", None), "models", None
+                )
                 if proxy_models is not None and (
                     hasattr(proxy_models, "generate_content")
                     or hasattr(proxy_models, "generate_content_stream")
