@@ -39,6 +39,8 @@ jobs:
         ruff format --check .
 
     - name: Run Pytest
+      env:
+        PYTHONPATH: .
       run: |
         # Run tests excluding heavy LLM or local model download paths where possible,
         # or use appropriate mock configs.

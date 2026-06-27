@@ -36,3 +36,6 @@ tree-sitter-typescript>=0.20.0
 pydantic-settings>=2.0.0
 typer>=0.9.0
 
+# Google GenAI SDK
+google-genai>=0.1.1
+
