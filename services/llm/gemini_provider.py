@@ -16,6 +16,21 @@ from .provider_errors import classify_gemini_error, ProviderErrorType
 
 logger = logging.getLogger(__name__)
 
+
+class _GeminiClientProxy:
+    """Non-SDK proxy used before lazy Client initialization.
+
+    - CI/pytest imports must not create any google-genai SDK client.
+    - Unit tests patch `provider.client.aio.models.*` directly.
+    """
+
+    _is_proxy = True
+
+    class aio:
+        class models:
+            # Placeholders exist only so `provider.client.aio.models.X` can be assigned.
+            pass
+
 _HEALTH_CHECK_TIMEOUT = 10.0  # seconds — list models is cheap, 10s is generous
 _HEALTH_CHECK_PROMPT = "Reply with the single word: ready"
 
@@ -35,10 +50,57 @@ class GeminiProvider(BaseLLMProvider):
 
         if not self.api_key:
             logger.warning("GEMINI_API_KEY is not set — requests to Gemini will fail.")
-            # In production settings.py validator will fail fast if key is missing,
-            # but we initialize the client here safely.
+            # Do not eagerly initialize the google-genai client during construction/import.
+            # The SDK validates the API key during client creation, which breaks CI/pytest
+            # during provider discovery/collection when no secrets are available.
 
-        self.client = genai.Client(api_key=self.api_key)
+        # IMPORTANT: Do not create the google-genai SDK client during construction.
+        # CI/pytest imports must succeed without any GEMINI API key.
+        self.client: Any = _GeminiClientProxy()
+        self._client_lock = asyncio.Lock()
+        self._sdk_client_created = False
+
+    async def _get_client(self) -> genai.Client:
+        """Return cached google-genai client or lazily create it.
+
+        - Never create the SDK client during __init__.
+        - Thread-safe: SDK client is created at most once.
+        - If tests have patched proxy methods (generate/list/stream paths),
+          keep using the patched proxy (do not overwrite it).
+        """
+        if getattr(self, "_sdk_client_created", False):
+            return self.client  # type: ignore[return-value]
+
+        # If we're still on the proxy and tests already patched the required methods,
+        # keep using the proxy so their AsyncMock expectations are honored.
+        if getattr(self.client, "_is_proxy", False):
+            proxy_models = getattr(getattr(self.client, "aio", None), "models", None)
+            if proxy_models is not None and (
+                hasattr(proxy_models, "generate_content")
+                or hasattr(proxy_models, "generate_content_stream")
+                or hasattr(proxy_models, "list")
+            ):
+                return self.client  # type: ignore[return-value]
+
+        async with self._client_lock:
+            if getattr(self, "_sdk_client_created", False):
+                return self.client  # type: ignore[return-value]
+
+            if getattr(self.client, "_is_proxy", False):
+                proxy_models = getattr(getattr(self.client, "aio", None), "models", None)
+                if proxy_models is not None and (
+                    hasattr(proxy_models, "generate_content")
+                    or hasattr(proxy_models, "generate_content_stream")
+                    or hasattr(proxy_models, "list")
+                ):
+                    return self.client  # type: ignore[return-value]
+
+            if not self.api_key:
+                raise ValueError("Gemini API key is not configured.")
+
+            self.client = genai.Client(api_key=self.api_key)
+            self._sdk_client_created = True
+            return self.client
 
     # ------------------------------------------------------------------
     # Health check
@@ -78,11 +140,12 @@ class GeminiProvider(BaseLLMProvider):
                 recommendation=rec,
             )
 
+        client = await self._get_client()
         t0 = time.perf_counter()
         try:
             # google-genai SDK: list models is a lightweight auth validation call
             await asyncio.wait_for(
-                self.client.aio.models.list(),
+                client.aio.models.list(),
                 timeout=_HEALTH_CHECK_TIMEOUT,
             )
             latency_ms = (time.perf_counter() - t0) * 1000
@@ -168,6 +231,7 @@ class GeminiProvider(BaseLLMProvider):
         import random
 
         contents = self._build_contents(prompt, history)
+        client = await self._get_client()
 
         config = types.GenerateContentConfig()
         if system_instruction:
@@ -182,7 +246,7 @@ class GeminiProvider(BaseLLMProvider):
         while True:
             try:
                 response = await asyncio.wait_for(
-                    self.client.aio.models.generate_content(
+                    client.aio.models.generate_content(
                         model=self.model,
                         contents=contents,
                         config=config,
@@ -243,6 +307,7 @@ class GeminiProvider(BaseLLMProvider):
         import random
 
         contents = self._build_contents(prompt, history)
+        client = await self._get_client()
 
         config = types.GenerateContentConfig()
         if system_instruction:
@@ -255,7 +320,7 @@ class GeminiProvider(BaseLLMProvider):
         while True:
             try:
                 response_stream = await asyncio.wait_for(
-                    self.client.aio.models.generate_content_stream(
+                    client.aio.models.generate_content_stream(
                         model=self.model,
                         contents=contents,
                         config=config,
