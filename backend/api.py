@@ -62,6 +62,7 @@ app = FastAPI(
 
 # Production Middlewares
 from backend.security_middleware import APIKeyMiddleware  # noqa: E402
+
 app.add_middleware(
     APIKeyMiddleware,
     api_key=settings.api_key,

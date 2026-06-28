@@ -76,7 +76,7 @@ class AnalysisCache:
         """Store an object in the cache with its schema version."""
         with self._lock:
             cache_key = (repo_name, key, subkey)
-            
+
             # LRU Eviction if we are adding a new key and size exceeds limit
             if cache_key not in self._cache and len(self._cache) >= self.limit:
                 oldest_key = None
@@ -87,7 +87,9 @@ class AnalysisCache:
                         oldest_key = k
                 if oldest_key is not None:
                     self._cache.pop(oldest_key, None)
-                    logger.info("Cache eviction (LRU): removed %s due to size limit", oldest_key)
+                    logger.info(
+                        "Cache eviction (LRU): removed %s due to size limit", oldest_key
+                    )
 
             self._cache[cache_key] = CacheEntry(value, schema_version)
             logger.debug(

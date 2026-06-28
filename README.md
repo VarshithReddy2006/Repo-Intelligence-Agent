@@ -188,7 +188,7 @@ Traditional RAG tools index text. This tool indexes **your codebase's structure.
 |---|---|
 | **Symbol Index** | AST-extracted index of every class, function, and method across the repository. Definition lookup and cross-file reference search — no language server required. |
 | **Dead Code Detection** | Reachability sweep from detected entry points across the full dependency graph. Identifies unused files, orphaned modules, and dead dependency chains. Each finding carries a **cleanup score (0–100)** to prioritize remediation. |
-| **API Surface Intelligence** | Classifies every exported symbol as `public`, `internal`, or `deprecated`. Computes Martin's instability coefficients per module. Detects breaking changes between repository versions. |
+| **API Surface Intelligence** | Classifies every exported symbol as public, internal, or deprecated. Computes Martin's instability coefficients per module. Detects breaking changes between repository versions. |
 | **Churn Analysis** | Mines git commit history to produce per-file churn scores. Identifies **hotspot files** — those with high churn combined with high coupling — with weekly activity timelines. |
 
 </details>
@@ -429,7 +429,7 @@ docker compose -f docker-compose.dev.yml up -d --build
 ```
 
 > [!NOTE]
-> Named volumes mount `data/` (ChromaDB, graphs, SQLite) and the cloned repository cache independently of the container lifecycle. Data persists across container restarts.
+> Named volumes mount data/ (ChromaDB, graphs, SQLite) and the cloned repository cache independently of the container lifecycle. Data persists across container restarts.
 
 ### 4 — Verify
 
@@ -477,7 +477,7 @@ curl -N -X POST http://localhost:8001/api/chat \
 ```
 
 > [!NOTE]
-> Responses stream as `text/event-stream`. Each SSE event carries a token delta. The final event carries `"status": "done"` along with a `sources` array and a `confidence` score.
+> Responses stream as text/event-stream. Each SSE event carries a token delta. The final event carries "status": "done" along with a sources array and a confidence score.
 
 ```bash
 curl http://localhost:8001/api/chat/health    # Check active provider and circuit breaker state
@@ -536,9 +536,9 @@ cp .env.example .env
 
 | Variable | Default | Description |
 |---|---|---|
-| `LLM_PROVIDER` | `gemini` | Active provider: `gemini` or `deepseek` |
-| `GEMINI_API_KEY` | — | Google AI Studio key — required when `LLM_PROVIDER=gemini` |
-| `DEEPSEEK_API_KEY` | — | NVIDIA NIM key — required when `LLM_PROVIDER=deepseek` |
+| LLM_PROVIDER | gemini | Active provider: gemini or deepseek |
+| GEMINI_API_KEY | — | Google AI Studio key — required when LLM_PROVIDER=gemini |
+| DEEPSEEK_API_KEY | — | NVIDIA NIM key — required when LLM_PROVIDER=deepseek |
 
 ### Optional
 
@@ -549,32 +549,32 @@ cp .env.example .env
 
 | Variable | Default | Description |
 |---|---|---|
-| `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini model variant |
-| `DEEPSEEK_BASE_URL` | `https://integrate.api.nvidia.com/v1` | NIM API endpoint |
-| `DEEPSEEK_MODEL` | `deepseek-ai/deepseek-v4-flash` | DeepSeek model variant |
-| `GITHUB_TOKEN` | — | PAT for private repositories or higher rate limits |
-| `API_SERVER_HOST` | `0.0.0.0` | Uvicorn bind host |
-| `API_SERVER_PORT` | `8001` | Uvicorn bind port |
-| `FRONTEND_URL` | `http://localhost:4321` | Allowed CORS origin — **set to your production domain before deploying** |
-| `SQLITE_DB_PATH` | `data/repo_understanding.db` | SQLite database path |
-| `CHROMA_DB_PATH` | `data/chroma_db` | ChromaDB persistence directory |
-| `CLONED_REPOS_PATH` | `~/.repo_intelligence/cloned_repos` | Clone destination — must be **outside** the project tree to avoid triggering uvicorn reload loops |
-| `APP_ENV` | `development` | `development` or `production` — controls fail-fast behavior at startup |
-| `LOG_LEVEL` | `INFO` | Logging verbosity |
-| `LOG_FORMAT` | `human` | `human` or `json` — use `json` in production |
-| `RATE_LIMIT_PER_MINUTE` | `60` | Max requests per IP per minute |
-| `ALLOWED_HOSTS` | `["*"]` | TrustedHost middleware allowed hostnames |
+| GEMINI_MODEL | gemini-2.5-flash | Gemini model variant |
+| DEEPSEEK_BASE_URL | https://integrate.api.nvidia.com/v1 | NIM API endpoint |
+| DEEPSEEK_MODEL | deepseek-ai/deepseek-v4-flash | DeepSeek model variant |
+| GITHUB_TOKEN | — | PAT for private repositories or higher rate limits |
+| API_SERVER_HOST | 0.0.0.0 | Uvicorn bind host |
+| API_SERVER_PORT | 8001 | Uvicorn bind port |
+| FRONTEND_URL | http://localhost:4321 | Allowed CORS origin — **set to your production domain before deploying** |
+| SQLITE_DB_PATH | data/repo_understanding.db | SQLite database path |
+| CHROMA_DB_PATH | data/chroma_db | ChromaDB persistence directory |
+| CLONED_REPOS_PATH | ~/.repo_intelligence/cloned_repos | Clone destination — must be **outside** the project tree to avoid triggering uvicorn reload loops |
+| APP_ENV | development | development or production — controls fail-fast behavior at startup |
+| LOG_LEVEL | INFO | Logging verbosity |
+| LOG_FORMAT | human | human or json — use json in production |
+| RATE_LIMIT_PER_MINUTE | 60 | Max requests per IP per minute |
+| ALLOWED_HOSTS | ["*"] | TrustedHost middleware allowed hostnames |
 
 </details>
 
 > [!IMPORTANT]
-> **Production checklist:** Set `FRONTEND_URL` to your domain, `APP_ENV=production`, and `LOG_FORMAT=json`. In production mode, invalid LLM credentials fail fast at startup with an actionable error message rather than silently degrading at request time.
+> **Production checklist:** Set FRONTEND_URL to your domain, APP_ENV=production, and LOG_FORMAT=json. In production mode, invalid LLM credentials fail fast at startup with an actionable error message rather than silently degrading at request time.
 
 ---
 
 ## 📡 API Reference
 
-Base URL: `http://localhost:8001` · All routes also available under `/api/v1/`
+Base URL: http://localhost:8001 · All routes also available under /api/v1/ 
 
 <details>
 <summary><strong>Core &amp; Repository</strong></summary>
@@ -583,14 +583,14 @@ Base URL: `http://localhost:8001` · All routes also available under `/api/v1/`
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/health` | System health and active LLM provider |
-| `GET` | `/metrics` | Prometheus metrics |
-| `POST` | `/api/analyze` | Full analysis pipeline (SSE) |
-| `POST` | `/api/index` | Vector-only indexing |
-| `GET` | `/api/analysis/{owner}/{repo}` | Fetch analysis result |
-| `POST` | `/api/repos/repair` | Rebuild missing symbol or graph indexes |
-| `GET` | `/api/repos/recent` | Recently analyzed repositories |
-| `GET` | `/api/repos/examples` | Pre-configured example repositories |
+| GET | /health | System health and active LLM provider |
+| GET | /metrics | Prometheus metrics |
+| POST | /api/analyze | Full analysis pipeline (SSE) |
+| POST | /api/index | Vector-only indexing |
+| GET | /api/analysis/{owner}/{repo} | Fetch analysis result |
+| POST | /api/repos/repair | Rebuild missing symbol or graph indexes |
+| GET | /api/repos/recent | Recently analyzed repositories |
+| GET | /api/repos/examples | Pre-configured example repositories |
 
 </details>
 
@@ -601,10 +601,10 @@ Base URL: `http://localhost:8001` · All routes also available under `/api/v1/`
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/chat` | Streaming repository chat (SSE) |
-| `POST` | `/api/retrieve` | Vector search with LLM-generated answer |
-| `GET` | `/api/chat/health` | Live provider health diagnostic |
-| `POST` | `/api/chat/reload` | Hot-reload LLM provider configuration |
+| POST | /api/chat | Streaming repository chat (SSE) |
+| POST | /api/retrieve | Vector search with LLM-generated answer |
+| GET | /api/chat/health | Live provider health diagnostic |
+| POST | /api/chat/reload | Hot-reload LLM provider configuration |
 
 </details>
 
@@ -615,16 +615,16 @@ Base URL: `http://localhost:8001` · All routes also available under `/api/v1/`
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/architecture/build` | Build dependency graph |
-| `GET` | `/api/architecture/{owner}/{repo}/graph` | React Flow graph payload |
-| `GET` | `/api/graph/{owner}/{repo}/neighbors/{path}` | Node neighborhood |
-| `GET` | `/api/graph/{owner}/{repo}/trace/{path}` | BFS reachability trace |
-| `GET` | `/api/graph/{owner}/{repo}/search` | Graph node search |
-| `POST` | `/api/call-graph/build` | Build call graph (SSE) |
-| `GET` | `/api/call-graph/{owner}/{repo}` | React Flow call graph payload |
-| `GET` | `/api/call-graph/{owner}/{repo}/callers/{fn}` | Callers of a function |
-| `GET` | `/api/call-graph/{owner}/{repo}/callees/{fn}` | Callees of a function |
-| `GET` | `/api/call-graph/{owner}/{repo}/blast-radius/{fn}` | Function blast radius |
+| POST | /api/architecture/build | Build dependency graph |
+| GET | /api/architecture/{owner}/{repo}/graph | React Flow graph payload |
+| GET | /api/graph/{owner}/{repo}/neighbors/{path} | Node neighborhood |
+| GET | /api/graph/{owner}/{repo}/trace/{path} | BFS reachability trace |
+| GET | /api/graph/{owner}/{repo}/search | Graph node search |
+| POST | /api/call-graph/build | Build call graph (SSE) |
+| GET | /api/call-graph/{owner}/{repo} | React Flow call graph payload |
+| GET | /api/call-graph/{owner}/{repo}/callers/{fn} | Callers of a function |
+| GET | /api/call-graph/{owner}/{repo}/callees/{fn} | Callees of a function |
+| GET | /api/call-graph/{owner}/{repo}/blast-radius/{fn} | Function blast radius |
 
 </details>
 
@@ -635,21 +635,21 @@ Base URL: `http://localhost:8001` · All routes also available under `/api/v1/`
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/symbols/{owner}/{repo}/file/{path}` | Symbols in a file |
-| `GET` | `/api/symbols/{owner}/{repo}/definition/{name}` | Symbol definition lookup |
-| `GET` | `/api/symbols/{owner}/{repo}/references/{name}` | Symbol cross-references |
-| `POST` | `/api/api-surface/build` | Build API surface index (SSE) |
-| `GET` | `/api/api-surface/{owner}/{repo}` | Full API surface report |
-| `GET` | `/api/api-surface/{owner}/{repo}/public` | Public symbols only |
-| `GET` | `/api/api-surface/{owner}/{repo}/breaking` | Breaking change detection |
-| `POST` | `/api/churn/analyze` | Mine git history for churn scores (SSE) |
-| `GET` | `/api/churn/{owner}/{repo}/hotspots` | Top hotspot files |
-| `POST` | `/api/pr/analyze` | PR risk scoring and blast radius |
-| `POST` | `/api/architecture/drift` | Architecture drift detection |
-| `POST` | `/api/dead-code/analyze` | Dead code reachability sweep |
-| `POST` | `/api/issues/map` | Map GitHub issue to implementation plan |
-| `POST` | `/api/reading-order` | Onboarding-optimized reading order |
-| `POST` | `/api/impact-analysis` | Change impact prediction |
+| GET | /api/symbols/{owner}/{repo}/file/{path} | Symbols in a file |
+| GET | /api/symbols/{owner}/{repo}/definition/{name} | Symbol definition lookup |
+| GET | /api/symbols/{owner}/{repo}/references/{name} | Symbol cross-references |
+| POST | /api/api-surface/build | Build API surface index (SSE) |
+| GET | /api/api-surface/{owner}/{repo} | Full API surface report |
+| GET | /api/api-surface/{owner}/{repo}/public | Public symbols only |
+| GET | /api/api-surface/{owner}/{repo}/breaking | Breaking change detection |
+| POST | /api/churn/analyze | Mine git history for churn scores (SSE) |
+| GET | /api/churn/{owner}/{repo}/hotspots | Top hotspot files |
+| POST | /api/pr/analyze | PR risk scoring and blast radius |
+| POST | /api/architecture/drift | Architecture drift detection |
+| POST | /api/dead-code/analyze | Dead code reachability sweep |
+| POST | /api/issues/map | Map GitHub issue to implementation plan |
+| POST | /api/reading-order | Onboarding-optimized reading order |
+| POST | /api/impact-analysis | Change impact prediction |
 
 </details>
 
@@ -660,9 +660,9 @@ Base URL: `http://localhost:8001` · All routes also available under `/api/v1/`
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/v1/report/{owner}/{repo}/build` | Build intelligence report |
-| `GET` | `/api/v1/report/{owner}/{repo}/summary` | Health summary |
-| `GET` | `/api/v1/report/{owner}/{repo}/download` | Download HTML · PDF · Markdown |
+| POST | /api/v1/report/{owner}/{repo}/build | Build intelligence report |
+| GET | /api/v1/report/{owner}/{repo}/summary | Health summary |
+| GET | /api/v1/report/{owner}/{repo}/download | Download HTML · PDF · Markdown |
 
 </details>
 
@@ -688,16 +688,16 @@ Measured on development hardware. Repository size, file count, and I/O character
 
 ### Prometheus Metrics
 
-Exposed at `/metrics`:
+Exposed at /metrics:
 
 | Metric | Type | Description |
 |---|---|---|
-| `http_requests_total` | Counter | Requests by method, path, and status |
-| `active_requests_count` | Gauge | In-flight requests |
-| `build_duration_seconds` | Histogram | Per-repository build durations |
-| `analysis_task_duration_seconds` | Histogram | Per-task durations |
-| `cache_hits_total` | Counter | Cache hit count |
-| `cache_misses_total` | Counter | Cache miss count |
+| http_requests_total | Counter | Requests by method, path, and status |
+| active_requests_count | Gauge | In-flight requests |
+| build_duration_seconds | Histogram | Per-repository build durations |
+| analysis_task_duration_seconds | Histogram | Per-task durations |
+| cache_hits_total | Counter | Cache hit count |
+| cache_misses_total | Counter | Cache miss count |
 
 ---
 
@@ -707,20 +707,20 @@ Built to be operated, not just installed.
 
 | Concern | Implementation |
 |---|---|
-| **Observability** | Prometheus metrics at `/metrics` with histograms for build and task durations |
-| **Structured logging** | JSON log format via `LOG_FORMAT=json`, with request IDs on every log line |
-| **Health endpoint** | `/health` reports backend status, active LLM provider, and vector store state |
-| **Rate limiting** | Sliding-window per-IP limiter — configurable via `RATE_LIMIT_PER_MINUTE` |
-| **CORS** | Restricted to `FRONTEND_URL` — set to your production domain before deploying |
+| **Observability** | Prometheus metrics at /metrics with histograms for build and task durations |
+| **Structured logging** | JSON log format via LOG_FORMAT=json, with request IDs on every log line |
+| **Health endpoint** | /health reports backend status, active LLM provider, and vector store state |
+| **Rate limiting** | Sliding-window per-IP limiter — configurable via RATE_LIMIT_PER_MINUTE |
+| **CORS** | Restricted to FRONTEND_URL — set to your production domain before deploying |
 | **Input validation** | Pydantic model validation on every request body |
 | **Secret handling** | API keys loaded from environment variables only — never logged or exposed |
 | **LLM circuit breaker** | ProviderManager tracks LLM health and fails over to DeepSeek on provider errors |
 | **Fallback renderer** | If both LLM providers are unavailable, structured responses render without LLM |
-| **Fail-fast startup** | In `APP_ENV=production`, misconfiguration halts startup with an actionable error |
+| **Fail-fast startup** | In APP_ENV=production, misconfiguration halts startup with an actionable error |
 | **Incremental analysis** | Hash-based change detection prevents redundant work on re-runs |
 | **In-memory cache** | Schema-versioned cache prevents stale data from surviving configuration changes |
 | **Docker** | Production and development Compose files with named volumes for data persistence |
-| **TrustedHost** | `ALLOWED_HOSTS` middleware for hostname validation |
+| **TrustedHost** | ALLOWED_HOSTS middleware for hostname validation |
 
 > [!WARNING]
 > **No built-in authentication.** Multi-tenant or public deployments must add a reverse proxy with authentication in front of the backend.
@@ -739,7 +739,7 @@ pytest tests/ --cov=. --cov-report=term-missing      # With coverage
 - GitHub Actions runs the full test suite, lint check, and format check on every pull request
 
 > [!CAUTION]
-> Always run `pytest tests/` with the explicit path. Running bare `pytest` from the repository root will traverse `data/` and encounter import errors from cloned repositories.
+> Always run pytest tests/ with the explicit path. Running bare pytest from the repository root will traverse data/ and encounter import errors from cloned repositories.
 
 ---
 
@@ -774,7 +774,7 @@ pytest tests/ --cov=. --cov-report=term-missing      # With coverage
 
 Contributions are welcome. This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, coding standards, and pull request guidelines.
 
-Good first issues are tagged [`good-first-issue`](https://github.com/VarshithReddy2006/Repo-Intelligence-Agent/issues?q=label%3Agood-first-issue). Questions and ideas welcome in [Discussions](https://github.com/VarshithReddy2006/Repo-Intelligence-Agent/discussions).
+Good first issues are tagged [good-first-issue](https://github.com/VarshithReddy2006/Repo-Intelligence-Agent/issues?q=label%3Agood-first-issue). Questions and ideas welcome in [Discussions](https://github.com/VarshithReddy2006/Repo-Intelligence-Agent/discussions).
 
 ```bash
 pip install -e ".[dev]"                                      # Install dev dependencies
@@ -786,11 +786,11 @@ pytest tests/ --cov=. --cov-report=term-missing             # With coverage
 
 ### Pull Request Checklist
 
-- [ ] `ruff check .` passes
-- [ ] `ruff format --check .` passes
-- [ ] `pytest tests/ -v` passes with no new failures
+- [ ] ruff check . passes
+- [ ] ruff format --check . passes
+- [ ] pytest tests/ -v passes with no new failures
 - [ ] New behavior is covered by at least one test
-- [ ] Public API changes are reflected in `docs/API_REFERENCE.md`
+- [ ] Public API changes are reflected in docs/API_REFERENCE.md 
 - [ ] Breaking changes are noted in the PR description
 
 ---
@@ -807,7 +807,7 @@ The current implementation targets Python repositories. Multi-language AST suppo
 <details>
 <summary><strong>Can it analyze private repositories?</strong></summary>
 
-Public repositories work out of the box. For private repositories, set `GITHUB_TOKEN` to a personal access token with `repo` scope. Full private repository support via GitHub App is on the roadmap.
+Public repositories work out of the box. For private repositories, set GITHUB_TOKEN to a personal access token with repo scope. Full private repository support via GitHub App is on the roadmap.
 
 </details>
 
@@ -835,7 +835,7 @@ Embedding runs locally with no API calls. Cloning public repositories and LLM ca
 <details>
 <summary><strong>Which LLM providers are supported?</strong></summary>
 
-Gemini 2.5 Flash (Google AI Studio) and DeepSeek V4 Flash via NVIDIA NIM. The `LLM_PROVIDER` environment variable selects the active provider. The circuit-breaker fails over to the secondary provider automatically on errors.
+Gemini 2.5 Flash (Google AI Studio) and DeepSeek V4 Flash via NVIDIA NIM. The LLM_PROVIDER environment variable selects the active provider. The circuit-breaker fails over to the secondary provider automatically on errors.
 
 </details>
 
@@ -863,7 +863,7 @@ Conversation memory is maintained within a session. Persistent cross-session mem
 <details>
 <summary><strong>Is there built-in authentication?</strong></summary>
 
-No. Rate limiting and CORS restriction to `FRONTEND_URL` are included, but user authentication is not built in. For multi-tenant or public deployments, place a reverse proxy with authentication in front of the backend.
+No. Rate limiting and CORS restriction to FRONTEND_URL are included, but user authentication is not built in. For multi-tenant or public deployments, place a reverse proxy with authentication in front of the backend.
 
 </details>
 
@@ -874,28 +874,28 @@ No. Rate limiting and CORS restriction to `FRONTEND_URL` are included, but user 
 <details>
 <summary><strong>Backend fails to start in production mode</strong></summary>
 
-Check that `GEMINI_API_KEY` or `DEEPSEEK_API_KEY` is set correctly. In `APP_ENV=production`, invalid credentials fail fast with an actionable error message.
+Check that GEMINI_API_KEY or DEEPSEEK_API_KEY is set correctly. In APP_ENV=production, invalid credentials fail fast with an actionable error message.
 
 </details>
 
 <details>
 <summary><strong>Uvicorn reload loops when cloning repositories</strong></summary>
 
-Set `CLONED_REPOS_PATH` to a directory outside the project root. The file watcher triggers reloads when it detects new files inside the project tree.
+Set CLONED_REPOS_PATH to a directory outside the project root. The file watcher triggers reloads when it detects new files inside the project tree.
 
 </details>
 
 <details>
 <summary><strong><code>pytest</code> fails with import errors</strong></summary>
 
-Always run `pytest tests/` with the explicit path. Running bare `pytest` from the project root traverses `data/` and encounters import errors from cloned repositories.
+Always run pytest tests/ with the explicit path. Running bare pytest from the project root traverses data/ and encounters import errors from cloned repositories.
 
 </details>
 
 <details>
 <summary><strong>ChromaDB collection not found after restart</strong></summary>
 
-Check that `CHROMA_DB_PATH` points to a persistent directory and that the path is correctly mounted if running in Docker.
+Check that CHROMA_DB_PATH points to a persistent directory and that the path is correctly mounted if running in Docker.
 
 </details>
 

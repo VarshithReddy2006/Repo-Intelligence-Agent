@@ -85,7 +85,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 class APIKeyMiddleware(BaseHTTPMiddleware):
     """Simple API Key authentication middleware for expensive endpoints."""
 
-    def __init__(self, app, api_key: Optional[str] = None, app_env: str = "development") -> None:
+    def __init__(
+        self, app, api_key: Optional[str] = None, app_env: str = "development"
+    ) -> None:
         super().__init__(app)
         self.api_key = api_key
         self.app_env = app_env
@@ -119,11 +121,14 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             "/api/v1/retrieve",
             "/api/v1/issues/map",
         ]
-        is_expensive = any(request.url.path.startswith(p) for p in expensive_paths) or "/report" in request.url.path
+        is_expensive = (
+            any(request.url.path.startswith(p) for p in expensive_paths)
+            or "/report" in request.url.path
+        )
 
         if is_expensive:
             provided_key = request.headers.get("X-API-Key")
-            
+
             # Fallback to Authorization header
             if not provided_key:
                 auth_header = request.headers.get("Authorization")

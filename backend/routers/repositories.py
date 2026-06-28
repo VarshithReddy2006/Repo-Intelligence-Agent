@@ -15,7 +15,7 @@ import json
 import logging
 import os
 import time
-from typing import Any, Dict, List
+from typing import Dict, List
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -319,7 +319,9 @@ async def analyze_repository(request: AnalyzeRequest):
             files = await asyncio.to_thread(
                 github_service.extract_source_files, local_path
             )
-            tech_stack, dependencies = await asyncio.to_thread(detect_tech_stack_and_deps, files)
+            tech_stack, dependencies = await asyncio.to_thread(
+                detect_tech_stack_and_deps, files
+            )
             timer.stop("Parse")
             yield f"data: {json.dumps({'status': 'detected', 'message': f'✓ Technologies detected: {tech_stack}'})}\n\n"
 

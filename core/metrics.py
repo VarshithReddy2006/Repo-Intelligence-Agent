@@ -25,7 +25,9 @@ class MetricsRegistry:
             key = (method, path, status)
             self.http_requests_total[key] = self.http_requests_total.get(key, 0) + 1
 
-    def record_request_duration(self, method: str, path: str, status: int, duration_seconds: float) -> None:
+    def record_request_duration(
+        self, method: str, path: str, status: int, duration_seconds: float
+    ) -> None:
         with self.lock:
             key = (method, path, status)
             if key not in self.http_request_duration:
