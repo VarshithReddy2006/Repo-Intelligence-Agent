@@ -81,7 +81,7 @@ async def build_call_graph(request: CallGraphBuildRequest):
             summary = None
             while True:
                 try:
-                    event = next(gen)
+                    event = await asyncio.to_thread(next, gen)
                     yield f"data: {json.dumps(event)}\n\n"
                 except StopIteration as stop:
                     summary = stop.value

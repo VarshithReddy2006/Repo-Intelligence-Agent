@@ -6,6 +6,31 @@ All endpoints are versioned under the `/api/v1` prefix. Legacy root paths (e.g. 
 
 ---
 
+## Authentication
+
+When the application is configured with an `API_KEY` (via the environment variable), all expensive endpoints (indexing, ingestion, chat, issues, reports) require authentication. 
+
+You must supply the API key in one of the following HTTP headers:
+
+1. **X-API-Key Header**:
+   ```http
+   X-API-Key: your_secret_api_key_here
+   ```
+
+2. **Authorization Bearer Token Header**:
+   ```http
+   Authorization: Bearer your_secret_api_key_here
+   ```
+
+Failed authentication requests return a `401 Unauthorized` response:
+```json
+{
+  "detail": "Unauthorized. Invalid or missing API key."
+}
+```
+
+---
+
 ## 1. Repository Ingestion & Analysis
 
 ### Index Repository (Sync)

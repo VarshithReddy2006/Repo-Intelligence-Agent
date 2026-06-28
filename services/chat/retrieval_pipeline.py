@@ -116,8 +116,12 @@ class RetrievalPipeline:
         trace.intent = intent_result.intent.value
 
         # Check for deterministic match
-        det_match = detect_deterministic_retrieval(
-            resolved_question, repo_name, self.chroma_store, self.symbol_service
+        det_match = await asyncio.to_thread(
+            detect_deterministic_retrieval,
+            resolved_question,
+            repo_name,
+            self.chroma_store,
+            self.symbol_service,
         )
 
         if det_match and det_match.get("clarification_needed"):
@@ -151,7 +155,8 @@ class RetrievalPipeline:
 
         # 4. Vector/Deterministic retrieval
         try:
-            chunks, ret_metrics = intelligent_retrieve(
+            chunks, ret_metrics = await asyncio.to_thread(
+                intelligent_retrieve,
                 question=resolved_question,
                 repo_name=repo_name,
                 embedding_service=self.embedding_service,
@@ -292,8 +297,12 @@ class RetrievalPipeline:
         trace.intent = intent_result.intent.value
 
         # Check for deterministic match
-        det_match = detect_deterministic_retrieval(
-            resolved_question, repo_name, self.chroma_store, self.symbol_service
+        det_match = await asyncio.to_thread(
+            detect_deterministic_retrieval,
+            resolved_question,
+            repo_name,
+            self.chroma_store,
+            self.symbol_service,
         )
 
         if det_match and det_match.get("clarification_needed"):
@@ -330,7 +339,8 @@ class RetrievalPipeline:
         # ── 4. Vector/Deterministic retrieval ────────────────────────────
         chunks: List[Dict] = []
         try:
-            chunks, ret_metrics = intelligent_retrieve(
+            chunks, ret_metrics = await asyncio.to_thread(
+                intelligent_retrieve,
                 question=resolved_question,
                 repo_name=repo_name,
                 embedding_service=self.embedding_service,

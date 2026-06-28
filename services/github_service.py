@@ -104,7 +104,7 @@ class GitHubService:
         # does not treat clone activity as source-code changes. Configurable via
         # CLONED_REPOS_PATH; defaults to ~/.repo_intelligence/cloned_repos.
         base_dir = str(get_cloned_repos_dir())
-        safe_name = repo_fullName.replace("/", "_")
+        safe_name = repo_fullName.replace("/", "_").replace("\\", "_")
         return os.path.abspath(os.path.join(base_dir, safe_name))
 
     def clone_repository(self, repo_url: str, branch: Optional[str] = None) -> str:

@@ -56,6 +56,12 @@ CHROMA_DB_PATH=data/chroma_db
 CACHE_FILE_PATH=data/cache.json
 CLONED_REPOS_PATH=data/cloned_repos
 
+# ── Security & Authentication ────────────────────────────────────────────────
+# Rate limiting (0 = disabled)
+RATE_LIMIT_PER_MINUTE=60
+# Optional API key authentication (leave blank to disable in development)
+# API_KEY=your_secret_api_key_here
+
 # ── Frontend & CORS ──────────────────────────────────────────────────────────
 FRONTEND_URL=http://localhost:4321
 ```

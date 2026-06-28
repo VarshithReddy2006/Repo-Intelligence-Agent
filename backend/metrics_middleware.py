@@ -22,10 +22,13 @@ class MetricsMiddleware(BaseHTTPMiddleware):
 
         try:
             response = await call_next(request)
-            time.time() - start_time
+            elapsed = time.time() - start_time
             # Increment request counter labeled by method, path, and status code
             metrics_registry.increment_request(
                 request.method, request.url.path, response.status_code
+            )
+            metrics_registry.record_request_duration(
+                request.method, request.url.path, response.status_code, elapsed
             )
             return response
         finally:

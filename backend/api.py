@@ -61,6 +61,12 @@ app = FastAPI(
 )
 
 # Production Middlewares
+from backend.security_middleware import APIKeyMiddleware  # noqa: E402
+app.add_middleware(
+    APIKeyMiddleware,
+    api_key=settings.api_key,
+    app_env=settings.app_env,
+)
 app.add_middleware(RequestIdMiddleware)
 app.add_middleware(RateLimitMiddleware, limit=settings.rate_limit_per_minute)
 app.add_middleware(MetricsMiddleware)

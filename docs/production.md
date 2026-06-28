@@ -40,6 +40,7 @@ CLONED_REPOS_PATH=/var/lib/repo_intelligence/cloned_repos
 LOG_LEVEL=INFO
 LOG_FORMAT=json
 RATE_LIMIT_PER_MINUTE=60
+API_KEY=<secret-key>         # optional; enables API Key authentication for expensive endpoints
 ```
 
 ### Infrastructure requirements
@@ -154,6 +155,14 @@ curl http://localhost:8001/metrics
 
 Returns Prometheus-format text. Scrape this with Prometheus or a compatible collector.
 
+The endpoint exposes the following metric categories:
+- **HTTP Request Total**: `http_requests_total`
+- **Active Requests Gauge**: `active_requests_count`
+- **HTTP Latency Summary**: `http_request_duration_seconds` (sum and count)
+- **Codebase Build Durations**: `build_duration_seconds`
+- **Analysis Task Durations**: `analysis_task_duration_seconds`
+- **Cache Statistics**: `cache_hits_total` / `cache_misses_total`
+
 ---
 
 ## Monitoring
@@ -165,6 +174,7 @@ Returns Prometheus-format text. Scrape this with Prometheus or a compatible coll
 | `active_requests_count` | > 50 sustained for > 5 min |
 | `http_requests_total{status="429"}` | Spike indicates rate limit being hit |
 | `http_requests_total{status="500"}` | Any sustained non-zero value |
+| `http_request_duration_seconds_sum / http_request_duration_seconds_count` | Average latency > 2.0s sustained |
 | `build_duration_seconds_sum` | Sudden increase may indicate large repos |
 | `cache_misses_total` | High ratio to hits may indicate memory pressure |
 
@@ -241,7 +251,8 @@ Production-specific checklist:
 - [ ] TLS termination at reverse proxy (nginx, Caddy, Cloudflare)
 - [ ] `GITHUB_TOKEN` set with minimum required scopes (`contents:read`, `metadata:read`)
 - [ ] Rate limit tuned for your expected traffic (`RATE_LIMIT_PER_MINUTE`)
-- [ ] API keys stored in a secrets manager (not committed to source control)
+- [ ] `API_KEY` configured in environment to restrict access to expensive endpoints
+- [ ] LLM provider API keys stored securely in a secrets manager (not committed to source control)
 
 ---
 
@@ -342,7 +353,7 @@ Analysis data is written atomically (tmp → rename). A crash mid-write leaves t
 
 ## Known Operational Risks
 
-1. **No user authentication**: The API is fully public. Any client that can reach port 8001 can trigger analyses. Mitigate with a reverse proxy auth layer.
+1. **API Exposure / Access Control**: The API now natively supports optional API key authentication (`API_KEY`) to restrict access to expensive endpoints (like ingestion, indexing, and LLM chat). If disabled, the API is public; mitigate this by securing routes behind a reverse proxy auth layer (OAuth, Basic Auth).
 2. **CPU-bound embedding**: A large repository (> 2 000 files) analysis blocks the Python process for several minutes. The server remains responsive via async routing, but embedding runs in a thread pool executor.
 3. **Single instance**: In-memory caches (AnalysisCache, ProviderManager) are process-local. Running multiple instances will give inconsistent results. Deploy one instance per environment.
 4. **Cloned repo disk growth**: Repositories are cloned to `CLONED_REPOS_PATH` and not automatically deleted. Monitor disk usage and implement a cleanup cron job if needed.

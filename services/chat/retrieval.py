@@ -84,6 +84,12 @@ def get_unique_file_paths(repo_name: str, chroma_store) -> List[str]:
     import time
 
     now = time.time()
+    
+    # Prune stale entries to prevent unbounded memory growth
+    stale_keys = [k for k, (t, _) in _FILE_PATHS_CACHE.items() if now - t >= _CACHE_TTL]
+    for k in stale_keys:
+        _FILE_PATHS_CACHE.pop(k, None)
+
     if not is_testing and repo_name in _FILE_PATHS_CACHE:
         cache_time, paths = _FILE_PATHS_CACHE[repo_name]
         if now - cache_time < _CACHE_TTL:

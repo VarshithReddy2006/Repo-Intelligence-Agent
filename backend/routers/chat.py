@@ -18,6 +18,7 @@ No prompt building. No embedding calls. No LLM calls. No retry logic.
 
 import json
 import logging
+import asyncio
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -343,7 +344,9 @@ async def map_issue(request: IssueMapRequest):
             embedding_service=embedding_service,
             chroma_store=chroma_store,
         )
-        plan = mapper.map_issue(request.repo, title, description)
+        plan = await asyncio.to_thread(
+            mapper.map_issue, request.repo, title, description
+        )
         return plan
     except HTTPException:
         raise

@@ -81,7 +81,7 @@ async def build_api_surface(request: APISurfaceBuildRequest):
             surface = None
             while True:
                 try:
-                    event = next(gen)
+                    event = await asyncio.to_thread(next, gen)
                     yield f"data: {json.dumps(event)}\n\n"
                 except StopIteration as stop:
                     surface = stop.value

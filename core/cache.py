@@ -24,7 +24,8 @@ class CacheEntry:
 class AnalysisCache:
     """Shared in-memory cache for parsed AST data, graphs, and summaries."""
 
-    def __init__(self) -> None:
+    def __init__(self, limit: int = 1000) -> None:
+        self.limit = limit
         # Cache map: (repo_name, key, subkey) -> CacheEntry
         self._cache: Dict[Tuple[str, str, Optional[str]], CacheEntry] = {}
         self.hits: Dict[str, int] = {}
@@ -75,6 +76,19 @@ class AnalysisCache:
         """Store an object in the cache with its schema version."""
         with self._lock:
             cache_key = (repo_name, key, subkey)
+            
+            # LRU Eviction if we are adding a new key and size exceeds limit
+            if cache_key not in self._cache and len(self._cache) >= self.limit:
+                oldest_key = None
+                oldest_time = float("inf")
+                for k, entry in self._cache.items():
+                    if entry.last_accessed < oldest_time:
+                        oldest_time = entry.last_accessed
+                        oldest_key = k
+                if oldest_key is not None:
+                    self._cache.pop(oldest_key, None)
+                    logger.info("Cache eviction (LRU): removed %s due to size limit", oldest_key)
+
             self._cache[cache_key] = CacheEntry(value, schema_version)
             logger.debug(
                 "Cached entry for %s/%s:%s (v%d)",

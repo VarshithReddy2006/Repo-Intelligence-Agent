@@ -517,7 +517,7 @@ pytest tests/ --cov=. --cov-report=term-missing
 - Incremental build manifests with schema versioning
 - Atomic file operations for analysis store persistence
 
-See [PRODUCTION_RELEASE_REPORT.md](PRODUCTION_RELEASE_REPORT.md) for the full audit.
+See [docs/production.md](docs/production.md) for the full production operations guide.
 
 ---
 

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.0] — 2026-06-28
+
+### Added
+- **API Key Middleware**: Introduced an optional `API_KEY` configuration to safeguard resource-intensive endpoints (cloning, indexing, LLM chat, report generation). Authenticates clients via `X-API-Key` or standard `Authorization: Bearer` headers.
+- **Latency Telemetry**: Connected request duration timers inside `MetricsMiddleware` to the Prometheus `MetricsRegistry` as `http_request_duration_seconds` summary metrics.
+
+### Changed
+- **FastAPI Event Loop Concurrency**: Wrapped CPU-bound and blocking network/disk calls inside async endpoints (issue mapper, ingestion pipeline, git history chunking, call graph parsing, and BGE embedding generation) in `asyncio.to_thread` executors to prevent ASGI main thread freezing.
+- **Rate Limiter Memory Sweep**: Replaced the sliding-window `defaultdict` with a standard dictionary and implemented a thread-safe periodic cleanup sweep (every 5 minutes) to prune inactive client IP keys.
+- **LRU Cache Eviction**: Added capacity-based eviction (`settings.cache_size_limit`) using Least Recently Used (LRU) algorithms inside `AnalysisCache`.
+
+### Fixed
+- **Windows Path Traversal Hardening**: Stripped backslashes `\` alongside forward slashes in repository name sanitization logic inside `JsonSnapshotStore` and `github_service` to block Windows path traversal vectors.
+- **Unbounded Memory Leakages**: Added cache-TTL capacity pruning for `_FILE_PATHS_CACHE` in retrieval services and capped the persistent `ISSUE_CACHE` size at 500 records.
+
 ## [1.0.0] — 2026-06-27
 
 ### Added

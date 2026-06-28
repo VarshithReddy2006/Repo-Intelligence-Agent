@@ -40,6 +40,10 @@ def load_cache() -> dict:
 
 
 def save_cache(cache: dict) -> None:
+    # Bound cache size to prevent unbounded memory/disk growth
+    while len(cache) > 500:
+        first_key = next(iter(cache))
+        cache.pop(first_key, None)
     os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
     try:
         with open(CACHE_FILE, "w", encoding="utf-8") as f:

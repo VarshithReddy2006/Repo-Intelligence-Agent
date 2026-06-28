@@ -181,7 +181,7 @@ CHROMA_DB_PATH = settings.chroma_db_path
 
 # Core Architecture singletons
 snapshot_store = JsonSnapshotStore()
-analysis_cache = AnalysisCache()
+analysis_cache = AnalysisCache(limit=settings.cache_size_limit)
 analysis_registry = AnalysisRegistry()
 build_pipeline = BuildPipeline(analysis_registry)
 

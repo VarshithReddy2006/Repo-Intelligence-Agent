@@ -90,7 +90,7 @@ async def get_pr_health(
     if github_token_exists:
         try:
             # Synchronous call so @patch("backend.api.github_service") intercepts it
-            rate_info = _api.github_service.get_rate_limit_info()
+            rate_info = await asyncio.to_thread(_api.github_service.get_rate_limit_info)
             github_rate_limit_authenticated = rate_info.get("limit", 0) >= 5000
         except Exception:
             pass

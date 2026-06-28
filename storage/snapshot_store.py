@@ -74,7 +74,7 @@ class JsonSnapshotStore(SnapshotStore):
         self._lock = threading.Lock()
 
     def _get_path(self, repo_name: str, key: str, subkey: Optional[str] = None) -> str:
-        safe_repo = repo_name.replace("/", "_")
+        safe_repo = repo_name.replace("/", "_").replace("\\", "_")
         dir_name = self.key_map.get(key, key)
         dir_path = os.path.join(self.base_dir, dir_name)
         os.makedirs(dir_path, exist_ok=True)

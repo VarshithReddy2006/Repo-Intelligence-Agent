@@ -63,7 +63,7 @@ jobs:
             import traceback
             traceback.print_exc()
         "
-        pytest -v
+        pytest tests/ -v
 
   frontend-build:
     runs-on: ubuntu-latest

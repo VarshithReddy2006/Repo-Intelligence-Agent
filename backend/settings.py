@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     log_format: str = Field("human", alias="LOG_FORMAT")  # "human" or "json"
     allowed_hosts: List[str] = Field(["*"], alias="ALLOWED_HOSTS")
     rate_limit_per_minute: int = Field(60, alias="RATE_LIMIT_PER_MINUTE")
+    api_key: Optional[str] = Field(None, alias="API_KEY")
 
     # Services Config
     github_token: Optional[str] = Field(None, alias="GITHUB_TOKEN")

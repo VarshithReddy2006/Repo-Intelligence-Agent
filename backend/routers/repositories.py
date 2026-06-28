@@ -240,20 +240,28 @@ async def index_repository(request: IndexRequest):
         parsed = github_service.parse_repo_url(repo_url)
         repo_name = f"{parsed['owner']}/{parsed['repo']}"
 
-        local_path = github_service.clone_repository(repo_url)
-        files = github_service.extract_source_files(local_path)
+        local_path = await asyncio.to_thread(github_service.clone_repository, repo_url)
+        files = await asyncio.to_thread(github_service.extract_source_files, local_path)
 
-        all_chunks: List[Dict[str, Any]] = []
-        for file in files:
-            file_chunks = chunker.chunk_file(file["path"], file["content"])
-            if file_chunks:
-                all_chunks.extend(file_chunks)
+        def run_chunking():
+            chunks = []
+            for file in files:
+                file_chunks = chunker.chunk_file(file["path"], file["content"])
+                if file_chunks:
+                    chunks.extend(file_chunks)
+            return chunks
+
+        all_chunks = await asyncio.to_thread(run_chunking)
 
         embeddings = []
         if all_chunks:
-            embeddings = embedding_service.generate_embeddings(all_chunks)
+            embeddings = await asyncio.to_thread(
+                embedding_service.generate_embeddings, all_chunks
+            )
 
-        chroma_store.index_repository(repo_name, all_chunks, embeddings)
+        await asyncio.to_thread(
+            chroma_store.index_repository, repo_name, all_chunks, embeddings
+        )
 
         return {
             "status": "indexed",
@@ -311,7 +319,7 @@ async def analyze_repository(request: AnalyzeRequest):
             files = await asyncio.to_thread(
                 github_service.extract_source_files, local_path
             )
-            tech_stack, dependencies = detect_tech_stack_and_deps(files)
+            tech_stack, dependencies = await asyncio.to_thread(detect_tech_stack_and_deps, files)
             timer.stop("Parse")
             yield f"data: {json.dumps({'status': 'detected', 'message': f'✓ Technologies detected: {tech_stack}'})}\n\n"
 

@@ -11,6 +11,8 @@ class MetricsRegistry:
         self.lock = threading.Lock()
         # (method, path, status) -> count
         self.http_requests_total: Dict[Tuple[str, str, int], int] = {}
+        # (method, path, status) -> list of durations in seconds
+        self.http_request_duration: Dict[Tuple[str, str, int], List[float]] = {}
         # active in-flight requests
         self.active_requests: int = 0
         # repository -> list of build durations in seconds
@@ -22,6 +24,13 @@ class MetricsRegistry:
         with self.lock:
             key = (method, path, status)
             self.http_requests_total[key] = self.http_requests_total.get(key, 0) + 1
+
+    def record_request_duration(self, method: str, path: str, status: int, duration_seconds: float) -> None:
+        with self.lock:
+            key = (method, path, status)
+            if key not in self.http_request_duration:
+                self.http_request_duration[key] = []
+            self.http_request_duration[key].append(duration_seconds)
 
     def increment_active_requests(self) -> None:
         with self.lock:
@@ -56,6 +65,21 @@ class MetricsRegistry:
             for (method, path, status), count in self.http_requests_total.items():
                 lines.append(
                     f'http_requests_total{{method="{method}",path="{path}",status="{status}"}} {count}.0'
+                )
+
+            # 1b. HTTP Request Durations
+            lines.append(
+                "# HELP http_request_duration_seconds HTTP request latencies in seconds."
+            )
+            lines.append("# TYPE http_request_duration_seconds summary")
+            for (method, path, status), durations in self.http_request_duration.items():
+                total = sum(durations)
+                count = len(durations)
+                lines.append(
+                    f'http_request_duration_seconds_sum{{method="{method}",path="{path}",status="{status}"}} {total:.6f}'
+                )
+                lines.append(
+                    f'http_request_duration_seconds_count{{method="{method}",path="{path}",status="{status}"}} {count}'
                 )
 
             # 2. Active Requests
