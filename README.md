@@ -38,29 +38,46 @@ This one builds a real dependency graph, call graph, and symbol index — <em>th
 <br/>
 
 </div>
-
 ---
 
-## 🖼️ Preview
-
-> [!NOTE]
-> Screenshots and a live demo GIF are coming soon. ⭐ **[Star the repo](https://github.com/VarshithReddy2006/Repo-Intelligence-Agent)** to be notified when they drop.
+## 🖼️ Preview Images
 
 <div align="center">
-
-| 📊 Codebase Dashboard | 🌐 Interactive Dependency Graph |
-|:---:|:---:|
-| *Add screenshot to `docs/assets/dashboard.png`* | *Add screenshot to `docs/assets/graph.png`* |
-
-| 💬 Streaming Repository Chat | 📈 Intelligence Report |
-|:---:|:---:|
-| *Add screenshot to `docs/assets/chat.png`* | *Add screenshot to `docs/assets/report.png`* |
-
+  <table>
+    <tr>
+      <td align="center">
+        <div><strong>Codebase Dashboard</strong></div>
+        <img src="docs/assets/dashboard.png" alt="Codebase Dashboard" />
+      </td>
+      <td align="center">
+        <div><strong>Interactive Dependency Graph</strong></div>
+        <img src="docs/assets/graph.png" alt="Interactive Dependency Graph" />
+      </td>
+    </tr>
+    <tr>
+      <td align="center">
+        <div><strong>Streaming Repository Chat</strong></div>
+        <img src="docs/assets/chat.png" alt="Streaming Repository Chat" />
+      </td>
+      <td align="center">
+        <div><strong>Intelligence Report</strong></div>
+        <img src="docs/assets/report.png" alt="Intelligence Report" />
+      </td>
+    </tr>
+  </table>
 </div>
 
-> 💡 Add screenshots to `docs/assets/` to populate the preview gallery above.
+## 🎥 See Repo Intelligence Agent in Action
 
----
+<p align="center">
+  <a href="https://youtu.be/YOUR_VIDEO">
+    <img src="docs/assets/demo.gif" width="100%" alt="Demo">
+  </a>
+</p>
+
+<p align="center">
+Click the GIF to watch the full demo on YouTube.
+</p>
 
 ## 🔴 The Problem
 
