@@ -26,31 +26,31 @@ logger = logging.getLogger(__name__)
 
 
 def _load_python_language():
-    from tree_sitter import Language
+    # tree_sitter-python returns a pointer-like int
     import tree_sitter_python as tspython
 
-    return Language(tspython.language(), "python")
+    return tspython.language()
 
 
 def _load_javascript_language():
-    from tree_sitter import Language
+    # tree_sitter-javascript returns a pointer-like int
     import tree_sitter_javascript as tsjs
 
-    return Language(tsjs.language(), "javascript")
+    return tsjs.language()
 
 
 def _load_typescript_language():
-    from tree_sitter import Language
+    # tree_sitter-typescript returns a pointer-like int
     import tree_sitter_typescript as tsts
 
-    return Language(tsts.language_typescript(), "typescript")
+    return tsts.language_typescript()
 
 
 def _load_tsx_language():
-    from tree_sitter import Language
+    # tree_sitter-typescript returns a pointer-like int
     import tree_sitter_typescript as tsts
 
-    return Language(tsts.language_tsx(), "tsx")
+    return tsts.language_tsx()
 
 
 # Extension → (canonical language name, loader)
@@ -175,11 +175,16 @@ class TreeSitterService:
             return self._local.parsers[language_name]
 
         try:
-            from tree_sitter import Parser
+            from tree_sitter import Parser, Language
 
-            language = loader()
+            language_ptr = loader()
             parser = Parser()
-            parser.set_language(language)
+
+            # tree-sitter 0.21.x expects a tree_sitter.Language instance here.
+            # Grammar packages return a pointer-like int via *.language()*.
+            lang_obj = Language(language_ptr, language_name)
+            parser.set_language(lang_obj)
+
             self._local.parsers[language_name] = parser
             return parser
         except Exception as exc:

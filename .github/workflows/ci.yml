@@ -42,8 +42,27 @@ jobs:
       env:
         PYTHONPATH: .
       run: |
-        # Run tests excluding heavy LLM or local model download paths where possible,
-        # or use appropriate mock configs.
+        echo "=== Package Versions ==="
+        pip show tree-sitter tree-sitter-python tree-sitter-javascript tree-sitter-typescript
+        echo "=== Running Diagnostic Parse ==="
+        python -c "
+        import logging
+        logging.basicConfig(level=logging.INFO)
+        try:
+            from tree_sitter import Language, Parser
+            import tree_sitter_python as tspython
+            print('Imported packages successfully.')
+            lang = Language(tspython.language(), 'python')
+            print('Loaded Python language:', lang)
+            parser = Parser()
+            parser.set_language(lang)
+            print('Set language on parser successfully.')
+            tree = parser.parse(b'def foo(): pass')
+            print('Parsed dummy code successfully:', tree.root_node)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+        "
         pytest -v
 
   frontend-build:
